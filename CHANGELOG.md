@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## Alpha 0.17.3 Full Project
+
+- GitHub/Vercel 업로드용 전체 프로젝트 구조 재생성
+- manifest.json 추가
+- sw.js 추가
+- icons 추가
+
 ## Alpha 0.17.3
 
 - 도움말 메뉴 삭제
