@@ -1,12 +1,12 @@
 {
   "name": "Victor - 방제자원 관리 시스템",
   "short_name": "Victor",
-  "description": "방제자원 관리 시스템",
+  "description": "방제자원 관리 시스템 Alpha 0.18.1",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#F4F7FB",
-  "theme_color": "#0B5FFF",
+  "background_color": "#F7F9FC",
+  "theme_color": "#1565C0",
   "orientation": "portrait",
   "icons": [
     {

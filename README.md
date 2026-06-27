@@ -1,25 +1,31 @@
-# Victor Alpha 0.17.3
+# Victor Alpha 0.18.1 Core Restore
 
-방제자원 관리 시스템입니다.
+방제자원 관리 시스템 기능 복구판입니다.
 
-## GitHub / Vercel 업로드용 전체 프로젝트
+## 추가/복구 기능
 
-이 폴더에는 Vercel 배포와 PWA 설치에 필요한 기본 파일이 포함되어 있습니다.
+- 재고조사 모드
+  - 빈칸/미입력은 0으로 처리
+  - 진행률 표시
+  - 변경사항 검토
+  - 최종 반영
+- 방제지휘차량 관리
+  - 초기 누적 주행거리
+  - 일일 주행거리
+  - 최근 이력
+- 소형방제정 관리
+  - 초기 누적 구동시간
+  - 초기 누적 연료소모량
+  - 일일 구동시간
+  - 일일 연료소모량
+  - 최근 이력
+- 장비관리 초안
+  - 장비명
+  - 분류
+  - 보관 위치
+  - 상태
+  - 메모
 
-- index.html
-- manifest.json
-- sw.js
-- icons/
-- README.md
-- CHANGELOG.md
-- QA_CHECKLIST.md
+## 적용 방법
 
-## 앱 정보
-
-Victor  
-방제자원 관리 시스템
-
-Version 0.17.3
-
-By  
-통영해양경찰서 주무관 정홍준
+압축을 풀고 GitHub Desktop의 Victor 폴더에 덮어쓴 뒤 Commit / Push 합니다.
