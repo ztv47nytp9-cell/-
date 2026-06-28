@@ -1,4 +1,4 @@
-const CACHE_NAME = "victor-alpha-0-18-8-cache-v1";
+const CACHE_NAME = "victor-alpha-0-18-6-recovery-cache-v1";
 const ASSETS = [
   "./",
   "./index.html",

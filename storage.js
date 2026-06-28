@@ -1,7 +1,9 @@
-const VERSION = "Alpha 0.18.8";
-const KEY = "victor_state_alpha_0_18_8";
+const VERSION = "Alpha 0.18.6 Recovery";
+const KEY = "victor_state_alpha_0_18_6_recovery";
 const MIGRATE_KEYS = [
-  "victor_state_alpha_0_18_6",
+  "victor_state_alpha_0_18_8",
+  "victor_state_alpha_0_18_7a",
+  "victor_state_alpha_0_18_7",
   "victor_state_alpha_0_18_5",
   "victor_state_alpha_0_18_4a",
   "victor_state_alpha_0_18_4",
@@ -368,7 +370,7 @@ function defaultState(){
     warehouseInfos: defaultInfos(),
     assetOps: {
       "방제지휘차량": {distanceBase:0, logs:[]},
-      "소형방제정": {portHoursBase:0, starboardHoursBase:0, fuelBase:0, logs:[]}
+      "소형방제정": {hoursBase:0, fuelBase:0, logs:[]}
     },
     equipment: defaultEquipment.map(x => ({...x})),
     survey: null,
@@ -491,7 +493,7 @@ function normalize(raw){
   if(!state.assetOps["방제지휘차량"]) state.assetOps["방제지휘차량"] = {distanceBase:0, logs:[]};
   if(!Array.isArray(state.assetOps["방제지휘차량"].logs)) state.assetOps["방제지휘차량"].logs = [];
   if(typeof state.assetOps["방제지휘차량"].distanceBase !== "number") state.assetOps["방제지휘차량"].distanceBase = 0;
-  if(!state.assetOps["소형방제정"]) state.assetOps["소형방제정"] = {portHoursBase:0, starboardHoursBase:0, fuelBase:0, logs:[]};
+  if(!state.assetOps["소형방제정"]) state.assetOps["소형방제정"] = {hoursBase:0, fuelBase:0, logs:[]};
   if(!Array.isArray(state.assetOps["소형방제정"].logs)) state.assetOps["소형방제정"].logs = [];
   if(typeof state.assetOps["소형방제정"].hoursBase !== "number") state.assetOps["소형방제정"].hoursBase = 0;
   if(typeof state.assetOps["소형방제정"].fuelBase !== "number") state.assetOps["소형방제정"].fuelBase = 0;
