@@ -170,8 +170,11 @@ function reverseStock(warehouse, items, flow){
   });
 }
 
-function createFlowRecord({flow,type,title,date,warehouse,memo,items,status="done",sourceId=null}){
-  return {id:uid(), flow, type, title, date, warehouse, memo, status, sourceId, items:items.map(x=>({...x}))};
+function createFlowRecord({flow,type,title,date,warehouse,memo,items,status="done",sourceId=null,quick=false,officialTitle=true,createdAt=null,appliedAt=null}){
+  return {
+    id:uid(), flow, type, title, date, warehouse, memo, status, sourceId, quick, officialTitle,
+    createdAt:createdAt || new Date().toISOString(), appliedAt, items:items.map(x=>({...x}))
+  };
 }
 
 function renderHome(){
@@ -471,7 +474,8 @@ function saveRecord(){
 
   if(registerMode === "quick"){
     state.records.push(createFlowRecord({
-      flow:"긴급", type:"사고", warehouse:"", date, title:title || nowQuickTitle(), memo, status:"pending", items
+      flow:"긴급", type:"사고", warehouse:"", date, title:title || nowQuickTitle(), memo, status:"pending",
+      quick:true, officialTitle:false, createdAt:new Date().toISOString(), items
     }));
     draftItems = [];
     save();
@@ -570,34 +574,127 @@ function bindHistoryRows(){
 }
 
 
-function applyPendingRecord(id){
-  const r = state.records.find(x => x.id === id);
-  if(!r || r.status !== "pending") return;
-  const warehouse = prompt("재고를 차감할 보관 장소", warehouses[0]);
-  if(warehouse === null) return;
-  if(!warehouses.includes(warehouse)){ showSnack("등록된 보관 장소가 아닙니다"); return; }
-  const title = prompt("사고명 또는 정식 기록 제목", r.title || nowQuickTitle());
-  if(title === null) return;
+function pendingRecordForm(r){
+  const officialTitle = r.officialTitle ? r.title : "";
+  return
+    `<div class="card">
+      <div><span class="badge red">미반영</span></div>
+      <div class="section-title" style="margin-top:10px">긴급기록 사후보완</div>
+      <div class="row-sub">현장에서 저장한 기록입니다. 내용을 확인한 뒤 재고에 반영하세요.</div>
+      <div class="form" style="margin-top:14px">
+        <label>사고명·정식 제목<input id="pendingTitle" value="${esc(officialTitle)}" placeholder="예: ○○항 유류유출 방제"></label>
+        <label>보관장소<select id="pendingWarehouse"><option value="">나중에 지정</option>${warehouses.map(w => `<option value="${esc(w)}" ${r.warehouse === w ? "selected" : ""}>${esc(w)}</option>`).join("")}</select></label>
+        <label>발생일<input id="pendingDate" type="date" value="${esc(r.date || todayISO())}"></label>
+        <label>현장 메모<textarea id="pendingMemo" placeholder="현장 상황이나 특이사항">${esc(r.memo || "")}</textarea></label>
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-head"><div class="section-title">사용 자재</div><button class="btn secondary" id="addPendingItem" type="button">+ 자재 추가</button></div>
+      <div class="form">
+        ${r.items.map((item,index) => `
+          <div class="item-box">
+            <label>자재<select id="pendingName${index}">${catalog.map(c => `<option value="${esc(c.name)}" ${c.name === item.name ? "selected" : ""}>${esc(c.cat)} · ${esc(c.name)}</option>`).join("")}</select></label>
+            <label>사용량<input id="pendingQty${index}" type="number" inputmode="decimal" min="0" step="0.1" value="${Number(item.qty || 0)}"></label>
+            <button class="btn gray" data-remove-pending="${index}" type="button">이 자재 삭제</button>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+    <button class="btn secondary" id="savePending" type="button" style="width:100%;margin-bottom:9px">수정 내용 저장</button>
+    <button class="btn primary" id="applyPending" type="button" style="width:100%;margin-bottom:9px">저장 후 재고 반영 확정</button>`;
+}
 
-  if(!stockAvailable(warehouse, r.items)){
-    showSnack("재고가 부족해서 반영할 수 없습니다");
-    vibrate(80);
-    return;
+function collectPendingForm(r){
+  const items = r.items.map((original,index) => {
+    const selectedName = document.getElementById(`pendingName${index}`)?.value || original.name;
+    const catalogItem = itemOf(selectedName) || original;
+    const qty = Number(document.getElementById(`pendingQty${index}`)?.value || 0);
+    return {
+      cat:catalogItem.cat || original.cat,
+      name:catalogItem.name || selectedName,
+      qty:Number.isFinite(qty) ? qty : 0,
+      unit:catalogItem.unit || original.unit,
+      kind:catalogItem.kind || original.kind
+    };
+  }).filter(item => item.qty > 0);
+
+  return {
+    title:document.getElementById("pendingTitle")?.value.trim() || "",
+    warehouse:document.getElementById("pendingWarehouse")?.value || "",
+    date:document.getElementById("pendingDate")?.value || todayISO(),
+    memo:document.getElementById("pendingMemo")?.value.trim() || "",
+    items
+  };
+}
+
+function savePendingEdits(id, shouldApply=false, silent=false){
+  const r = state.records.find(x => x.id === id);
+  if(!r || r.status !== "pending") return false;
+  const form = collectPendingForm(r);
+  if(!form.items.length){ showSnack("사용 자재를 한 개 이상 남겨주세요"); return false; }
+
+  r.title = form.title || (r.officialTitle ? nowQuickTitle() : r.title || nowQuickTitle());
+  r.officialTitle = Boolean(form.title);
+  r.warehouse = form.warehouse;
+  r.date = form.date;
+  r.memo = form.memo;
+  r.items = form.items;
+  r.quick = true;
+
+  if(!shouldApply){
+    save();
+    if(!silent){
+      showSnack("미반영 기록 수정 완료");
+      openDetail(id);
+    }
+    return true;
   }
 
-  applyStock(warehouse, r.items, "출고");
-  state.records.push(createFlowRecord({
-    flow:"출고", type:"사고", warehouse, date:todayISO(), title:title.trim() || r.title || nowQuickTitle(),
-    memo:`긴급기록 반영: ${r.title}${r.memo ? "\n" + r.memo : ""}`, status:"done", sourceId:r.id, items:r.items
-  }));
+  if(!r.officialTitle){ showSnack("재고 반영 전에 사고명을 입력해주세요"); return false; }
+  if(!r.warehouse){ showSnack("재고를 차감할 보관장소를 선택해주세요"); return false; }
+  if(!stockAvailable(r.warehouse, r.items)){
+    showSnack("재고가 부족해서 반영할 수 없습니다");
+    vibrate(80);
+    return false;
+  }
+  if(!confirm(`${r.warehouse} 재고에서 사용 자재를 차감하고 완료 처리할까요?`)) return false;
 
-  r.warehouse = warehouse;
-  r.title = title.trim() || r.title || nowQuickTitle();
+  const stockBefore = Object.fromEntries(r.items.map(item => [item.name, Number(state.stock[r.warehouse]?.[item.name] || 0)]));
+  const previous = {status:r.status, flow:r.flow, appliedAt:r.appliedAt};
+  applyStock(r.warehouse, r.items, "출고");
   r.status = "done";
-  r.flow = "긴급";
-  save();
-  showSnack("재고 반영 및 출고이력 생성 완료");
+  r.flow = "출고";
+  r.appliedAt = new Date().toISOString();
+  try{
+    save();
+  }catch(error){
+    Object.entries(stockBefore).forEach(([name,qty]) => { state.stock[r.warehouse][name] = qty; });
+    Object.assign(r, previous);
+    throw error;
+  }
+  showSnack("재고 반영 완료");
   vibrate(20);
+  openDetail(id);
+  return true;
+}
+
+function addPendingItemToRecord(id){
+  const r = state.records.find(x => x.id === id);
+  if(!r || r.status !== "pending") return;
+  if(!savePendingEdits(id,false,true)) return;
+  const first = catalog[0];
+  r.items.push({cat:first.cat,name:first.name,qty:1,unit:first.unit,kind:first.kind});
+  save();
+  openDetail(id);
+}
+
+function removePendingItemFromRecord(id,index){
+  const r = state.records.find(x => x.id === id);
+  if(!r || r.status !== "pending") return;
+  if(r.items.length <= 1){ showSnack("자재를 한 개 이상 남겨주세요"); return; }
+  if(!savePendingEdits(id,false,true)) return;
+  r.items.splice(index,1);
+  save();
   openDetail(id);
 }
 
@@ -606,34 +703,52 @@ function openDetail(id){
   if(!r) return;
   page = "history";
   setHead();
+
+  if(r.status === "pending"){
+    view.innerHTML = `
+      <button class="back" id="backHist" type="button">‹ 이력</button>
+      ${pendingRecordForm(r)}
+      <button class="btn danger" id="deleteRecord" type="button" style="width:100%">미반영 기록 삭제</button>`;
+    document.getElementById("backHist")?.addEventListener("click", () => setPage("history"));
+    document.getElementById("savePending")?.addEventListener("click", () => savePendingEdits(id,false));
+    document.getElementById("applyPending")?.addEventListener("click", () => savePendingEdits(id,true));
+    document.getElementById("addPendingItem")?.addEventListener("click", () => addPendingItemToRecord(id));
+    view.querySelectorAll("[data-remove-pending]").forEach(button => button.addEventListener("click", () => removePendingItemFromRecord(id, Number(button.dataset.removePending))));
+    document.getElementById("deleteRecord")?.addEventListener("click", () => {
+      if(!confirm("미반영 기록을 삭제할까요? 재고에는 영향이 없습니다.")) return;
+      state.records = state.records.filter(x => x.id !== id);
+      save();
+      showSnack("미반영 기록이 삭제되었습니다");
+      setPage("history");
+    });
+    return;
+  }
+
   view.innerHTML = `
     <button class="back" id="backHist" type="button">‹ 이력</button>
     <div class="card">
-      <span class="badge ${r.status === "pending" ? "red" : (r.flow === "입고" ? "green" : "blue")}">${r.status === "pending" ? "미반영" : esc(r.flow || r.type)}</span>
+      <span class="badge ${r.flow === "입고" ? "green" : r.flow === "재고수정" ? "orange" : "blue"}">${r.quick ? "긴급기록 반영완료" : esc(r.flow || r.type)}</span>
       <div class="section-title" style="margin-top:10px">${esc(r.title)}</div>
       <div class="row-sub">${fmtDate(r.date)} · ${r.warehouse ? esc(r.warehouse) : "보관 미지정"}</div>
+      ${r.appliedAt ? `<div class="row-sub">반영시각 ${esc(new Date(r.appliedAt).toLocaleString("ko-KR"))}</div>` : ""}
       ${r.memo ? `<div class="callout" style="margin-top:12px">${esc(r.memo)}</div>` : ""}
     </div>
     <div class="card">
-      <div class="section-title">출고 자재</div>
+      <div class="section-title">${r.flow === "입고" ? "입고 자재" : "출고 자재"}</div>
       ${r.items.map(i => `<div class="stock-line"><div><div class="stock-name">${esc(i.name)}</div><div class="stock-spec">${esc(i.cat)}${i.before !== undefined ? " · " + qtyText(i.before,i.unit) + " → " + qtyText(i.after,i.unit) : ""}</div></div><div class="stock-qty">${i.before !== undefined ? (i.diff > 0 ? "+" : "") + qtyText(i.diff,i.unit) : qtyText(i.qty,i.unit)}</div></div>`).join("")}
     </div>
-    ${r.status === "pending" ? `<button class="btn primary" id="applyPending" type="button" style="width:100%;margin-bottom:9px">재고 반영</button>` : ""}
-    <button class="btn danger" id="deleteRecord" type="button" style="width:100%">삭제</button>
-  `;
+    <button class="btn danger" id="deleteRecord" type="button" style="width:100%">삭제</button>`;
   document.getElementById("backHist")?.addEventListener("click", () => setPage("history"));
-  const applyBtn = document.getElementById("applyPending");
-  if(applyBtn) applyBtn.addEventListener("click", () => applyPendingRecord(id));
   document.getElementById("deleteRecord")?.addEventListener("click", () => {
-    if(!confirm(r.status === "pending" ? "미반영 기록을 삭제할까요?" : "기록을 삭제하고 재고를 복구할까요?")) return;
-    if(r.status === "done" && r.flow === "재고수정"){
+    if(!confirm("기록을 삭제하고 재고를 이전 상태로 복구할까요?")) return;
+    if(r.flow === "재고수정"){
       r.items.forEach(i => { if(i.before !== undefined) state.stock[r.warehouse][i.name] = Number(i.before); });
-    }else if(r.status === "done" && r.flow !== "긴급"){
+    }else if(r.flow !== "긴급"){
       reverseStock(r.warehouse, r.items, r.flow || "출고");
     }
     state.records = state.records.filter(x => x.id !== id);
     save();
-    showSnack("삭제되었습니다");
+    showSnack("삭제 및 재고 복구 완료");
     setPage("history");
   });
 }
@@ -1174,7 +1289,7 @@ function bindGlobal(){
   document.getElementById("closeUpdate")?.addEventListener("click", () => document.getElementById("updateModal").classList.remove("show"));
   document.getElementById("appInfoBtn")?.addEventListener("click", () => {
     closeMenu();
-    alert(`Victor\n방제자원 관리 시스템\n\nVersion 0.19.0b Stable\n\nBy\n통영해양경찰서 주무관 정홍준`);
+    alert(`Victor\n방제자원 관리 시스템\n\nVersion 0.19.0c Stable\n\nBy\n통영해양경찰서 주무관 정홍준`);
   });
 
   let lastTouchEnd = 0;
@@ -1248,7 +1363,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190b")
+      navigator.serviceWorker.register("./sw.js?v=0190c")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });

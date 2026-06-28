@@ -1,6 +1,7 @@
-const VERSION = "Alpha 0.19.0b Stable";
-const KEY = "victor_state_alpha_0_19_0b";
+const VERSION = "Alpha 0.19.0c Stable";
+const KEY = "victor_state_alpha_0_19_0c";
 const MIGRATE_KEYS = [
+  "victor_state_alpha_0_19_0b",
   "victor_state_alpha_0_19_0a",
   "victor_state_alpha_0_19_0",
   "victor_state_alpha_0_18_9",
@@ -482,6 +483,10 @@ function normalize(raw){
     memo: typeof r.memo === "string" ? r.memo : "",
     status: r.status === "pending" ? "pending" : "done",
     sourceId: typeof r.sourceId === "string" ? r.sourceId : null,
+    quick: Boolean(r.quick || r.status === "pending"),
+    officialTitle: Boolean(r.officialTitle),
+    createdAt: typeof r.createdAt === "string" && r.createdAt ? r.createdAt : new Date().toISOString(),
+    appliedAt: typeof r.appliedAt === "string" ? r.appliedAt : null,
     items: Array.isArray(r.items) ? r.items.filter(it => it && typeof it === "object").map(it => {
       let nm = typeof it.name === "string" && it.name ? it.name : (typeof it.material === "string" && it.material ? it.material : catalogList[0].name);
       if(nm === "고형식 오일펜스") nm = "팽창형 오일펜스";

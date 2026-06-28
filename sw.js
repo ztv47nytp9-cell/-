@@ -1,9 +1,9 @@
-const CACHE_NAME = "victor-alpha-0-19-0b-cache-v2";
+const CACHE_NAME = "victor-alpha-0-19-0c-cache-v2";
 const CORE_ASSETS = [
   "./index.html",
-  "./style.css?v=0190b",
-  "./storage.js?v=0190b",
-  "./app.js?v=0190b",
+  "./style.css?v=0190c",
+  "./storage.js?v=0190c",
+  "./app.js?v=0190c",
   "./manifest.json",
   "./icons/icon-192.png",
   "./icons/icon-512.png"
