@@ -93,6 +93,90 @@ function doneRecords(){
   return state.records.filter(r => r.status !== "pending");
 }
 
+
+function pendingRecords(){ return state.records.filter(r => r.status === "pending"); }
+function doneRecords(){ return state.records.filter(r => r.status !== "pending"); }
+
+function totalByMatcher(matcher){
+  return warehouses.reduce((sum,w) => {
+    const bucket = state.stock[w] || {};
+    return sum + catalog.filter(i => matcher(i)).reduce((a,i) => a + Number(bucket[i.name] || 0), 0);
+  }, 0);
+}
+
+function totalStorageSummary(){
+  const absorbent = totalByMatcher(i => i.cat.includes("유흡착재") || i.name.includes("흡착재") || i.name.includes("부착재"));
+  const boom = totalByMatcher(i => i.cat.includes("오일펜스") || i.name.includes("오일펜스"));
+  const dispersant = totalByMatcher(i => i.name.includes("유처리제") || i.cat.includes("유처리제"));
+  return {absorbent, boom, dispersant};
+}
+
+function storageSummaryCard(){
+  const s = totalStorageSummary();
+  return `<div class="summary-card">
+    <div class="section-title">전체 보관량</div>
+    <div class="summary-grid">
+      <div class="summary-pill"><div class="summary-label">흡착재</div><div class="summary-value">${Number(s.absorbent).toLocaleString("ko-KR")}kg</div></div>
+      <div class="summary-pill"><div class="summary-label">오일펜스</div><div class="summary-value">${Number(s.boom).toLocaleString("ko-KR")}m</div></div>
+      <div class="summary-pill"><div class="summary-label">유처리제</div><div class="summary-value">${Number(s.dispersant).toLocaleString("ko-KR")}L</div></div>
+    </div>
+  </div>`;
+}
+
+function ensureWarehouse(name){
+  name = String(name || "").trim();
+  if(!name) return false;
+  if(!state.warehouses.includes(name)){
+    state.warehouses.push(name);
+    state.stock[name] = {};
+    state.catalog.forEach(i => state.stock[name][i.name] = 0);
+    state.warehouseInfos[name] = {memo:"", updated:""};
+    refreshGlobals(state);
+    save();
+  }
+  return true;
+}
+
+function ensureCatalogItem(item){
+  if(!item || !item.name) return false;
+  if(!state.catalog.some(x => x.name === item.name)){
+    state.catalog.push(item);
+    state.warehouses.forEach(w => {
+      if(!state.stock[w]) state.stock[w] = {};
+      state.stock[w][item.name] = 0;
+    });
+    refreshGlobals(state);
+    save();
+  }
+  return true;
+}
+
+function stockAvailable(warehouse, items){
+  return items.every(it => (state.stock[warehouse]?.[it.name] || 0) >= Number(it.qty || 0));
+}
+
+function applyStock(warehouse, items, flow){
+  items.forEach(it => {
+    if(!state.stock[warehouse]) state.stock[warehouse] = {};
+    if(!(it.name in state.stock[warehouse])) state.stock[warehouse][it.name] = 0;
+    if(flow === "입고") state.stock[warehouse][it.name] += Number(it.qty || 0);
+    else state.stock[warehouse][it.name] -= Number(it.qty || 0);
+  });
+}
+
+function reverseStock(warehouse, items, flow){
+  items.forEach(it => {
+    if(!state.stock[warehouse]) state.stock[warehouse] = {};
+    if(!(it.name in state.stock[warehouse])) state.stock[warehouse][it.name] = 0;
+    if(flow === "입고") state.stock[warehouse][it.name] -= Number(it.qty || 0);
+    else state.stock[warehouse][it.name] += Number(it.qty || 0);
+  });
+}
+
+function createFlowRecord({flow,type,title,date,warehouse,memo,items,status="done",sourceId=null}){
+  return {id:uid(), flow, type, title, date, warehouse, memo, status, sourceId, items:items.map(x=>({...x}))};
+}
+
 function renderHome(){
   const pending = pendingRecords().length;
   const recent = getRecent(3);
@@ -122,34 +206,6 @@ function renderHome(){
   view.querySelectorAll("[data-detail]").forEach(b => b.addEventListener("click", () => openDetail(b.dataset.detail)));
 }
 
-
-function totalByMatcher(matcher, unit){
-  return warehouses.reduce((sum,w) => {
-    const bucket = state.stock[w] || {};
-    return sum + catalog.filter(i => matcher(i)).reduce((a,i) => a + Number(bucket[i.name] || 0), 0);
-  }, 0);
-}
-
-function totalStorageSummary(){
-  const absorbent = totalByMatcher(i => i.cat.includes("유흡착재") || i.name.includes("흡착재") || i.name.includes("부착재"), "kg");
-  const boom = totalByMatcher(i => i.cat.includes("오일펜스") || i.name.includes("오일펜스"), "m");
-  const dispersant = totalByMatcher(i => i.name.includes("유처리제") || i.cat.includes("유처리제"), "L");
-  return {absorbent, boom, dispersant};
-}
-
-function storageSummaryCard(){
-  const s = totalStorageSummary();
-  return `<div class="summary-card">
-    <div class="section-title">전체 보관량</div>
-    <div class="summary-grid">
-      <div class="summary-pill"><div class="summary-label">흡착재</div><div class="summary-value">${Number(s.absorbent).toLocaleString("ko-KR")}kg</div></div>
-      <div class="summary-pill"><div class="summary-label">오일펜스</div><div class="summary-value">${Number(s.boom).toLocaleString("ko-KR")}m</div></div>
-      <div class="summary-pill"><div class="summary-label">유처리제</div><div class="summary-value">${Number(s.dispersant).toLocaleString("ko-KR")}L</div></div>
-    </div>
-  </div>`;
-}
-
-
 function warehouseSummary(w){
   const count = catalog.filter(i => (state.stock[w]?.[i.name] || 0) > 0).length;
   const totalKg = catalog.filter(i => i.unit === "kg").reduce((a,i) => a + (state.stock[w]?.[i.name] || 0), 0);
@@ -162,29 +218,26 @@ function whIcon(){
 
 function renderWarehouse(){
   if(!selectedWarehouse){
-    view.innerHTML = `<div class="list-card">
+    view.innerHTML = `${storageSummaryCard()}<div class="list-card">
       ${warehouses.map(w => {
         const s = warehouseSummary(w);
         const info = state.warehouseInfos[w] || {};
-        return `<div class="wh-outer">
-          <button class="wh-info-btn" data-info="${esc(w)}" type="button" title="보관 정보">${whIcon()}</button>
-          <button class="wh-main-btn" data-wh="${esc(w)}" type="button">
-            <div>
-              <div class="row-title">${esc(w)}</div>
-              <div class="row-sub">관리품목 ${s.count}종 · 총 보유량 ${Number(s.totalKg).toLocaleString("ko-KR")}kg${info.memo ? " · 메모 있음" : ""}</div>
-            </div>
-            <div class="chev">›</div>
-          </button>
-        </div>`;
+        return `<button class="list-row" data-wh="${esc(w)}" type="button">
+          <div>
+            <div class="row-title">${esc(w)}</div>
+            <div class="row-sub">관리품목 ${s.count}종 · 총 보유량 ${Number(s.totalKg).toLocaleString("ko-KR")}kg${info.memo ? " · 메모 있음" : ""}</div>
+          </div>
+          <div class="chev">›</div>
+        </button>`;
       }).join("")}
-    </div><button class="btn secondary" id="addWarehouseInline" type="button" style="width:100%;margin-top:10px">+ 신규 창고 추가</button>`;
-    document.getElementById("addWarehouseInline").addEventListener("click", addWarehouse);
+    </div>
+    <button class="btn secondary" id="addWarehouseInline" type="button" style="width:100%;margin-top:10px">+ 신규 창고 추가</button>`;
     view.querySelectorAll("[data-wh]").forEach(b => b.addEventListener("click", () => {
       selectedWarehouse = b.dataset.wh;
       warehouseTab = "material";
       renderWarehouse();
     }));
-    view.querySelectorAll("[data-info]").forEach(b => b.addEventListener("click", () => editWarehouseInfo(b.dataset.info)));
+    document.getElementById("addWarehouseInline").addEventListener("click", addWarehouse);
     return;
   }
 
@@ -193,7 +246,9 @@ function renderWarehouse(){
     <button class="back" id="backWh" type="button">‹ 보관</button>
     <div class="card">
       <div class="section-title">${esc(selectedWarehouse)}</div>
-      <div class="row-sub">📌 중요 메모</div><div class="memo-box">${info.memo ? esc(info.memo) : "등록된 메모가 없습니다."}</div><button class="btn secondary" id="editInfo" type="button" style="width:100%;margin-top:12px">보관 정보 수정</button>
+      <div class="row-sub">📌 중요 메모</div>
+      <div class="memo-box">${info.memo ? esc(info.memo) : "등록된 메모가 없습니다."}</div>
+      <button class="btn secondary" id="editInfo" type="button" style="width:100%;margin-top:12px">보관 메모 수정</button>
     </div>
     ${typeof renderOps === "function" ? renderOps(selectedWarehouse) : ""}
     <div class="card">
@@ -201,7 +256,7 @@ function renderWarehouse(){
         <button class="tabbtn ${warehouseTab === "material" ? "active" : ""}" id="tabMaterial" type="button">자재</button>
         <button class="tabbtn ${warehouseTab === "equipment" ? "active" : ""}" id="tabEquipment" type="button">장비</button>
       </div>
-      ${warehouseTab === "material" ? `<input class="search" id="stockSearch" placeholder="자재 검색"><div id="stockList"></div>` : renderWarehouseEquipment(selectedWarehouse)}
+      ${warehouseTab === "material" ? `<input class="search" id="stockSearch" placeholder="자재 검색"><div id="stockList"></div><button class="btn secondary" id="addMaterialInline" type="button" style="width:100%;margin-top:12px">+ 신규 추가</button>` : renderWarehouseEquipment(selectedWarehouse)}
     </div>
   `;
   document.getElementById("backWh").addEventListener("click", () => { selectedWarehouse = null; renderWarehouse(); });
@@ -216,10 +271,11 @@ function renderWarehouse(){
 
   if(warehouseTab === "material"){
     document.getElementById("stockSearch").addEventListener("input", renderStockList);
+    document.getElementById("addMaterialInline").addEventListener("click", addMaterialChoice);
     renderStockList();
   }else{
     const addEquipBtn = document.getElementById("addEquip");
-    if(addEquipBtn) addEquipBtn.addEventListener("click", addEquipment);
+    if(addEquipBtn) addEquipBtn.addEventListener("click", addEquipmentChoice);
     view.querySelectorAll("[data-equip]").forEach(b => b.addEventListener("click", () => openEquipment(b.dataset.equip)));
   }
 }
@@ -227,8 +283,8 @@ function renderWarehouse(){
 function renderWarehouseEquipment(place){
   const list = (state.equipment || []).filter(e => e.place === place);
   return `<div>
-    <button class="btn primary" id="addEquip" type="button" style="width:100%;margin-bottom:12px">장비 추가</button>
     <div class="list-card">${list.length ? list.map(e => `<button class="list-row" data-equip="${e.id}" type="button"><div><div class="row-title">${esc(e.cat)} · ${esc(e.name)}</div><div class="row-sub">${e.detail ? esc(e.detail) + " · " : ""}${esc(e.status)}${e.battery ? " · 배터리 " + esc(e.battery) : ""}${e.fuel ? " · 연료 " + esc(e.fuel) : ""}${e.etc ? " · " + esc(e.etc) : ""}</div></div><div class="chev">›</div></button>`).join("") : `<div class="emptybox">이 보관 장소에 등록된 장비가 없습니다.</div>`}</div>
+    <button class="btn secondary" id="addEquip" type="button" style="width:100%;margin-top:12px">+ 신규 추가</button>
   </div>`;
 }
 
@@ -277,27 +333,10 @@ function editStock(name){
   const diff = num - cur;
 
   state.stock[selectedWarehouse][name] = num;
-
   state.records.push({
-    id: uid(),
-    flow: "재고수정",
-    type: "재고수정",
-    title: `${name} 재고수정`,
-    date: todayISO(),
-    warehouse: selectedWarehouse,
-    memo: `변경사유: ${finalReason}${memo ? "\n" + memo : ""}`,
-    status: "done",
-    sourceId: null,
-    items: [{
-      cat: item.cat,
-      name,
-      qty: Math.abs(diff),
-      unit: item.unit,
-      kind: item.kind,
-      before: cur,
-      after: num,
-      diff
-    }]
+    id: uid(), flow: "재고수정", type: "재고수정", title: `${name} 재고수정`, date: todayISO(),
+    warehouse: selectedWarehouse, memo: `변경사유: ${finalReason}${memo ? "\n" + memo : ""}`, status: "done", sourceId: null,
+    items: [{cat: item.cat, name, qty: Math.abs(diff), unit: item.unit, kind: item.kind, before: cur, after: num, diff}]
   });
 
   save();
@@ -375,7 +414,7 @@ function renderRegister(){
   view.innerHTML = `
     <div class="choice-grid">
       <button class="choice-card ${registerMode === "normal" ? "active" : ""}" id="modeNormal" type="button">
-        <div><div class="choice-title">일반등록</div><div class="choice-sub">평상시 자재 출고·입고를 기록하고 재고에 즉시 반영합니다.</div></div><div class="choice-icon">📦</div>
+        <div><div class="choice-title">일반등록</div><div class="choice-sub">평상시 자재 출고·입고를 기록하고 재고에 즉시 반영합니다.</div></div>
       </button>
       <button class="choice-card danger ${registerMode === "quick" ? "active" : ""}" id="modeQuick" type="button">
         <div><div class="choice-title">🚨 긴급기록</div><div class="choice-sub">사고 현장에서 사용량만 빠르게 저장합니다. 재고는 나중에 반영합니다.</div></div><div class="choice-icon">›</div>
@@ -484,14 +523,7 @@ function saveRecord(){
 
   if(registerMode === "quick"){
     state.records.push(createFlowRecord({
-      flow:"긴급",
-      type:"사고",
-      warehouse:"",
-      date,
-      title:title || nowQuickTitle(),
-      memo,
-      status:"pending",
-      items
+      flow:"긴급", type:"사고", warehouse:"", date, title:title || nowQuickTitle(), memo, status:"pending", items
     }));
     draftItems = [];
     save();
@@ -510,14 +542,7 @@ function saveRecord(){
 
   applyStock(warehouse, items, registerFlow);
   state.records.push(createFlowRecord({
-    flow:registerFlow,
-    type,
-    warehouse,
-    date,
-    title,
-    memo,
-    status:"done",
-    items
+    flow:registerFlow, type, warehouse, date, title, memo, status:"done", items
   }));
 
   draftItems = [];
@@ -526,6 +551,24 @@ function saveRecord(){
   vibrate(20);
   historyFilter = "done";
   setPage("history");
+}
+
+function summarizeItems(items){
+  if(!items || !items.length) return "자재 없음";
+  return items.slice(0,2).map(i => {
+    if(i.before !== undefined && i.after !== undefined) return `${i.name} ${qtyText(i.before,i.unit)} → ${qtyText(i.after,i.unit)}`;
+    return `${i.name} ${qtyText(i.qty,i.unit)}`;
+  }).join(" · ") + (items.length > 2 ? ` 외 ${items.length-2}건` : "");
+}
+
+function historyDateGroups(records){
+  const groups = {};
+  records.forEach(r => {
+    const d = r.date || todayISO();
+    if(!groups[d]) groups[d] = [];
+    groups[d].push(r);
+  });
+  return Object.keys(groups).sort((a,b)=>b.localeCompare(a)).map(d => ({date:d, records:groups[d]}));
 }
 
 function renderHistory(){
@@ -548,7 +591,7 @@ function renderHistory(){
   view.querySelectorAll("[data-hfilter]").forEach(b => b.addEventListener("click", () => { historyFilter = b.dataset.hfilter; renderHistory(); }));
   document.getElementById("histSearch").addEventListener("input", () => {
     const q = document.getElementById("histSearch").value.trim();
-    const searched = filtered.filter(r => !q || [r.title,r.type,r.warehouse,r.memo,...r.items.map(i=>i.name)].join(" ").includes(q));
+    const searched = filtered.filter(r => !q || [r.title,r.type,r.flow,r.warehouse,r.memo,...r.items.map(i=>i.name)].join(" ").includes(q));
     document.getElementById("histList").innerHTML = renderHistoryListHtml(searched);
     bindHistoryRows();
   });
@@ -563,7 +606,7 @@ function renderHistoryListHtml(records){
       ${g.records.map(r => `
         <button class="list-row" data-detail="${r.id}" type="button">
           <div>
-            <div><span class="badge ${r.status === "pending" ? "red" : (r.flow === "입고" ? "green" : "blue")}">${r.status === "pending" ? "미반영" : esc(r.flow || r.type)}</span></div>
+            <div><span class="badge ${r.status === "pending" ? "red" : (r.flow === "입고" ? "green" : r.flow === "재고수정" ? "orange" : "blue")}">${r.status === "pending" ? "미반영" : esc(r.flow || r.type)}</span></div>
             <div class="row-title" style="margin-top:7px">${esc(r.title)}</div>
             <div class="row-sub">${r.warehouse ? esc(r.warehouse) : "보관 미지정"} · ${esc(summarizeItems(r.items))}</div>
           </div>
@@ -595,25 +638,15 @@ function applyPendingRecord(id){
   }
 
   applyStock(warehouse, r.items, "출고");
-
-  const outbound = createFlowRecord({
-    flow:"출고",
-    type:"사고",
-    warehouse,
-    date:todayISO(),
-    title:title.trim() || r.title || nowQuickTitle(),
-    memo:`긴급기록 반영: ${r.title}${r.memo ? "\\n" + r.memo : ""}`,
-    status:"done",
-    sourceId:r.id,
-    items:r.items
-  });
-  state.records.push(outbound);
+  state.records.push(createFlowRecord({
+    flow:"출고", type:"사고", warehouse, date:todayISO(), title:title.trim() || r.title || nowQuickTitle(),
+    memo:`긴급기록 반영: ${r.title}${r.memo ? "\n" + r.memo : ""}`, status:"done", sourceId:r.id, items:r.items
+  }));
 
   r.warehouse = warehouse;
   r.title = title.trim() || r.title || nowQuickTitle();
   r.status = "done";
   r.flow = "긴급";
-  r.memo = r.memo || "";
   save();
   showSnack("재고 반영 및 출고이력 생성 완료");
   vibrate(20);
@@ -1084,6 +1117,80 @@ function addEquipmentFromManage(){
   save();
   showSnack("장비 추가 완료");
   openManageSettings();
+}
+
+
+function addWarehouse(){
+  const name = prompt("추가할 창고명", "");
+  if(!name) return;
+  if(state.warehouses.includes(name)){ showSnack("이미 있는 창고입니다"); return; }
+  ensureWarehouse(name);
+  showSnack("창고 추가 완료");
+  if(page === "warehouse") renderWarehouse();
+}
+
+function addMaterialChoice(){
+  const choice = prompt("신규 추가\n1. 자재목록 추가\n2. 자재 추가", "2");
+  if(choice === "1") addCategory();
+  else if(choice === "2") addMaterial();
+}
+
+function addEquipmentChoice(){
+  const choice = prompt("신규 추가\n1. 장비목록 추가\n2. 장비 추가", "2");
+  if(choice === "1") addEquipmentCategory();
+  else if(choice === "2") addEquipment();
+}
+
+function addCategory(){
+  const name = prompt("추가할 자재목록/분류명", "");
+  if(!name) return;
+  if(cats.includes(name)){ showSnack("이미 있는 분류입니다"); return; }
+  const itemName = prompt("분류를 생성하기 위한 첫 자재명을 입력하세요", `${name} 품목`);
+  if(!itemName) return;
+  const unit = prompt("단위", "개") || "개";
+  ensureCatalogItem({cat:name,name:itemName,unit,spec:"",kind:"consume"});
+  showSnack("자재목록 추가 완료");
+  if(page === "warehouse") renderWarehouse();
+}
+
+function addMaterial(){
+  const cat = prompt(`분류명\n현재 분류: ${cats.join(", ")}`, cats[0] || "기타");
+  if(!cat) return;
+  const name = prompt("자재명", "");
+  if(!name) return;
+  if(state.catalog.some(x => x.name === name)){ showSnack("이미 있는 자재입니다"); return; }
+  const unit = prompt("단위", "개") || "개";
+  const spec = prompt("세부사항", "") || "";
+  const kindInput = prompt("구분\n소모품: 1 / 회수품: 2", "1");
+  const kind = kindInput === "2" ? "returnable" : "consume";
+  ensureCatalogItem({cat,name,unit,spec,kind});
+  showSnack("자재 추가 완료");
+  if(page === "warehouse") renderWarehouse();
+}
+
+function addEquipmentCategory(){
+  const name = prompt("추가할 장비목록/분류명", "");
+  if(!name) return;
+  if(!equipmentCategories.includes(name)) equipmentCategories.push(name);
+  showSnack("장비목록 추가 완료");
+  if(page === "warehouse") renderWarehouse();
+}
+
+function addEquipment(){
+  const name = prompt("장비명", "");
+  if(!name) return;
+  const cat = prompt(`분류\n${equipmentCategories.join(", ")}`, equipmentCategories[0] || "기타장비") || "기타장비";
+  const detail = prompt("세부사항", "") || "";
+  const place = prompt("보관 위치", selectedWarehouse || warehouses[0]) || (selectedWarehouse || warehouses[0]);
+  ensureWarehouse(place);
+  const battery = prompt("배터리", "") || "";
+  const fuel = prompt("연료유/용량", "") || "";
+  const etc = prompt("기타사항", "") || "";
+  const status = prompt("상태", "정상") || "정상";
+  state.equipment.push({id:uid(),cat,name,detail,place,battery,fuel,etc,status});
+  save();
+  showSnack("장비 추가 완료");
+  if(page === "warehouse") renderWarehouse();
 }
 
 function bindGlobal(){
