@@ -1149,122 +1149,194 @@ function editEquipment(id){
 
 
 
-function openManageSettings(){
-  closeMenu();
-  page = "manage";
-  document.getElementById("headTitle").innerHTML = `<div class="page-title">관리 설정</div><div class="date">창고·자재·장비 추가</div>`;
-  document.querySelectorAll(".nav").forEach(b => b.classList.remove("active"));
-  view.innerHTML = `
-    <div class="manage-grid">
-      <button class="manage-card" id="addWarehouseBtn" type="button">🏢 창고 추가</button>
-      <button class="manage-card" id="addCategoryBtn" type="button">📁 자재목록 추가</button>
-      <button class="manage-card" id="addMaterialBtn" type="button">📦 자재 추가</button>
-      <button class="manage-card" id="addEquipmentBtn" type="button">🛠️ 장비 추가</button>
-    </div>
-    <div class="card">
-      <div class="section-title">관리 원칙</div>
-      <div class="row-sub">추가한 창고·자재·장비는 등록, 보관, 재고수정, 이력 화면에 자동 반영됩니다.</div>
-    </div>
-  `;
-  document.getElementById("addWarehouseBtn")?.addEventListener("click", addWarehouse);
-  document.getElementById("addCategoryBtn")?.addEventListener("click", addCategory);
-  document.getElementById("addMaterialBtn")?.addEventListener("click", addMaterial);
-  document.getElementById("addEquipmentBtn")?.addEventListener("click", addEquipmentFromManage);
-}
-
-
-function addEquipmentFromManage(){
-  const name = prompt("장비명", "");
-  if(!name) return;
-  const cat = prompt(`분류\n${equipmentCategories.join(", ")}`, equipmentCategories[0] || "기타장비") || "기타장비";
-  const detail = prompt("세부사항", "") || "";
-  const place = prompt(`보관장소\n${warehouses.join(", ")}`, warehouses[0]) || warehouses[0];
-  ensureWarehouse(place);
-  const battery = prompt("배터리", "") || "";
-  const fuel = prompt("연료유/용량", "") || "";
-  const etc = prompt("기타사항", "") || "";
-  const status = prompt("상태", "정상") || "정상";
-  state.equipment.push({id:uid(),cat,name,detail,place,battery,fuel,etc,status});
-  save();
-  showSnack("장비 추가 완료");
-  openManageSettings();
-}
-
-
 function addWarehouse(){
   const name = prompt("추가할 창고명", "");
   if(!name) return;
   if(state.warehouses.includes(name)){ showSnack("이미 있는 창고입니다"); return; }
   ensureWarehouse(name);
   showSnack("창고 추가 완료");
-  if(page === "manage") openManageSettings();
-  else if(page === "warehouse") renderWarehouse();
+  if(page === "warehouse") renderWarehouse();
+}
+
+function openEntryModal(html){
+  document.getElementById("entryDialog").innerHTML = html;
+  document.getElementById("entryModal").classList.add("show");
+  document.getElementById("closeEntryModal")?.addEventListener("click", closeEntryModal);
+}
+
+function closeEntryModal(){
+  document.getElementById("entryModal").classList.remove("show");
+  document.getElementById("entryDialog").innerHTML = "";
+}
+
+function entryHeader(title,subtitle){
+  return `<div class="entry-modal-head"><div><div class="dialog-title" style="text-align:left;margin:0">${esc(title)}</div><div class="row-sub">${esc(subtitle)}</div></div><button class="entry-close" id="closeEntryModal" type="button" aria-label="닫기">×</button></div>`;
 }
 
 function addMaterialChoice(){
-  const choice = prompt("신규 추가\n1. 자재목록 추가\n2. 자재 추가", "2");
-  if(choice === "1") addCategory();
-  else if(choice === "2") addMaterial();
+  openEntryModal(`
+    ${entryHeader("자재 신규 추가", selectedWarehouse || "보관장소")}
+    <div class="entry-choice-list">
+      <button class="choice-card" id="chooseAddMaterial" type="button"><div><div class="choice-title">📦 자재 추가</div><div class="choice-sub">기존 자재목록에 새 품목을 등록합니다.</div></div><div class="choice-icon">›</div></button>
+      <button class="choice-card" id="chooseAddMaterialCategory" type="button"><div><div class="choice-title">📁 자재목록 추가</div><div class="choice-sub">새 분류와 첫 자재를 함께 등록합니다.</div></div><div class="choice-icon">›</div></button>
+    </div>`);
+  document.getElementById("chooseAddMaterial")?.addEventListener("click", () => showMaterialForm());
+  document.getElementById("chooseAddMaterialCategory")?.addEventListener("click", showMaterialCategoryForm);
+}
+
+function showMaterialForm(preselectedCategory=""){
+  const selectedCategory = cats.includes(preselectedCategory) ? preselectedCategory : (cats[0] || "기타");
+  openEntryModal(`
+    ${entryHeader("자재 추가", selectedWarehouse || "보관장소")}
+    <div class="form entry-form">
+      <label>자재목록<select id="newMaterialCat">${cats.map(cat => `<option value="${esc(cat)}" ${cat === selectedCategory ? "selected" : ""}>${esc(cat)}</option>`).join("")}</select></label>
+      <label>자재명<input id="newMaterialName" placeholder="예: 소형 유흡착재"></label>
+      <div class="form-grid2"><label>단위<input id="newMaterialUnit" value="개" placeholder="kg, L, m, 개"></label><label>초기 수량<input id="newMaterialQty" type="number" inputmode="decimal" min="0" step="0.1" value="0"></label></div>
+      <label>규격·세부사항<input id="newMaterialSpec" placeholder="예: 10kg/1BOX"></label>
+      <label>관리 구분<select id="newMaterialKind"><option value="consume">소모품</option><option value="returnable">출고·회수품</option></select></label>
+      <div class="entry-actions"><button class="btn gray" id="backMaterialChoice" type="button">이전</button><button class="btn primary" id="saveNewMaterial" type="button">자재 저장</button></div>
+    </div>`);
+  document.getElementById("backMaterialChoice")?.addEventListener("click", addMaterialChoice);
+  document.getElementById("saveNewMaterial")?.addEventListener("click", saveMaterialFromForm);
+}
+
+function showMaterialCategoryForm(){
+  openEntryModal(`
+    ${entryHeader("자재목록 추가", selectedWarehouse || "보관장소")}
+    <div class="callout">빈 목록은 만들 수 없어 첫 자재를 함께 등록합니다.</div>
+    <div class="form entry-form">
+      <label>새 자재목록 이름<input id="newCategoryName" placeholder="예: 유류이송 부속품"></label>
+      <label>첫 자재명<input id="newCategoryItem" placeholder="예: 내유호스"></label>
+      <div class="form-grid2"><label>단위<input id="newCategoryUnit" value="개"></label><label>초기 수량<input id="newCategoryQty" type="number" inputmode="decimal" min="0" step="0.1" value="0"></label></div>
+      <label>관리 구분<select id="newCategoryKind"><option value="consume">소모품</option><option value="returnable">출고·회수품</option></select></label>
+      <div class="entry-actions"><button class="btn gray" id="backMaterialChoice" type="button">이전</button><button class="btn primary" id="saveNewCategory" type="button">목록과 자재 저장</button></div>
+    </div>`);
+  document.getElementById("backMaterialChoice")?.addEventListener("click", addMaterialChoice);
+  document.getElementById("saveNewCategory")?.addEventListener("click", saveMaterialCategoryFromForm);
+}
+
+function validInitialQty(id){
+  const value = Number(document.getElementById(id)?.value || 0);
+  return Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function addInitialStockRecord(item,qty){
+  if(!qty || !selectedWarehouse) return;
+  state.stock[selectedWarehouse][item.name] = qty;
+  state.records.push({
+    id:uid(), flow:"재고수정", type:"재고수정", title:`${item.name} 초기재고 등록`, date:todayISO(),
+    warehouse:selectedWarehouse, memo:"변경사유: 신규 자재 등록", status:"done", sourceId:null,
+    items:[{cat:item.cat,name:item.name,qty,unit:item.unit,kind:item.kind,before:0,after:qty,diff:qty}]
+  });
+}
+
+function saveMaterialFromForm(){
+  const cat = document.getElementById("newMaterialCat")?.value || cats[0] || "기타";
+  const name = document.getElementById("newMaterialName")?.value.trim() || "";
+  const unit = document.getElementById("newMaterialUnit")?.value.trim() || "개";
+  const spec = document.getElementById("newMaterialSpec")?.value.trim() || "";
+  const kind = document.getElementById("newMaterialKind")?.value === "returnable" ? "returnable" : "consume";
+  const qty = validInitialQty("newMaterialQty");
+  if(!name){ showSnack("자재명을 입력해주세요"); return; }
+  if(state.catalog.some(item => item.name === name)){ showSnack("이미 등록된 자재명입니다"); return; }
+  if(qty === null){ showSnack("초기 수량을 확인해주세요"); return; }
+  const item = {cat,name,unit,spec,kind};
+  ensureCatalogItem(item);
+  addInitialStockRecord(item,qty);
+  save();
+  closeEntryModal();
+  warehouseTab = "material";
+  renderWarehouse();
+  showSnack("자재 추가 완료");
+}
+
+function saveMaterialCategoryFromForm(){
+  const cat = document.getElementById("newCategoryName")?.value.trim() || "";
+  const name = document.getElementById("newCategoryItem")?.value.trim() || "";
+  const unit = document.getElementById("newCategoryUnit")?.value.trim() || "개";
+  const kind = document.getElementById("newCategoryKind")?.value === "returnable" ? "returnable" : "consume";
+  const qty = validInitialQty("newCategoryQty");
+  if(!cat){ showSnack("자재목록 이름을 입력해주세요"); return; }
+  if(cats.includes(cat)){ showSnack("이미 있는 자재목록입니다"); return; }
+  if(!name){ showSnack("첫 자재명을 입력해주세요"); return; }
+  if(state.catalog.some(item => item.name === name)){ showSnack("이미 등록된 자재명입니다"); return; }
+  if(qty === null){ showSnack("초기 수량을 확인해주세요"); return; }
+  const item = {cat,name,unit,spec:"",kind};
+  ensureCatalogItem(item);
+  addInitialStockRecord(item,qty);
+  save();
+  closeEntryModal();
+  warehouseTab = "material";
+  renderWarehouse();
+  showSnack("자재목록과 첫 자재 추가 완료");
 }
 
 function addEquipmentChoice(){
-  const choice = prompt("신규 추가\n1. 장비목록 추가\n2. 장비 추가", "2");
-  if(choice === "1") addEquipmentCategory();
-  else if(choice === "2") addEquipment();
+  openEntryModal(`
+    ${entryHeader("장비 신규 추가", selectedWarehouse || "보관장소")}
+    <div class="entry-choice-list">
+      <button class="choice-card" id="chooseAddEquipment" type="button"><div><div class="choice-title">🛠️ 장비 추가</div><div class="choice-sub">현재 보관장소에 새 장비를 등록합니다.</div></div><div class="choice-icon">›</div></button>
+      <button class="choice-card" id="chooseAddEquipmentCategory" type="button"><div><div class="choice-title">📁 장비목록 추가</div><div class="choice-sub">새 장비 분류를 만든 뒤 장비를 등록합니다.</div></div><div class="choice-icon">›</div></button>
+    </div>`);
+  document.getElementById("chooseAddEquipment")?.addEventListener("click", () => showEquipmentForm());
+  document.getElementById("chooseAddEquipmentCategory")?.addEventListener("click", showEquipmentCategoryForm);
 }
 
-function addCategory(){
-  const name = prompt("추가할 자재목록/분류명", "");
-  if(!name) return;
-  if(cats.includes(name)){ showSnack("이미 있는 분류입니다"); return; }
-  const itemName = prompt("분류를 생성하기 위한 첫 자재명을 입력하세요", `${name} 품목`);
-  if(!itemName) return;
-  const unit = prompt("단위", "개") || "개";
-  ensureCatalogItem({cat:name,name:itemName,unit,spec:"",kind:"consume"});
-  showSnack("자재목록 추가 완료");
-  if(page === "manage") openManageSettings();
-  else if(page === "warehouse") renderWarehouse();
+function showEquipmentForm(preselectedCategory=""){
+  const selectedCategory = equipmentCategories.includes(preselectedCategory) ? preselectedCategory : (equipmentCategories[0] || "기타장비");
+  openEntryModal(`
+    ${entryHeader("장비 추가", selectedWarehouse || "보관장소")}
+    <div class="form entry-form">
+      <label>장비목록<select id="newEquipmentCat">${equipmentCategories.map(cat => `<option value="${esc(cat)}" ${cat === selectedCategory ? "selected" : ""}>${esc(cat)}</option>`).join("")}</select></label>
+      <label>장비명<input id="newEquipmentName" placeholder="예: 고압세척기 1호"></label>
+      <label>세부사항<input id="newEquipmentDetail" placeholder="모델명·구성품"></label>
+      <div class="form-grid2"><label>배터리<input id="newEquipmentBattery" placeholder="예: 12V 45Ah"></label><label>연료유·용량<input id="newEquipmentFuel" placeholder="예: 경유 20L"></label></div>
+      <label>기타사항<textarea id="newEquipmentEtc" placeholder="점검사항이나 특이사항"></textarea></label>
+      <label>상태<select id="newEquipmentStatus"><option value="정상">정상</option><option value="점검필요">점검필요</option><option value="수리중">수리중</option><option value="사용불가">사용불가</option></select></label>
+      <div class="entry-actions"><button class="btn gray" id="backEquipmentChoice" type="button">이전</button><button class="btn primary" id="saveNewEquipment" type="button">장비 저장</button></div>
+    </div>`);
+  document.getElementById("backEquipmentChoice")?.addEventListener("click", addEquipmentChoice);
+  document.getElementById("saveNewEquipment")?.addEventListener("click", saveEquipmentFromForm);
 }
 
-function addMaterial(){
-  const cat = prompt(`분류명\n현재 분류: ${cats.join(", ")}`, cats[0] || "기타");
-  if(!cat) return;
-  const name = prompt("자재명", "");
-  if(!name) return;
-  if(state.catalog.some(x => x.name === name)){ showSnack("이미 있는 자재입니다"); return; }
-  const unit = prompt("단위", "개") || "개";
-  const spec = prompt("세부사항", "") || "";
-  const kindInput = prompt("구분\n소모품: 1 / 회수품: 2", "1");
-  const kind = kindInput === "2" ? "returnable" : "consume";
-  ensureCatalogItem({cat,name,unit,spec,kind});
-  showSnack("자재 추가 완료");
-  if(page === "manage") openManageSettings();
-  else if(page === "warehouse") renderWarehouse();
+function showEquipmentCategoryForm(){
+  openEntryModal(`
+    ${entryHeader("장비목록 추가", selectedWarehouse || "보관장소")}
+    <div class="form entry-form">
+      <label>새 장비목록 이름<input id="newEquipmentCategory" placeholder="예: 방폭 장비"></label>
+      <div class="entry-actions"><button class="btn gray" id="backEquipmentChoice" type="button">이전</button><button class="btn primary" id="saveEquipmentCategory" type="button">목록 저장 후 장비 추가</button></div>
+    </div>`);
+  document.getElementById("backEquipmentChoice")?.addEventListener("click", addEquipmentChoice);
+  document.getElementById("saveEquipmentCategory")?.addEventListener("click", saveEquipmentCategoryFromForm);
 }
 
-function addEquipmentCategory(){
-  const name = prompt("추가할 장비목록/분류명", "");
-  if(!name) return;
-  if(!equipmentCategories.includes(name)) equipmentCategories.push(name);
-  showSnack("장비목록 추가 완료");
-  if(page === "warehouse") renderWarehouse();
-}
-
-function addEquipment(){
-  const name = prompt("장비명", "");
-  if(!name) return;
-  const cat = prompt(`분류\n${equipmentCategories.join(", ")}`, equipmentCategories[0] || "기타장비") || "기타장비";
-  const detail = prompt("세부사항", "") || "";
-  const place = prompt("보관 위치", selectedWarehouse || warehouses[0]) || (selectedWarehouse || warehouses[0]);
-  ensureWarehouse(place);
-  const battery = prompt("배터리", "") || "";
-  const fuel = prompt("연료유/용량", "") || "";
-  const etc = prompt("기타사항", "") || "";
-  const status = prompt("상태", "정상") || "정상";
-  state.equipment.push({id:uid(),cat,name,detail,place,battery,fuel,etc,status});
+function saveEquipmentCategoryFromForm(){
+  const name = document.getElementById("newEquipmentCategory")?.value.trim() || "";
+  if(!name){ showSnack("장비목록 이름을 입력해주세요"); return; }
+  if(equipmentCategories.includes(name)){ showSnack("이미 있는 장비목록입니다"); return; }
+  state.equipmentCategories = [...new Set([...(state.equipmentCategories || []), name])];
+  refreshGlobals(state);
   save();
+  showSnack("장비목록 추가 완료");
+  showEquipmentForm(name);
+}
+
+function saveEquipmentFromForm(){
+  const cat = document.getElementById("newEquipmentCat")?.value || "기타장비";
+  const name = document.getElementById("newEquipmentName")?.value.trim() || "";
+  const detail = document.getElementById("newEquipmentDetail")?.value.trim() || "";
+  const battery = document.getElementById("newEquipmentBattery")?.value.trim() || "";
+  const fuel = document.getElementById("newEquipmentFuel")?.value.trim() || "";
+  const etc = document.getElementById("newEquipmentEtc")?.value.trim() || "";
+  const status = document.getElementById("newEquipmentStatus")?.value || "정상";
+  if(!name){ showSnack("장비명을 입력해주세요"); return; }
+  if(state.equipment.some(item => item.name === name && item.place === selectedWarehouse)){ showSnack("이 보관장소에 같은 장비명이 있습니다"); return; }
+  state.equipment.push({id:uid(),cat,name,detail,place:selectedWarehouse || warehouses[0],battery,fuel,etc,status});
+  save();
+  closeEntryModal();
+  warehouseTab = "equipment";
+  renderWarehouse();
   showSnack("장비 추가 완료");
-  if(page === "warehouse") renderWarehouse();
 }
 
 function bindGlobal(){
@@ -1280,16 +1352,20 @@ function bindGlobal(){
     if(!menu.contains(e.target) && !btn.contains(e.target)) menu.classList.remove("show");
   });
 
-  document.getElementById("manageBtn")?.addEventListener("click", openManageSettings);
   document.getElementById("backupBtn")?.addEventListener("click", () => { closeMenu(); backup(); });
   document.getElementById("restoreBtn")?.addEventListener("click", () => { closeMenu(); document.getElementById("restoreFile").click(); });
   document.getElementById("restoreFile")?.addEventListener("change", e => { if(e.target.files[0]) restoreFile(e.target.files[0]); });
   document.getElementById("resetBtn")?.addEventListener("click", () => { closeMenu(); resetAll(); });
-  document.getElementById("updateBtn")?.addEventListener("click", () => { closeMenu(); document.getElementById("updateModal").classList.add("show"); });
-  document.getElementById("closeUpdate")?.addEventListener("click", () => document.getElementById("updateModal").classList.remove("show"));
   document.getElementById("appInfoBtn")?.addEventListener("click", () => {
     closeMenu();
-    alert(`Victor\n방제자원 관리 시스템\n\nVersion 0.19.0c Stable\n\nBy\n통영해양경찰서 주무관 정홍준`);
+    document.getElementById("appInfoModal").classList.add("show");
+  });
+  document.getElementById("closeAppInfo")?.addEventListener("click", () => document.getElementById("appInfoModal").classList.remove("show"));
+  document.getElementById("appInfoModal")?.addEventListener("click", event => {
+    if(event.target.id === "appInfoModal") event.currentTarget.classList.remove("show");
+  });
+  document.getElementById("entryModal")?.addEventListener("click", event => {
+    if(event.target.id === "entryModal") closeEntryModal();
   });
 
   let lastTouchEnd = 0;
@@ -1363,7 +1439,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190c")
+      navigator.serviceWorker.register("./sw.js?v=0190d")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });

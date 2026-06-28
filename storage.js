@@ -1,6 +1,7 @@
-const VERSION = "Alpha 0.19.0c Stable";
-const KEY = "victor_state_alpha_0_19_0c";
+const VERSION = "Alpha 0.19.0d Stable";
+const KEY = "victor_state_alpha_0_19_0d";
 const MIGRATE_KEYS = [
+  "victor_state_alpha_0_19_0c",
   "victor_state_alpha_0_19_0b",
   "victor_state_alpha_0_19_0a",
   "victor_state_alpha_0_19_0",
@@ -50,7 +51,8 @@ const defaultCatalog = [
 
 const types = ["사고","이송","훈련","작업","기타"];
 const flowTypes = ["출고","입고"];
-const equipmentCategories = ["고압세척기", "기타장비", "동력분무기", "동력캐리어", "발전기", "보일러", "세척기", "유량계측기", "유회수기", "이송펌프", "이송펌프 동력부", "잠수펌프", "저수심 유류이적세트", "저장용기", "환풍구배풍"];
+const defaultEquipmentCategories = ["고압세척기", "기타장비", "동력분무기", "동력캐리어", "발전기", "보일러", "세척기", "유량계측기", "유회수기", "이송펌프", "이송펌프 동력부", "잠수펌프", "저수심 유류이적세트", "저장용기", "환풍구배풍"];
+let equipmentCategories = [...defaultEquipmentCategories];
 
 const defaultEquipment = [
   {
@@ -349,6 +351,10 @@ function refreshGlobals(state){
   warehouses = Array.isArray(state?.warehouses) && state.warehouses.length ? [...state.warehouses] : [...defaultWarehouses];
   catalog = Array.isArray(state?.catalog) && state.catalog.length ? state.catalog.map(x => ({...x})) : defaultCatalog.map(x => ({...x}));
   cats = [...new Set(catalog.map(x => x.cat))];
+  const savedEquipmentCategories = Array.isArray(state?.equipmentCategories)
+    ? state.equipmentCategories.filter(name => typeof name === "string" && name.trim()).map(name => name.trim())
+    : [];
+  equipmentCategories = [...new Set([...defaultEquipmentCategories, ...savedEquipmentCategories])];
 }
 
 function defaultStock(warehouseList=defaultWarehouses, catalogList=defaultCatalog){
@@ -379,6 +385,7 @@ function defaultState(){
       "소형방제정": {hoursBase:0, fuelBase:0, logs:[]}
     },
     equipment: defaultEquipment.map(x => ({...x})),
+    equipmentCategories: [...defaultEquipmentCategories],
     survey: null,
     lastBackup: null,
     logs: []
@@ -520,6 +527,11 @@ function normalize(raw){
   if(!Array.isArray(state.assetOps["소형방제정"].logs)) state.assetOps["소형방제정"].logs = [];
   if(typeof state.assetOps["소형방제정"].hoursBase !== "number") state.assetOps["소형방제정"].hoursBase = 0;
   if(typeof state.assetOps["소형방제정"].fuelBase !== "number") state.assetOps["소형방제정"].fuelBase = 0;
+
+  state.equipmentCategories = [...new Set([
+    ...defaultEquipmentCategories,
+    ...(Array.isArray(raw.equipmentCategories) ? raw.equipmentCategories.filter(name => typeof name === "string" && name.trim()).map(name => name.trim()) : [])
+  ])];
 
   const existingEquipment = Array.isArray(state.equipment)
     ? state.equipment.filter(e => e && typeof e === "object")

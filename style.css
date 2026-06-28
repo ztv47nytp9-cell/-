@@ -168,3 +168,15 @@ input[type="date"]{height:46px;line-height:20px;-webkit-appearance:none;appearan
 
 .startup-error{margin-top:20px;border:1px solid #F3B7B7}
 .error-message{margin-top:12px;padding:12px;border-radius:12px;background:#FFF3F3;color:#B42318;font-size:13px;line-height:1.5;word-break:break-word}
+
+.menu .menu-danger{color:#B42318;font-weight:850;border-top:6px solid #F2F4F7}
+.app-info-summary{text-align:center;padding:14px 10px 4px}
+.version-chip{display:inline-block;margin-top:10px;padding:6px 10px;border-radius:999px;background:#EAF3FF;color:#0B5CAD;font-size:13px;font-weight:850}
+.entry-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px}
+.entry-close{width:38px;height:38px;border:0;border-radius:12px;background:#F2F4F7;color:#344054;font-size:25px;line-height:1}
+.entry-choice-list{display:grid;gap:12px}
+.entry-form{margin-top:6px}
+.form-grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.entry-actions{display:grid;grid-template-columns:.8fr 1.2fr;gap:10px;margin-top:4px}
+.entry-actions .btn{width:100%}
+@media(max-width:420px){.form-grid2{grid-template-columns:1fr}.entry-actions{grid-template-columns:1fr 1.25fr}}
