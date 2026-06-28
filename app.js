@@ -43,6 +43,7 @@ function setPage(next){
   editingId = null;
   registerMode = "normal";
   document.querySelectorAll(".nav").forEach(b => b.classList.toggle("active", b.dataset.page === page));
+  setHead();
   render();
 }
 
@@ -1247,7 +1248,7 @@ function bindGlobal(){
   document.getElementById("closeUpdate").addEventListener("click", () => document.getElementById("updateModal").classList.remove("show"));
   document.getElementById("appInfoBtn").addEventListener("click", () => {
     closeMenu();
-    alert(`Victor\n방제자원 관리 시스템\n\nVersion 0.18.7\n\nBy\n통영해양경찰서 주무관 정홍준`);
+    alert(`Victor\n방제자원 관리 시스템\n\nVersion 0.18.7aa\n\nBy\n통영해양경찰서 주무관 정홍준`);
   });
 
   let lastTouchEnd = 0;

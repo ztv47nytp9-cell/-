@@ -1,7 +1,7 @@
 {
   "name": "Victor - 방제자원 관리 시스템",
   "short_name": "Victor",
-  "description": "방제자원 관리 시스템 Alpha 0.18.7",
+  "description": "방제자원 관리 시스템 Alpha 0.18.7a",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
