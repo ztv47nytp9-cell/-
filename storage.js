@@ -1,6 +1,7 @@
-const VERSION = "Alpha 0.18.6";
-const KEY = "victor_state_alpha_0_18_6";
+const VERSION = "Alpha 0.18.7";
+const KEY = "victor_state_alpha_0_18_7";
 const MIGRATE_KEYS = [
+  "victor_state_alpha_0_18_6",
   "victor_state_alpha_0_18_5",
   "victor_state_alpha_0_18_4a",
   "victor_state_alpha_0_18_4",

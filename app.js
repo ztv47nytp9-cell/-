@@ -58,7 +58,7 @@ function setHead(){
 function render(){
   setHead();
   if(page === "home") renderHome();
-  if(page === "warehouse") renderWarehouse();
+  page = "warehouse"; setHead(); renderWarehouse();
   if(page === "register") renderRegister();
   if(page === "history") renderHistory();
   if(page === "memo") renderMemo();
@@ -1039,32 +1039,31 @@ function addEquipment(){
   state.equipment.push({id:uid(),cat,name,detail,place,battery,fuel,etc,status});
   save();
   showSnack("장비 추가");
-  if(page === "warehouse") renderWarehouse();
+  page = "warehouse"; setHead(); renderWarehouse();
 }
 
 
 function openManageSettings(){
   closeMenu();
-  page = "manage";
-  document.getElementById("headTitle").innerHTML = `<div class="page-title">관리 설정</div><div class="date">창고·자재·장비 추가</div>`;
+  page = "settings";
+  document.getElementById("headTitle").innerHTML = `<div class="page-title">설정</div><div class="date">앱 관리</div>`;
   document.querySelectorAll(".nav").forEach(b => b.classList.remove("active"));
   view.innerHTML = `
-    <div class="manage-grid">
-      <button class="manage-card" id="addWarehouseBtn" type="button">🏢 창고 추가</button>
-      <button class="manage-card" id="addCategoryBtn" type="button">📁 자재목록 추가</button>
-      <button class="manage-card" id="addMaterialBtn" type="button">📦 자재 추가</button>
-      <button class="manage-card" id="addEquipmentBtn" type="button">🛠️ 장비 추가</button>
-    </div>
-    <div class="card">
-      <div class="section-title">관리 원칙</div>
-      <div class="row-sub">추가한 창고·자재·장비는 등록, 보관, 재고수정, 이력 화면에 자동 반영됩니다.</div>
+    <div class="settings-list">
+      <button class="settings-btn" id="settingsBackup" type="button">데이터 백업<span>현재 데이터를 JSON 파일로 저장합니다.</span></button>
+      <button class="settings-btn" id="settingsRestore" type="button">데이터 복원<span>백업 파일을 불러와 데이터를 복원합니다.</span></button>
+      <button class="settings-btn" id="settingsHelp" type="button">업데이트 내역<span>버전별 변경사항을 확인합니다.</span></button>
+      <button class="settings-btn" id="settingsInfo" type="button">앱 정보<span>Victor 버전 및 개발자 정보를 확인합니다.</span></button>
+      <button class="settings-btn" id="settingsReset" type="button">전체 초기화<span>모든 저장 데이터를 삭제합니다.</span></button>
     </div>
   `;
-  document.getElementById("addWarehouseBtn").addEventListener("click", addWarehouse);
-  document.getElementById("addCategoryBtn").addEventListener("click", addCategory);
-  document.getElementById("addMaterialBtn").addEventListener("click", addMaterial);
-  document.getElementById("addEquipmentBtn").addEventListener("click", addEquipmentFromManage);
+  document.getElementById("settingsBackup").addEventListener("click", backup);
+  document.getElementById("settingsRestore").addEventListener("click", () => document.getElementById("restoreInput").click());
+  document.getElementById("settingsHelp").addEventListener("click", openHelp);
+  document.getElementById("settingsInfo").addEventListener("click", showInfo);
+  document.getElementById("settingsReset").addEventListener("click", hardReset);
 }
+
 
 function addWarehouse(){
   const name = prompt("추가할 창고명", "");
@@ -1126,20 +1125,14 @@ function addWarehouse(){
   if(state.warehouses.includes(name)){ showSnack("이미 있는 창고입니다"); return; }
   ensureWarehouse(name);
   showSnack("창고 추가 완료");
-  if(page === "warehouse") renderWarehouse();
+  page = "warehouse"; setHead(); renderWarehouse();
 }
 
-function addMaterialChoice(){
-  const choice = prompt("신규 추가\n1. 자재목록 추가\n2. 자재 추가", "2");
-  if(choice === "1") addCategory();
-  else if(choice === "2") addMaterial();
-}
+function addMaterialChoice(){ openAddMaterialChoice(); }
 
-function addEquipmentChoice(){
-  const choice = prompt("신규 추가\n1. 장비목록 추가\n2. 장비 추가", "2");
-  if(choice === "1") addEquipmentCategory();
-  else if(choice === "2") addEquipment();
-}
+
+function addEquipmentChoice(){ openAddEquipmentChoice(); }
+
 
 function addCategory(){
   const name = prompt("추가할 자재목록/분류명", "");
@@ -1150,7 +1143,7 @@ function addCategory(){
   const unit = prompt("단위", "개") || "개";
   ensureCatalogItem({cat:name,name:itemName,unit,spec:"",kind:"consume"});
   showSnack("자재목록 추가 완료");
-  if(page === "warehouse") renderWarehouse();
+  page = "warehouse"; setHead(); renderWarehouse();
 }
 
 function addMaterial(){
@@ -1165,7 +1158,7 @@ function addMaterial(){
   const kind = kindInput === "2" ? "returnable" : "consume";
   ensureCatalogItem({cat,name,unit,spec,kind});
   showSnack("자재 추가 완료");
-  if(page === "warehouse") renderWarehouse();
+  page = "warehouse"; setHead(); renderWarehouse();
 }
 
 function addEquipmentCategory(){
@@ -1173,7 +1166,7 @@ function addEquipmentCategory(){
   if(!name) return;
   if(!equipmentCategories.includes(name)) equipmentCategories.push(name);
   showSnack("장비목록 추가 완료");
-  if(page === "warehouse") renderWarehouse();
+  page = "warehouse"; setHead(); renderWarehouse();
 }
 
 function addEquipment(){
@@ -1190,8 +1183,47 @@ function addEquipment(){
   state.equipment.push({id:uid(),cat,name,detail,place,battery,fuel,etc,status});
   save();
   showSnack("장비 추가 완료");
-  if(page === "warehouse") renderWarehouse();
+  page = "warehouse"; setHead(); renderWarehouse();
 }
+
+function openAddMaterialChoice(){
+  page = "addMaterialChoice";
+  document.getElementById("headTitle").innerHTML = `<div class="page-title">자재 신규 추가</div><div class="date">추가할 항목을 선택하세요</div>`;
+  view.innerHTML = `
+    <button class="back" id="backAddMat" type="button">‹ 보관</button>
+    <div class="add-choice-wrap">
+      <button class="add-choice" id="choiceCategory" type="button">
+        <div><strong>자재목록 추가</strong><span>유흡착재, 유처리제, 오일펜스 같은 분류를 추가합니다.</span></div><div class="chev">›</div>
+      </button>
+      <button class="add-choice" id="choiceMaterial" type="button">
+        <div><strong>자재 추가</strong><span>매트형 유흡착재처럼 실제 품목을 추가합니다.</span></div><div class="chev">›</div>
+      </button>
+    </div>
+  `;
+  document.getElementById("backAddMat").addEventListener("click", () => { page = "warehouse"; setHead(); renderWarehouse(); });
+  document.getElementById("choiceCategory").addEventListener("click", addCategory);
+  document.getElementById("choiceMaterial").addEventListener("click", addMaterial);
+}
+
+function openAddEquipmentChoice(){
+  page = "addEquipmentChoice";
+  document.getElementById("headTitle").innerHTML = `<div class="page-title">장비 신규 추가</div><div class="date">추가할 항목을 선택하세요</div>`;
+  view.innerHTML = `
+    <button class="back" id="backAddEq" type="button">‹ 보관</button>
+    <div class="add-choice-wrap">
+      <button class="add-choice" id="choiceEquipCategory" type="button">
+        <div><strong>장비목록 추가</strong><span>유회수기, 발전기, 세척기 같은 장비 분류를 추가합니다.</span></div><div class="chev">›</div>
+      </button>
+      <button class="add-choice" id="choiceEquipment" type="button">
+        <div><strong>장비 추가</strong><span>komara 20k처럼 실제 장비를 추가합니다.</span></div><div class="chev">›</div>
+      </button>
+    </div>
+  `;
+  document.getElementById("backAddEq").addEventListener("click", () => { page = "warehouse"; setHead(); renderWarehouse(); });
+  document.getElementById("choiceEquipCategory").addEventListener("click", addEquipmentCategory);
+  document.getElementById("choiceEquipment").addEventListener("click", addEquipment);
+}
+
 
 function bindGlobal(){
   document.querySelectorAll(".nav").forEach(b => b.addEventListener("click", () => setPage(b.dataset.page)));
@@ -1215,7 +1247,7 @@ function bindGlobal(){
   document.getElementById("closeUpdate").addEventListener("click", () => document.getElementById("updateModal").classList.remove("show"));
   document.getElementById("appInfoBtn").addEventListener("click", () => {
     closeMenu();
-    alert(`Victor\n방제자원 관리 시스템\n\nVersion 0.18.6\n\nBy\n통영해양경찰서 주무관 정홍준`);
+    alert(`Victor\n방제자원 관리 시스템\n\nVersion 0.18.7\n\nBy\n통영해양경찰서 주무관 정홍준`);
   });
 
   let lastTouchEnd = 0;
