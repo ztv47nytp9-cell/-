@@ -122,6 +122,34 @@ function renderHome(){
   view.querySelectorAll("[data-detail]").forEach(b => b.addEventListener("click", () => openDetail(b.dataset.detail)));
 }
 
+
+function totalByMatcher(matcher, unit){
+  return warehouses.reduce((sum,w) => {
+    const bucket = state.stock[w] || {};
+    return sum + catalog.filter(i => matcher(i)).reduce((a,i) => a + Number(bucket[i.name] || 0), 0);
+  }, 0);
+}
+
+function totalStorageSummary(){
+  const absorbent = totalByMatcher(i => i.cat.includes("유흡착재") || i.name.includes("흡착재") || i.name.includes("부착재"), "kg");
+  const boom = totalByMatcher(i => i.cat.includes("오일펜스") || i.name.includes("오일펜스"), "m");
+  const dispersant = totalByMatcher(i => i.name.includes("유처리제") || i.cat.includes("유처리제"), "L");
+  return {absorbent, boom, dispersant};
+}
+
+function storageSummaryCard(){
+  const s = totalStorageSummary();
+  return `<div class="summary-card">
+    <div class="section-title">전체 보관량</div>
+    <div class="summary-grid">
+      <div class="summary-pill"><div class="summary-label">흡착재</div><div class="summary-value">${Number(s.absorbent).toLocaleString("ko-KR")}kg</div></div>
+      <div class="summary-pill"><div class="summary-label">오일펜스</div><div class="summary-value">${Number(s.boom).toLocaleString("ko-KR")}m</div></div>
+      <div class="summary-pill"><div class="summary-label">유처리제</div><div class="summary-value">${Number(s.dispersant).toLocaleString("ko-KR")}L</div></div>
+    </div>
+  </div>`;
+}
+
+
 function warehouseSummary(w){
   const count = catalog.filter(i => (state.stock[w]?.[i.name] || 0) > 0).length;
   const totalKg = catalog.filter(i => i.unit === "kg").reduce((a,i) => a + (state.stock[w]?.[i.name] || 0), 0);
@@ -149,7 +177,8 @@ function renderWarehouse(){
           </button>
         </div>`;
       }).join("")}
-    </div>`;
+    </div><button class="btn secondary" id="addWarehouseInline" type="button" style="width:100%;margin-top:10px">+ 신규 창고 추가</button>`;
+    document.getElementById("addWarehouseInline").addEventListener("click", addWarehouse);
     view.querySelectorAll("[data-wh]").forEach(b => b.addEventListener("click", () => {
       selectedWarehouse = b.dataset.wh;
       warehouseTab = "material";
@@ -1079,7 +1108,7 @@ function bindGlobal(){
   document.getElementById("closeUpdate").addEventListener("click", () => document.getElementById("updateModal").classList.remove("show"));
   document.getElementById("appInfoBtn").addEventListener("click", () => {
     closeMenu();
-    alert(`Victor\n방제자원 관리 시스템\n\nVersion 0.18.5a\n\nBy\n통영해양경찰서 주무관 정홍준`);
+    alert(`Victor\n방제자원 관리 시스템\n\nVersion 0.18.6\n\nBy\n통영해양경찰서 주무관 정홍준`);
   });
 
   let lastTouchEnd = 0;
