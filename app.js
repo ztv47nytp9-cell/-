@@ -4,6 +4,7 @@ let selectedWarehouse = null;
 let draftItems = [];
 let editingId = null;
 let registerMode = "normal";
+let registerFlow = "출고";
 let warehouseTab = "material";
 let historyFilter = "all";
 
@@ -49,11 +50,10 @@ function setHead(){
   const date = new Date().toLocaleDateString("ko-KR",{year:"numeric",month:"2-digit",day:"2-digit",weekday:"short"});
   if(page === "home") h.innerHTML = `<div class="logo-block"><div class="logo-main">VICTOR</div><div class="logo-sub">Marine Pollution Response</div><div class="logo-ko">방제자원 관리 시스템</div></div>`;
   if(page === "warehouse") h.innerHTML = `<div class="page-title">보관</div><div class="date">전체 보관 장소 ${warehouses.length}개</div>`;
-  if(page === "register") h.innerHTML = `<div class="page-title">${registerMode === "quick" ? "긴급기록" : "등록"}</div><div class="date">${registerMode === "quick" ? "자재 사용량만 빠르게 미반영 저장합니다." : "자재 출고 기록을 등록합니다."}</div>`;
-  if(page === "history") h.innerHTML = `<div class="page-title">이력</div><div class="date">미반영 기록과 완료 기록을 조회합니다.</div>`;
+  if(page === "register") h.innerHTML = `<div class="page-title">${registerMode === "quick" ? "긴급기록" : "등록"}</div><div class="date">${registerMode === "quick" ? "현장 사용량 임시 저장" : "평상시 출고·입고 기록"}</div>`;
+  if(page === "history") h.innerHTML = `<div class="page-title">이력</div><div class="date">출고·입고·긴급기록</div>`;
   if(page === "memo") h.innerHTML = `<div class="page-title">메모</div><div class="date">일자별 메모 관리</div>`;
 }
-
 function render(){
   setHead();
   if(page === "home") renderHome();
@@ -163,8 +163,7 @@ function renderWarehouse(){
     <button class="back" id="backWh" type="button">‹ 보관</button>
     <div class="card">
       <div class="section-title">${esc(selectedWarehouse)}</div>
-      <div class="row-sub">위치 ${esc(info.location || "-")} · 담당 ${esc(info.manager || "-")} · 연락처 ${esc(info.phone || "-")}</div>
-      <button class="btn secondary" id="editInfo" type="button" style="width:100%;margin-top:12px">보관 정보 수정</button>
+      <div class="row-sub">📌 중요 메모</div><div class="memo-box">${info.memo ? esc(info.memo) : "등록된 메모가 없습니다."}</div><button class="btn secondary" id="editInfo" type="button" style="width:100%;margin-top:12px">보관 정보 수정</button>
     </div>
     ${typeof renderOps === "function" ? renderOps(selectedWarehouse) : ""}
     <div class="card">
@@ -199,25 +198,17 @@ function renderWarehouseEquipment(place){
   const list = (state.equipment || []).filter(e => e.place === place && !["방제지휘차량","소형방제정"].includes(e.name));
   return `<div>
     <button class="btn primary" id="addEquip" type="button" style="width:100%;margin-bottom:12px">장비 추가</button>
-    <div class="list-card">${list.length ? list.map(e => `<button class="list-row" data-equip="${e.id}" type="button"><div><div class="row-title">${esc(e.name)}</div><div class="row-sub">${esc(e.cat)} · ${esc(e.status)}${e.memo ? " · 메모 있음" : ""}</div></div><div class="chev">›</div></button>`).join("") : `<div class="emptybox">이 보관 장소에 등록된 장비가 없습니다.</div>`}</div>
+    <div class="list-card">${list.length ? list.map(e => `<button class="list-row" data-equip="${e.id}" type="button"><div><div class="row-title">${esc(e.name)}</div><div class="row-sub">${esc(e.cat)} · ${esc(e.status)}${e.detail ? " · " + esc(e.detail) : ""}${e.etc ? " · 메모 있음" : ""}</div></div><div class="chev">›</div></button>`).join("") : `<div class="emptybox">이 보관 장소에 등록된 장비가 없습니다.</div>`}</div>
   </div>`;
 }
 
 function editWarehouseInfo(w){
-  const info = state.warehouseInfos[w] || {location:"",manager:"",phone:"",email:"",memo:"",updated:""};
-  const location = prompt(`${w}\n위치`, info.location || "");
-  if(location === null) return;
-  const manager = prompt(`${w}\n담당자`, info.manager || "");
-  if(manager === null) return;
-  const phone = prompt(`${w}\n연락처`, info.phone || "");
-  if(phone === null) return;
-  const email = prompt(`${w}\n이메일`, info.email || "");
-  if(email === null) return;
-  const memo = prompt(`${w}\n비고/메모`, info.memo || "");
+  const info = state.warehouseInfos[w] || {memo:"",updated:""};
+  const memo = prompt(`${w}\n중요 메모`, info.memo || "");
   if(memo === null) return;
-  state.warehouseInfos[w] = {...info, location, manager, phone, email, memo, updated: todayISO()};
+  state.warehouseInfos[w] = {memo, updated: todayISO()};
   save();
-  showSnack("보관 정보 저장");
+  showSnack("보관 메모 저장");
   renderWarehouse();
 }
 
@@ -262,16 +253,79 @@ function quickRecordCard(){
   return `<div class="callout">긴급기록은 사고 현장에서 자재 사용량만 빠르게 남기는 임시 기록입니다. 저장 후 이력에서 보관 장소와 제목을 정해 재고에 반영합니다.</div>`;
 }
 
+
+function ensureWarehouse(name){
+  name = String(name || "").trim();
+  if(!name) return false;
+  if(!state.warehouses.includes(name)){
+    state.warehouses.push(name);
+    state.stock[name] = {};
+    state.catalog.forEach(i => state.stock[name][i.name] = 0);
+    state.warehouseInfos[name] = {memo:"", updated:""};
+    refreshGlobals(state);
+    save();
+  }
+  return true;
+}
+
+function ensureCatalogItem(item){
+  if(!item || !item.name) return false;
+  if(!state.catalog.some(x => x.name === item.name)){
+    state.catalog.push(item);
+    state.warehouses.forEach(w => {
+      if(!state.stock[w]) state.stock[w] = {};
+      state.stock[w][item.name] = 0;
+    });
+    refreshGlobals(state);
+    save();
+  }
+  return true;
+}
+
+function stockAvailable(warehouse, items){
+  return items.every(it => (state.stock[warehouse]?.[it.name] || 0) >= Number(it.qty || 0));
+}
+
+function applyStock(warehouse, items, flow){
+  items.forEach(it => {
+    if(!state.stock[warehouse]) state.stock[warehouse] = {};
+    if(!(it.name in state.stock[warehouse])) state.stock[warehouse][it.name] = 0;
+    if(flow === "입고") state.stock[warehouse][it.name] += Number(it.qty || 0);
+    else state.stock[warehouse][it.name] -= Number(it.qty || 0);
+  });
+}
+
+function reverseStock(warehouse, items, flow){
+  items.forEach(it => {
+    if(!state.stock[warehouse]) state.stock[warehouse] = {};
+    if(!(it.name in state.stock[warehouse])) state.stock[warehouse][it.name] = 0;
+    if(flow === "입고") state.stock[warehouse][it.name] -= Number(it.qty || 0);
+    else state.stock[warehouse][it.name] += Number(it.qty || 0);
+  });
+}
+
+function createFlowRecord({flow,type,title,date,warehouse,memo,items,status="done",sourceId=null}){
+  return {id:uid(), flow, type, title, date, warehouse, memo, status, sourceId, items:items.map(x=>({...x}))};
+}
+
 function renderRegister(){
   draftItems = draftItems.length ? draftItems : [];
   view.innerHTML = `
-    <div class="mode-tabs">
-      <button class="mode-btn ${registerMode === "normal" ? "active" : ""}" id="modeNormal" type="button">일반 등록</button>
-      <button class="mode-btn ${registerMode === "quick" ? "active" : ""}" id="modeQuick" type="button">긴급기록</button>
+    <div class="choice-grid">
+      <button class="choice-card ${registerMode === "normal" ? "active" : ""}" id="modeNormal" type="button">
+        <div><div class="choice-title">일반등록</div><div class="choice-sub">평상시 자재 출고·입고를 기록하고 재고에 즉시 반영합니다.</div></div><div class="choice-icon">📦</div>
+      </button>
+      <button class="choice-card danger ${registerMode === "quick" ? "active" : ""}" id="modeQuick" type="button">
+        <div><div class="choice-title">🚨 긴급기록</div><div class="choice-sub">사고 현장에서 사용량만 빠르게 저장합니다. 재고는 나중에 반영합니다.</div></div><div class="choice-icon">›</div>
+      </button>
     </div>
     ${registerMode === "quick" ? quickRecordCard() : ""}
     <div class="form">
       ${registerMode === "normal" ? `
+        <div class="flow-grid">
+          <button class="flow-btn ${registerFlow === "출고" ? "active" : ""}" id="flowOut" type="button">출고</button>
+          <button class="flow-btn ${registerFlow === "입고" ? "active" : ""}" id="flowIn" type="button">입고</button>
+        </div>
         <label>종류<select id="recType">${types.map(t=>`<option value="${t}">${t}</option>`).join("")}</select></label>
         <label>보관<select id="recWarehouse">${warehouses.map(w=>`<option value="${esc(w)}">${esc(w)}</option>`).join("")}</select></label>
         <label>날짜<input id="recDate" type="date" value="${todayISO()}"></label>
@@ -284,17 +338,21 @@ function renderRegister(){
       `}
       <div>
         <div class="section-head" style="margin:5px 0 8px">
-          <div class="section-title" style="font-size:16px">${registerMode === "quick" ? "사용 자재" : "출고 자재"}</div>
+          <div class="section-title" style="font-size:16px">${registerMode === "quick" ? "사용 자재" : registerFlow + " 자재"}</div>
           <button class="btn secondary" id="addItem" type="button">+ 자재 추가</button>
         </div>
         <div id="itemArea"></div>
       </div>
       <label>메모<textarea id="recMemo" placeholder="${registerMode === "quick" ? "현장 메모를 간단히 입력하세요" : "메모를 입력하세요"}"></textarea></label>
-      <button class="btn primary" id="saveRecord" type="button">${registerMode === "quick" ? "미반영으로 저장" : "기록 저장"}</button>
+      <button class="btn primary" id="saveRecord" type="button">${registerMode === "quick" ? "미반영으로 저장" : registerFlow + " 저장"}</button>
     </div>
   `;
   document.getElementById("modeNormal").addEventListener("click", () => { registerMode = "normal"; renderRegister(); setHead(); });
   document.getElementById("modeQuick").addEventListener("click", () => { registerMode = "quick"; renderRegister(); setHead(); });
+  const outBtn = document.getElementById("flowOut");
+  if(outBtn) outBtn.addEventListener("click", () => { registerFlow = "출고"; renderRegister(); });
+  const inBtn = document.getElementById("flowIn");
+  if(inBtn) inBtn.addEventListener("click", () => { registerFlow = "입고"; renderRegister(); });
   document.getElementById("addItem").addEventListener("click", addDraftItem);
   document.getElementById("saveRecord").addEventListener("click", saveRecord);
   renderItems();
@@ -360,53 +418,52 @@ function saveRecord(){
   const items = draftItems.map(x => ({...x, qty:Number(x.qty || 0)})).filter(x => x.qty > 0);
 
   if(registerMode === "normal" && !title){ showSnack("제목을 입력해주세요"); return; }
-  if(!items.length){ showSnack(registerMode === "quick" ? "사용 자재를 추가해주세요" : "출고 자재를 추가해주세요"); return; }
+  if(!items.length){ showSnack(registerMode === "quick" ? "사용 자재를 추가해주세요" : "자재를 추가해주세요"); return; }
 
   if(registerMode === "quick"){
-    state.records.push({
-      id: uid(),
-      type: "사고",
-      warehouse: "",
+    state.records.push(createFlowRecord({
+      flow:"긴급",
+      type:"사고",
+      warehouse:"",
       date,
-      title: title || nowQuickTitle(),
+      title:title || nowQuickTitle(),
       memo,
-      status: "pending",
+      status:"pending",
       items
-    });
+    }));
     draftItems = [];
     save();
     showSnack("긴급기록 저장(미반영)");
     vibrate(20);
+    historyFilter = "pending";
     setPage("history");
     return;
   }
 
-  const ok = items.every(it => (state.stock[warehouse][it.name] || 0) >= it.qty);
-  if(!ok){ showSnack("재고가 부족합니다"); vibrate(80); return; }
+  if(registerFlow === "출고" && !stockAvailable(warehouse, items)){
+    showSnack("재고가 부족합니다");
+    vibrate(80);
+    return;
+  }
 
-  items.forEach(it => state.stock[warehouse][it.name] -= it.qty);
+  applyStock(warehouse, items, registerFlow);
+  state.records.push(createFlowRecord({
+    flow:registerFlow,
+    type,
+    warehouse,
+    date,
+    title,
+    memo,
+    status:"done",
+    items
+  }));
 
-  state.records.push({id:uid(), type, warehouse, date, title, memo, status:"done", items});
   draftItems = [];
   save();
-  showSnack("저장되었습니다");
+  showSnack(`${registerFlow} 저장`);
   vibrate(20);
+  historyFilter = "done";
   setPage("history");
-}
-
-function summarizeItems(items){
-  if(!items || !items.length) return "자재 없음";
-  return items.slice(0,2).map(i => `${i.name} ${qtyText(i.qty,i.unit)}`).join(" · ") + (items.length > 2 ? ` 외 ${items.length-2}건` : "");
-}
-
-function historyDateGroups(records){
-  const groups = {};
-  records.forEach(r => {
-    const d = r.date || todayISO();
-    if(!groups[d]) groups[d] = [];
-    groups[d].push(r);
-  });
-  return Object.keys(groups).sort((a,b)=>b.localeCompare(a)).map(d => ({date:d, records:groups[d]}));
 }
 
 function renderHistory(){
@@ -444,7 +501,7 @@ function renderHistoryListHtml(records){
       ${g.records.map(r => `
         <button class="list-row" data-detail="${r.id}" type="button">
           <div>
-            <div><span class="badge ${r.status === "pending" ? "red" : "blue"}">${r.status === "pending" ? "미반영" : esc(r.type)}</span></div>
+            <div><span class="badge ${r.status === "pending" ? "red" : (r.flow === "입고" ? "green" : "blue")}">${r.status === "pending" ? "미반영" : esc(r.flow || r.type)}</span></div>
             <div class="row-title" style="margin-top:7px">${esc(r.title)}</div>
             <div class="row-sub">${r.warehouse ? esc(r.warehouse) : "보관 미지정"} · ${esc(summarizeItems(r.items))}</div>
           </div>
@@ -466,18 +523,37 @@ function applyPendingRecord(id){
   const warehouse = prompt("재고를 차감할 보관 장소", warehouses[0]);
   if(warehouse === null) return;
   if(!warehouses.includes(warehouse)){ showSnack("등록된 보관 장소가 아닙니다"); return; }
-  const title = prompt("정식 기록 제목", r.title || nowQuickTitle());
+  const title = prompt("사고명 또는 정식 기록 제목", r.title || nowQuickTitle());
   if(title === null) return;
 
-  const ok = r.items.every(it => (state.stock[warehouse][it.name] || 0) >= it.qty);
-  if(!ok){ showSnack("재고가 부족해서 반영할 수 없습니다"); vibrate(80); return; }
+  if(!stockAvailable(warehouse, r.items)){
+    showSnack("재고가 부족해서 반영할 수 없습니다");
+    vibrate(80);
+    return;
+  }
 
-  r.items.forEach(it => state.stock[warehouse][it.name] -= it.qty);
+  applyStock(warehouse, r.items, "출고");
+
+  const outbound = createFlowRecord({
+    flow:"출고",
+    type:"사고",
+    warehouse,
+    date:todayISO(),
+    title:title.trim() || r.title || nowQuickTitle(),
+    memo:`긴급기록 반영: ${r.title}${r.memo ? "\\n" + r.memo : ""}`,
+    status:"done",
+    sourceId:r.id,
+    items:r.items
+  });
+  state.records.push(outbound);
+
   r.warehouse = warehouse;
   r.title = title.trim() || r.title || nowQuickTitle();
   r.status = "done";
+  r.flow = "긴급";
+  r.memo = r.memo || "";
   save();
-  showSnack("재고 반영 완료");
+  showSnack("재고 반영 및 출고이력 생성 완료");
   vibrate(20);
   openDetail(id);
 }
@@ -490,7 +566,7 @@ function openDetail(id){
   view.innerHTML = `
     <button class="back" id="backHist" type="button">‹ 이력</button>
     <div class="card">
-      <span class="badge ${r.status === "pending" ? "red" : "blue"}">${r.status === "pending" ? "미반영" : esc(r.type)}</span>
+      <span class="badge ${r.status === "pending" ? "red" : (r.flow === "입고" ? "green" : "blue")}">${r.status === "pending" ? "미반영" : esc(r.flow || r.type)}</span>
       <div class="section-title" style="margin-top:10px">${esc(r.title)}</div>
       <div class="row-sub">${fmtDate(r.date)} · ${r.warehouse ? esc(r.warehouse) : "보관 미지정"}</div>
       ${r.memo ? `<div class="callout" style="margin-top:12px">${esc(r.memo)}</div>` : ""}
@@ -507,7 +583,7 @@ function openDetail(id){
   if(applyBtn) applyBtn.addEventListener("click", () => applyPendingRecord(id));
   document.getElementById("deleteRecord").addEventListener("click", () => {
     if(!confirm(r.status === "pending" ? "미반영 기록을 삭제할까요?" : "기록을 삭제하고 재고를 복구할까요?")) return;
-    if(r.status === "done") r.items.forEach(i => state.stock[r.warehouse][i.name] += i.qty);
+    if(r.status === "done" && r.flow !== "긴급") reverseStock(r.warehouse, r.items, r.flow || "출고");
     state.records = state.records.filter(x => x.id !== id);
     save();
     showSnack("삭제되었습니다");
@@ -831,13 +907,20 @@ function openEquipment(id){
   if(name === null) return;
   const cat = prompt(`분류\n${equipmentCategories.join(", ")}`, e.cat);
   if(cat === null) return;
+  const detail = prompt("세부사항", e.detail || "");
+  if(detail === null) return;
   const place = prompt("보관 위치", e.place);
   if(place === null) return;
+  ensureWarehouse(place);
+  const battery = prompt("배터리", e.battery || "");
+  if(battery === null) return;
+  const fuel = prompt("연료유/용량", e.fuel || "");
+  if(fuel === null) return;
+  const etc = prompt("기타사항", e.etc || "");
+  if(etc === null) return;
   const status = prompt("상태", e.status);
   if(status === null) return;
-  const memo = prompt("메모", e.memo || "");
-  if(memo === null) return;
-  Object.assign(e, {name:name||"장비", cat:cat||"기타장비", place:place||warehouses[0], status:status||"정상", memo});
+  Object.assign(e, {name:name||"장비", cat:cat||"기타장비", detail, place:place||warehouses[0], battery, fuel, etc, status:status||"정상"});
   save();
   showSnack("장비 저장");
   renderWarehouse();
@@ -856,6 +939,83 @@ function addEquipment(){
   renderWarehouse();
 }
 
+
+function openManageSettings(){
+  closeMenu();
+  page = "manage";
+  document.getElementById("headTitle").innerHTML = `<div class="page-title">관리 설정</div><div class="date">창고·자재·장비 추가</div>`;
+  document.querySelectorAll(".nav").forEach(b => b.classList.remove("active"));
+  view.innerHTML = `
+    <div class="manage-grid">
+      <button class="manage-card" id="addWarehouseBtn" type="button">🏢 창고 추가</button>
+      <button class="manage-card" id="addCategoryBtn" type="button">📁 자재목록 추가</button>
+      <button class="manage-card" id="addMaterialBtn" type="button">📦 자재 추가</button>
+      <button class="manage-card" id="addEquipmentBtn" type="button">🛠️ 장비 추가</button>
+    </div>
+    <div class="card">
+      <div class="section-title">관리 원칙</div>
+      <div class="row-sub">추가한 창고·자재·장비는 등록, 보관, 재고수정, 이력 화면에 자동 반영됩니다.</div>
+    </div>
+  `;
+  document.getElementById("addWarehouseBtn").addEventListener("click", addWarehouse);
+  document.getElementById("addCategoryBtn").addEventListener("click", addCategory);
+  document.getElementById("addMaterialBtn").addEventListener("click", addMaterial);
+  document.getElementById("addEquipmentBtn").addEventListener("click", addEquipmentFromManage);
+}
+
+function addWarehouse(){
+  const name = prompt("추가할 창고명", "");
+  if(!name) return;
+  if(state.warehouses.includes(name)){ showSnack("이미 있는 창고입니다"); return; }
+  ensureWarehouse(name);
+  showSnack("창고 추가 완료");
+  openManageSettings();
+}
+
+function addCategory(){
+  const name = prompt("추가할 자재목록/분류명", "");
+  if(!name) return;
+  if(cats.includes(name)){ showSnack("이미 있는 분류입니다"); return; }
+  const itemName = prompt("분류를 생성하기 위한 첫 자재명을 입력하세요\n예: 예비 품목", `${name} 품목`);
+  if(!itemName) return;
+  const unit = prompt("단위", "개") || "개";
+  ensureCatalogItem({cat:name,name:itemName,unit,spec:"",kind:"consume"});
+  showSnack("자재목록 추가 완료");
+  openManageSettings();
+}
+
+function addMaterial(){
+  const cat = prompt(`분류명\n현재 분류: ${cats.join(", ")}`, cats[0] || "기타");
+  if(!cat) return;
+  const name = prompt("자재명", "");
+  if(!name) return;
+  if(state.catalog.some(x => x.name === name)){ showSnack("이미 있는 자재입니다"); return; }
+  const unit = prompt("단위", "개") || "개";
+  const spec = prompt("세부사항", "") || "";
+  const kindInput = prompt("구분\n소모품: 1 / 회수품: 2", "1");
+  const kind = kindInput === "2" ? "returnable" : "consume";
+  ensureCatalogItem({cat,name,unit,spec,kind});
+  showSnack("자재 추가 완료");
+  openManageSettings();
+}
+
+function addEquipmentFromManage(){
+  const name = prompt("장비명", "");
+  if(!name) return;
+  const cat = prompt(`분류\n${equipmentCategories.join(", ")}`, equipmentCategories[0] || "기타장비") || "기타장비";
+  const detail = prompt("세부사항", "") || "";
+  const place = prompt(`보관장소\n${warehouses.join(", ")}`, warehouses[0]) || warehouses[0];
+  ensureWarehouse(place);
+  const battery = prompt("배터리", "") || "";
+  const fuel = prompt("연료유/용량", "") || "";
+  const etc = prompt("기타사항", "") || "";
+  const status = prompt("상태", "정상") || "정상";
+  state.equipment.push({id:uid(),cat,name,detail,place,battery,fuel,etc,status});
+  save();
+  showSnack("장비 추가 완료");
+  openManageSettings();
+}
+
 function bindGlobal(){
   document.querySelectorAll(".nav").forEach(b => b.addEventListener("click", () => setPage(b.dataset.page)));
 
@@ -869,6 +1029,7 @@ function bindGlobal(){
     if(!menu.contains(e.target) && !btn.contains(e.target)) menu.classList.remove("show");
   });
 
+  document.getElementById("manageBtn")?.addEventListener("click", openManageSettings);
   document.getElementById("backupBtn").addEventListener("click", () => { closeMenu(); backup(); });
   document.getElementById("restoreBtn").addEventListener("click", () => { closeMenu(); document.getElementById("restoreFile").click(); });
   document.getElementById("restoreFile").addEventListener("change", e => { if(e.target.files[0]) restoreFile(e.target.files[0]); });
@@ -877,7 +1038,7 @@ function bindGlobal(){
   document.getElementById("closeUpdate").addEventListener("click", () => document.getElementById("updateModal").classList.remove("show"));
   document.getElementById("appInfoBtn").addEventListener("click", () => {
     closeMenu();
-    alert(`Victor\n방제자원 관리 시스템\n\nVersion 0.18.3\n\nBy\n통영해양경찰서 주무관 정홍준`);
+    alert(`Victor\n방제자원 관리 시스템\n\nVersion 0.18.4\n\nBy\n통영해양경찰서 주무관 정홍준`);
   });
 
   let lastTouchEnd = 0;

@@ -104,3 +104,18 @@ textarea{min-height:74px;resize:vertical}
 .history-tab.active{background:#EAF3FF;border-color:#BDD5F8;color:var(--blue2)}
 input[type="date"]{height:46px;line-height:20px;-webkit-appearance:none;appearance:none}
 .form label{display:block}
+
+
+.choice-grid{display:grid;grid-template-columns:1fr;gap:10px;margin-bottom:14px}
+.choice-card{border:1px solid var(--border);background:#fff;border-radius:17px;padding:17px 15px;text-align:left;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.choice-card.active{border-color:#8AB8F5;background:#EAF3FF}
+.choice-card.danger.active{border-color:#FDBA74;background:#FFF7ED}
+.choice-title{font-size:18px;font-weight:900;color:#101828}
+.choice-sub{font-size:13px;color:var(--muted);margin-top:5px;line-height:1.35}
+.choice-icon{font-size:27px}
+.flow-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.flow-btn{border:1px solid var(--border);background:#fff;border-radius:14px;padding:13px 10px;font-weight:900;color:#344054}
+.flow-btn.active{background:#EAF3FF;border-color:#BDD5F8;color:var(--blue2)}
+.manage-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.manage-card{border:1px solid var(--border);background:#fff;border-radius:16px;padding:14px;text-align:left;font-weight:850}
+.memo-box{background:#F8FAFC;border:1px solid var(--border);border-radius:14px;padding:13px;margin-top:10px;color:#344054;line-height:1.5;white-space:pre-wrap}
