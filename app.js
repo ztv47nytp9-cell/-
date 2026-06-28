@@ -7,6 +7,11 @@ let registerMode = "normal";
 let registerFlow = "출고";
 let warehouseTab = "material";
 let historyFilter = "all";
+let historyDateFilter = "all";
+let historyFlowFilter = "all";
+let homeActivityTab = "history";
+let editingMemoId = null;
+let restoringNavigation = false;
 const stockEditReasons = ["재고조사","오기입 수정","폐기","파손","전산 수정","기타"];
 
 const view = document.getElementById("view");
@@ -25,9 +30,15 @@ function qtyText(q,u){
   return `${Number(q).toLocaleString("ko-KR",{maximumFractionDigits:1})} ${u}`;
 }
 
-function vibrate(ms=20){
-  try{ if(navigator.vibrate) navigator.vibrate(ms); }catch(e){}
+function vibrate(pattern=12){
+  if(state.settings?.haptics === false) return;
+  try{ if(navigator.vibrate) navigator.vibrate(pattern); }catch(e){}
 }
+
+function hapticTap(){ vibrate(8); }
+function hapticSuccess(){ vibrate(24); }
+function hapticError(){ vibrate([45,35,45]); }
+
 
 function showSnack(msg){
   const s = document.getElementById("snackbar");
@@ -37,13 +48,30 @@ function showSnack(msg){
   window.__snackTimer = setTimeout(() => s.classList.remove("show"), 1200);
 }
 
-function setPage(next){
+function updateBottomNav(){
+  document.querySelectorAll(".nav").forEach(button => button.classList.toggle("active", button.dataset.page === page));
+}
+
+function pushNavigationState(nav){
+  if(restoringNavigation) return;
+  try{ window.history.pushState({victor:true,...nav}, ""); }catch(e){}
+}
+
+function replaceNavigationState(nav){
+  if(restoringNavigation) return;
+  try{ window.history.replaceState({victor:true,...nav}, ""); }catch(e){}
+}
+
+
+function setPage(next, options={}){
   page = next;
   selectedWarehouse = null;
   editingId = null;
-  registerMode = "normal";
-  document.querySelectorAll(".nav").forEach(b => b.classList.toggle("active", b.dataset.page === page));
+  if(next !== "register") registerMode = "normal";
+  if(next !== "memo") editingMemoId = null;
+  updateBottomNav();
   render();
+  if(options.push !== false) pushNavigationState({page:next});
 }
 
 function setHead(){
@@ -177,38 +205,140 @@ function createFlowRecord({flow,type,title,date,warehouse,memo,items,status="don
   };
 }
 
+function todayWorkSummary(){
+  const today = todayISO();
+  const records = state.records.filter(record => record.date === today);
+  return {
+    out:records.filter(record => record.status === "done" && record.flow === "출고").length,
+    in:records.filter(record => record.status === "done" && record.flow === "입고").length,
+    edit:records.filter(record => record.status === "done" && record.flow === "재고수정").length
+  };
+}
+
+function recentMemos(n=3){
+  return [...state.memos].sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id)).slice(0,n);
+}
+
+function rememberLastVisit(visit){
+  state.ui = state.ui || {lastVisit:null};
+  state.ui.lastVisit = {...visit, updatedAt:new Date().toISOString()};
+  try{ save(); }catch(e){}
+}
+
+function lastVisitText(){
+  const visit = state.ui?.lastVisit;
+  if(!visit) return "";
+  if(visit.kind === "warehouse") return `${visit.name} · ${visit.tab === "equipment" ? "장비" : "자재"}`;
+  if(visit.kind === "equipment") return `장비 · ${visit.name}`;
+  if(visit.kind === "record") return `이력 · ${visit.title}`;
+  return "";
+}
+
+function continueLastVisit(){
+  const visit = state.ui?.lastVisit;
+  if(!visit) return;
+  if(visit.kind === "warehouse" && warehouses.includes(visit.name)){
+    page = "warehouse";
+    selectedWarehouse = visit.name;
+    warehouseTab = visit.tab === "equipment" ? "equipment" : "material";
+    updateBottomNav();
+    render();
+    pushNavigationState({page:"warehouse",warehouse:selectedWarehouse,tab:warehouseTab});
+    return;
+  }
+  if(visit.kind === "equipment" && state.equipment.some(item => item.id === visit.id)){
+    openEquipment(visit.id);
+    return;
+  }
+  if(visit.kind === "record" && state.records.some(record => record.id === visit.id)){
+    openDetail(visit.id);
+    return;
+  }
+  state.ui.lastVisit = null;
+  save();
+  showSnack("이어갈 작업을 찾지 못했습니다");
+  renderHome();
+}
+
+function startHomeRegister(mode,flow="출고"){
+  draftItems = [];
+  registerMode = mode;
+  registerFlow = flow;
+  page = "register";
+  selectedWarehouse = null;
+  editingId = null;
+  updateBottomNav();
+  render();
+  pushNavigationState({page:"register",mode,flow});
+}
+
+function openTodayHistory(flow){
+  historyFilter = "all";
+  historyDateFilter = "today";
+  historyFlowFilter = flow;
+  setPage("history");
+}
+
+function homeActivityHtml(){
+  if(homeActivityTab === "memo"){
+    const memos = recentMemos(3);
+    return memos.length ? memos.map(memo => `
+      <button class="list-row" data-home-memo="${memo.id}" type="button">
+        <div><div class="row-title">${esc(memo.title)}</div><div class="row-sub">${fmtDate(memo.date)} · ${esc((memo.body || "").slice(0,55))}</div></div><div class="chev">›</div>
+      </button>`).join("") : `<div class="emptybox">아직 메모가 없습니다.</div>`;
+  }
+  const recent = getRecent(3);
+  return recent.length ? recent.map(recordRow).join("") : `<div class="emptybox">아직 기록이 없습니다.</div>`;
+}
+
 function renderHome(){
   const pending = pendingRecords().length;
-  const recent = getRecent(3);
+  const today = todayWorkSummary();
+  const lastVisit = lastVisitText();
   view.innerHTML = `
-    <div class="grid2">
-      <button class="card metric dash-card" id="dashPending" type="button">
-        <div class="iconbox">🚨</div><div><div class="metric-label">미반영 긴급기록</div><div class="metric-value">${pending}건</div></div><div class="chev">›</div>
-      </button>
-      <button class="card metric dash-card" id="dashWarehouse" type="button">
-        <div class="iconbox">🏢</div><div><div class="metric-label">보관</div><div class="metric-value">${warehouses.length}개</div></div><div class="chev">›</div>
-      </button>
-      <button class="card metric dash-card" id="dashCatalog" type="button">
-        <div class="iconbox">📋</div><div><div class="metric-label">관리품목</div><div class="metric-value">${catalog.length}종</div></div><div class="chev">›</div>
-      </button>
-      <button class="card metric dash-card" id="dashHistory" type="button">
-        <div class="iconbox">📚</div><div><div class="metric-label">등록이력</div><div class="metric-value">${state.records.length}건</div></div><div class="chev">›</div>
-      </button>
+    <div class="home-quick card">
+      <div class="section-title">바로 등록</div>
+      <div class="home-quick-grid">
+        <button class="quick-action emergency" id="homeQuickEmergency" type="button"><span>🚨</span><strong>긴급기록</strong></button>
+        <button class="quick-action" id="homeQuickOut" type="button"><span>↗</span><strong>출고</strong></button>
+        <button class="quick-action" id="homeQuickIn" type="button"><span>↙</span><strong>입고</strong></button>
+      </div>
     </div>
-    <div class="section-head"><div class="section-title">최근 기록</div><button class="link-btn" id="goHistory">더보기 ›</button></div>
-    <div class="list-card">${recent.length ? recent.map(recordRow).join("") : `<div class="emptybox">아직 기록이 없습니다.</div>`}</div>
+    <div class="card today-card">
+      <div class="section-title">오늘의 업무</div>
+      <div class="today-grid">
+        <button data-today-flow="출고" type="button"><span>출고</span><strong>${today.out}건</strong></button>
+        <button data-today-flow="입고" type="button"><span>입고</span><strong>${today.in}건</strong></button>
+        <button data-today-flow="재고수정" type="button"><span>수정</span><strong>${today.edit}건</strong></button>
+      </div>
+    </div>
+    ${lastVisit ? `<button class="continue-card" id="continueLastVisit" type="button"><div><div class="metric-label">최근 방문 이어가기</div><div class="row-title">${esc(lastVisit)}</div></div><div class="chev">›</div></button>` : ""}
+    <div class="grid2">
+      <button class="card metric dash-card" id="dashPending" type="button"><div class="iconbox">🚨</div><div><div class="metric-label">미반영 긴급기록</div><div class="metric-value">${pending}건</div></div><div class="chev">›</div></button>
+      <button class="card metric dash-card" id="dashWarehouse" type="button"><div class="iconbox">🏢</div><div><div class="metric-label">보관</div><div class="metric-value">${warehouses.length}개</div></div><div class="chev">›</div></button>
+      <button class="card metric dash-card" id="dashCatalog" type="button"><div class="iconbox">📋</div><div><div class="metric-label">관리품목</div><div class="metric-value">${catalog.length}종</div></div><div class="chev">›</div></button>
+      <button class="card metric dash-card" id="dashHistory" type="button"><div class="iconbox">📚</div><div><div class="metric-label">등록이력</div><div class="metric-value">${state.records.length}건</div></div><div class="chev">›</div></button>
+    </div>
+    <div class="section-head"><div class="section-title">최근 활동</div><button class="link-btn" id="goActivityAll">전체보기 ›</button></div>
+    <div class="activity-tabs"><button class="${homeActivityTab === "history" ? "active" : ""}" id="homeActivityHistory" type="button">이력</button><button class="${homeActivityTab === "memo" ? "active" : ""}" id="homeActivityMemo" type="button">메모</button></div>
+    <div class="list-card">${homeActivityHtml()}</div>
+    ${homeActivityTab === "memo" ? `<button class="btn secondary" id="homeNewMemo" type="button" style="width:100%">+ 새 메모</button>` : ""}
   `;
-  document.getElementById("goHistory")?.addEventListener("click", () => { historyFilter = "all"; setPage("history"); });
-  document.getElementById("dashPending")?.addEventListener("click", () => { historyFilter = "pending"; setPage("history"); });
+  document.getElementById("homeQuickEmergency")?.addEventListener("click", () => startHomeRegister("quick"));
+  document.getElementById("homeQuickOut")?.addEventListener("click", () => startHomeRegister("normal","출고"));
+  document.getElementById("homeQuickIn")?.addEventListener("click", () => startHomeRegister("normal","입고"));
+  view.querySelectorAll("[data-today-flow]").forEach(button => button.addEventListener("click", () => openTodayHistory(button.dataset.todayFlow)));
+  document.getElementById("continueLastVisit")?.addEventListener("click", continueLastVisit);
+  document.getElementById("dashPending")?.addEventListener("click", () => { historyFilter = "pending"; historyDateFilter = "all"; historyFlowFilter = "all"; setPage("history"); });
   document.getElementById("dashWarehouse")?.addEventListener("click", () => setPage("warehouse"));
-  document.getElementById("dashCatalog")?.addEventListener("click", () => {
-    setPage("warehouse");
-    selectedWarehouse = warehouses[0];
-    warehouseTab = "material";
-    renderWarehouse();
-  });
-  document.getElementById("dashHistory")?.addEventListener("click", () => { historyFilter = "all"; setPage("history"); });
-  view.querySelectorAll("[data-detail]").forEach(b => b.addEventListener("click", () => openDetail(b.dataset.detail)));
+  document.getElementById("dashCatalog")?.addEventListener("click", () => { page="warehouse"; selectedWarehouse=warehouses[0]; warehouseTab="material"; updateBottomNav(); render(); pushNavigationState({page:"warehouse",warehouse:selectedWarehouse,tab:warehouseTab}); });
+  document.getElementById("dashHistory")?.addEventListener("click", () => { historyFilter="all"; historyDateFilter="all"; historyFlowFilter="all"; setPage("history"); });
+  document.getElementById("homeActivityHistory")?.addEventListener("click", () => { homeActivityTab="history"; renderHome(); });
+  document.getElementById("homeActivityMemo")?.addEventListener("click", () => { homeActivityTab="memo"; renderHome(); });
+  document.getElementById("goActivityAll")?.addEventListener("click", () => { if(homeActivityTab === "memo") setPage("memo"); else { historyFilter="all"; setPage("history"); } });
+  document.getElementById("homeNewMemo")?.addEventListener("click", () => { editingMemoId=null; setPage("memo"); });
+  view.querySelectorAll("[data-detail]").forEach(button => button.addEventListener("click", () => openDetail(button.dataset.detail)));
+  view.querySelectorAll("[data-home-memo]").forEach(button => button.addEventListener("click", () => { editingMemoId=button.dataset.homeMemo; page="memo"; updateBottomNav(); render(); pushNavigationState({page:"memo",memoId:editingMemoId}); }));
 }
 
 function warehouseSummary(w){
@@ -237,10 +367,12 @@ function renderWarehouse(){
       }).join("")}
     </div>
     <button class="btn secondary" id="addWarehouseInline" type="button" style="width:100%;margin-top:10px">+ 신규 창고 추가</button>`;
-    view.querySelectorAll("[data-wh]").forEach(b => b.addEventListener("click", () => {
-      selectedWarehouse = b.dataset.wh;
+    view.querySelectorAll("[data-wh]").forEach(button => button.addEventListener("click", () => {
+      selectedWarehouse = button.dataset.wh;
       warehouseTab = "material";
+      rememberLastVisit({kind:"warehouse",name:selectedWarehouse,tab:warehouseTab});
       renderWarehouse();
+      pushNavigationState({page:"warehouse",warehouse:selectedWarehouse,tab:warehouseTab});
     }));
     document.getElementById("addWarehouseInline")?.addEventListener("click", addWarehouse);
     return;
@@ -264,10 +396,10 @@ function renderWarehouse(){
       ${warehouseTab === "material" ? `<input class="search" id="stockSearch" placeholder="자재 검색"><div id="stockList"></div><button class="btn secondary" id="addMaterialInline" type="button" style="width:100%;margin-top:12px">+ 신규 추가</button>` : renderWarehouseEquipment(selectedWarehouse)}
     </div>
   `;
-  document.getElementById("backWh")?.addEventListener("click", () => { selectedWarehouse = null; renderWarehouse(); });
+  document.getElementById("backWh")?.addEventListener("click", () => window.history.back());
   document.getElementById("editInfo")?.addEventListener("click", () => editWarehouseInfo(selectedWarehouse));
-  document.getElementById("tabMaterial")?.addEventListener("click", () => { warehouseTab = "material"; renderWarehouse(); });
-  document.getElementById("tabEquipment")?.addEventListener("click", () => { warehouseTab = "equipment"; renderWarehouse(); });
+  document.getElementById("tabMaterial")?.addEventListener("click", () => { warehouseTab="material"; rememberLastVisit({kind:"warehouse",name:selectedWarehouse,tab:warehouseTab}); renderWarehouse(); replaceNavigationState({page:"warehouse",warehouse:selectedWarehouse,tab:warehouseTab}); });
+  document.getElementById("tabEquipment")?.addEventListener("click", () => { warehouseTab="equipment"; rememberLastVisit({kind:"warehouse",name:selectedWarehouse,tab:warehouseTab}); renderWarehouse(); replaceNavigationState({page:"warehouse",warehouse:selectedWarehouse,tab:warehouseTab}); });
 
   const baseBtn = document.getElementById("editOpBase");
   if(baseBtn) baseBtn.addEventListener("click", () => editOpBase(selectedWarehouse));
@@ -523,27 +655,49 @@ function historyDateGroups(records){
   return Object.keys(groups).sort((a,b)=>b.localeCompare(a)).map(d => ({date:d, records:groups[d]}));
 }
 
+function historyDateMatches(record){
+  if(historyDateFilter === "all") return true;
+  if(historyDateFilter === "today") return record.date === todayISO();
+  const days = historyDateFilter === "7" ? 7 : 30;
+  const start = new Date();
+  start.setHours(0,0,0,0);
+  start.setDate(start.getDate() - (days - 1));
+  const date = new Date(`${record.date}T00:00:00`);
+  return !Number.isNaN(date.getTime()) && date >= start;
+}
+
+function historyFlowMatches(record){
+  if(historyFlowFilter === "all") return true;
+  if(historyFlowFilter === "긴급") return Boolean(record.quick || record.status === "pending");
+  return record.flow === historyFlowFilter;
+}
+
 function renderHistory(){
   const all = [...state.records].sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id));
-  const counts = {
-    all: all.length,
-    pending: all.filter(r => r.status === "pending").length,
-    done: all.filter(r => r.status !== "pending").length
-  };
-  const filtered = all.filter(r => historyFilter === "all" ? true : (historyFilter === "pending" ? r.status === "pending" : r.status !== "pending"));
+  const counts = {all:all.length,pending:all.filter(r=>r.status === "pending").length,done:all.filter(r=>r.status !== "pending").length};
+  let filtered = all.filter(record => historyFilter === "all" ? true : (historyFilter === "pending" ? record.status === "pending" : record.status !== "pending"));
+  filtered = filtered.filter(record => historyDateMatches(record) && historyFlowMatches(record));
   view.innerHTML = `
     <div class="history-tabs">
       <button class="history-tab ${historyFilter === "all" ? "active" : ""}" data-hfilter="all" type="button">전체 ${counts.all}</button>
       <button class="history-tab ${historyFilter === "pending" ? "active" : ""}" data-hfilter="pending" type="button">미반영 ${counts.pending}</button>
       <button class="history-tab ${historyFilter === "done" ? "active" : ""}" data-hfilter="done" type="button">완료 ${counts.done}</button>
     </div>
-    <input class="search" id="histSearch" placeholder="검색">
+    <div class="history-filter-grid">
+      <label>기간<select id="historyDateFilter"><option value="all" ${historyDateFilter === "all" ? "selected" : ""}>전체 기간</option><option value="today" ${historyDateFilter === "today" ? "selected" : ""}>오늘</option><option value="7" ${historyDateFilter === "7" ? "selected" : ""}>최근 7일</option><option value="30" ${historyDateFilter === "30" ? "selected" : ""}>최근 30일</option></select></label>
+      <label>종류<select id="historyFlowFilter"><option value="all" ${historyFlowFilter === "all" ? "selected" : ""}>전체 종류</option><option value="출고" ${historyFlowFilter === "출고" ? "selected" : ""}>출고</option><option value="입고" ${historyFlowFilter === "입고" ? "selected" : ""}>입고</option><option value="재고수정" ${historyFlowFilter === "재고수정" ? "selected" : ""}>재고수정</option><option value="긴급" ${historyFlowFilter === "긴급" ? "selected" : ""}>긴급기록</option></select></label>
+    </div>
+    <input class="search" id="histSearch" placeholder="제목·창고·자재 검색">
+    <div class="filter-result">검색 결과 ${filtered.length}건 ${historyDateFilter !== "all" || historyFlowFilter !== "all" ? `<button class="link-btn" id="clearHistoryFilter" type="button">필터 초기화</button>` : ""}</div>
     <div id="histList">${renderHistoryListHtml(filtered)}</div>
   `;
-  view.querySelectorAll("[data-hfilter]").forEach(b => b.addEventListener("click", () => { historyFilter = b.dataset.hfilter; renderHistory(); }));
+  view.querySelectorAll("[data-hfilter]").forEach(button => button.addEventListener("click", () => { historyFilter=button.dataset.hfilter; renderHistory(); }));
+  document.getElementById("historyDateFilter")?.addEventListener("change", event => { historyDateFilter=event.target.value; renderHistory(); });
+  document.getElementById("historyFlowFilter")?.addEventListener("change", event => { historyFlowFilter=event.target.value; renderHistory(); });
+  document.getElementById("clearHistoryFilter")?.addEventListener("click", () => { historyDateFilter="all"; historyFlowFilter="all"; renderHistory(); });
   document.getElementById("histSearch")?.addEventListener("input", () => {
-    const q = document.getElementById("histSearch").value.trim();
-    const searched = filtered.filter(r => !q || [r.title,r.type,r.flow,r.warehouse,r.memo,...r.items.map(i=>i.name)].join(" ").includes(q));
+    const query = document.getElementById("histSearch").value.trim();
+    const searched = filtered.filter(record => !query || [record.title,record.type,record.flow,record.warehouse,record.memo,...record.items.map(item=>item.name)].join(" ").includes(query));
     document.getElementById("histList").innerHTML = renderHistoryListHtml(searched);
     bindHistoryRows();
   });
@@ -576,8 +730,7 @@ function bindHistoryRows(){
 
 function pendingRecordForm(r){
   const officialTitle = r.officialTitle ? r.title : "";
-  return
-    `<div class="card">
+  return `<div class="card">
       <div><span class="badge red">미반영</span></div>
       <div class="section-title" style="margin-top:10px">긴급기록 사후보완</div>
       <div class="row-sub">현장에서 저장한 기록입니다. 내용을 확인한 뒤 재고에 반영하세요.</div>
@@ -645,7 +798,7 @@ function savePendingEdits(id, shouldApply=false, silent=false){
     save();
     if(!silent){
       showSnack("미반영 기록 수정 완료");
-      openDetail(id);
+      openDetail(id,{push:false,remember:false});
     }
     return true;
   }
@@ -674,7 +827,7 @@ function savePendingEdits(id, shouldApply=false, silent=false){
   }
   showSnack("재고 반영 완료");
   vibrate(20);
-  openDetail(id);
+  openDetail(id,{push:false,remember:false});
   return true;
 }
 
@@ -685,7 +838,7 @@ function addPendingItemToRecord(id){
   const first = catalog[0];
   r.items.push({cat:first.cat,name:first.name,qty:1,unit:first.unit,kind:first.kind});
   save();
-  openDetail(id);
+  openDetail(id,{push:false,remember:false});
 }
 
 function removePendingItemFromRecord(id,index){
@@ -695,13 +848,16 @@ function removePendingItemFromRecord(id,index){
   if(!savePendingEdits(id,false,true)) return;
   r.items.splice(index,1);
   save();
-  openDetail(id);
+  openDetail(id,{push:false,remember:false});
 }
 
-function openDetail(id){
+function openDetail(id, options={}){
   const r = state.records.find(x => x.id === id);
   if(!r) return;
   page = "history";
+  if(options.remember !== false) rememberLastVisit({kind:"record",id:r.id,title:r.title});
+  if(options.push !== false) pushNavigationState({page:"history",recordId:r.id});
+  updateBottomNav();
   setHead();
 
   if(r.status === "pending"){
@@ -709,7 +865,7 @@ function openDetail(id){
       <button class="back" id="backHist" type="button">‹ 이력</button>
       ${pendingRecordForm(r)}
       <button class="btn danger" id="deleteRecord" type="button" style="width:100%">미반영 기록 삭제</button>`;
-    document.getElementById("backHist")?.addEventListener("click", () => setPage("history"));
+    document.getElementById("backHist")?.addEventListener("click", () => window.history.back());
     document.getElementById("savePending")?.addEventListener("click", () => savePendingEdits(id,false));
     document.getElementById("applyPending")?.addEventListener("click", () => savePendingEdits(id,true));
     document.getElementById("addPendingItem")?.addEventListener("click", () => addPendingItemToRecord(id));
@@ -738,7 +894,7 @@ function openDetail(id){
       ${r.items.map(i => `<div class="stock-line"><div><div class="stock-name">${esc(i.name)}</div><div class="stock-spec">${esc(i.cat)}${i.before !== undefined ? " · " + qtyText(i.before,i.unit) + " → " + qtyText(i.after,i.unit) : ""}</div></div><div class="stock-qty">${i.before !== undefined ? (i.diff > 0 ? "+" : "") + qtyText(i.diff,i.unit) : qtyText(i.qty,i.unit)}</div></div>`).join("")}
     </div>
     <button class="btn danger" id="deleteRecord" type="button" style="width:100%">삭제</button>`;
-  document.getElementById("backHist")?.addEventListener("click", () => setPage("history"));
+  document.getElementById("backHist")?.addEventListener("click", () => window.history.back());
   document.getElementById("deleteRecord")?.addEventListener("click", () => {
     if(!confirm("기록을 삭제하고 재고를 이전 상태로 복구할까요?")) return;
     if(r.flow === "재고수정"){
@@ -755,32 +911,37 @@ function openDetail(id){
 
 function renderMemo(){
   const sorted = [...state.memos].sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id));
+  const editing = editingMemoId ? state.memos.find(memo => memo.id === editingMemoId) : null;
+  if(editingMemoId && !editing) editingMemoId = null;
   view.innerHTML = `
+    <button class="back" id="backMemoHome" type="button">‹ 홈</button>
     <div class="card">
-      <div class="section-title">메모 작성</div>
+      <div class="section-title">${editing ? "메모 수정" : "메모 작성"}</div>
       <div class="form">
-        <label>일자<input id="memoDate" type="date" value="${todayISO()}"></label>
-        <label>제목<input id="memoTitle" placeholder="예: 보관 점검 특이사항"></label>
-        <label>내용<textarea id="memoBody" placeholder="메모 내용을 입력하세요"></textarea></label>
-        <button class="btn primary" id="saveMemo" type="button">메모 저장</button>
+        <label>일자<input id="memoDate" type="date" value="${esc(editing?.date || todayISO())}"></label>
+        <label>제목<input id="memoTitle" value="${esc(editing?.title || "")}" placeholder="예: 보관 점검 특이사항"></label>
+        <label>내용<textarea id="memoBody" placeholder="메모 내용을 입력하세요">${esc(editing?.body || "")}</textarea></label>
+        <div class="entry-actions">${editing ? `<button class="btn gray" id="cancelMemoEdit" type="button">취소</button>` : `<button class="btn gray" id="clearMemoForm" type="button">비우기</button>`}<button class="btn primary" id="saveMemo" type="button">${editing ? "수정 저장" : "메모 저장"}</button></div>
       </div>
     </div>
-    <div class="section-head"><div class="section-title">일자별 메모</div></div>
-    <div class="list-card">${sorted.length ? sorted.map(m => `
-      <div class="list-row">
-        <div>
-          <div class="row-title">${esc(m.title)}</div>
-          <div class="row-sub">${fmtDate(m.date)} · ${esc((m.body || "").slice(0,60))}</div>
-        </div>
-        <button class="btn danger" data-memo-del="${m.id}" type="button">삭제</button>
-      </div>
-    `).join("") : `<div class="emptybox">아직 메모가 없습니다.</div>`}</div>
+    <div class="section-head"><div class="section-title">일자별 메모</div><div class="row-sub">${sorted.length}건</div></div>
+    <div class="list-card">${sorted.length ? sorted.map(memo => `
+      <div class="list-row memo-row">
+        <button class="memo-main" data-memo-edit="${memo.id}" type="button"><div class="row-title">${esc(memo.title)}</div><div class="row-sub">${fmtDate(memo.date)} · ${esc((memo.body || "").slice(0,60))}</div></button>
+        <button class="btn danger compact" data-memo-del="${memo.id}" type="button">삭제</button>
+      </div>`).join("") : `<div class="emptybox">아직 메모가 없습니다.</div>`}</div>
   `;
+  document.getElementById("backMemoHome")?.addEventListener("click", () => window.history.back());
   document.getElementById("saveMemo")?.addEventListener("click", saveMemo);
-  view.querySelectorAll("[data-memo-del]").forEach(b => b.addEventListener("click", () => {
+  document.getElementById("cancelMemoEdit")?.addEventListener("click", () => { editingMemoId=null; renderMemo(); });
+  document.getElementById("clearMemoForm")?.addEventListener("click", () => { document.getElementById("memoTitle").value=""; document.getElementById("memoBody").value=""; });
+  view.querySelectorAll("[data-memo-edit]").forEach(button => button.addEventListener("click", () => { editingMemoId=button.dataset.memoEdit; renderMemo(); }));
+  view.querySelectorAll("[data-memo-del]").forEach(button => button.addEventListener("click", () => {
     if(!confirm("메모를 삭제할까요?")) return;
-    state.memos = state.memos.filter(x => x.id !== b.dataset.memoDel);
+    state.memos = state.memos.filter(memo => memo.id !== button.dataset.memoDel);
+    if(editingMemoId === button.dataset.memoDel) editingMemoId = null;
     save();
+    hapticSuccess();
     renderMemo();
   }));
 }
@@ -789,10 +950,18 @@ function saveMemo(){
   const date = document.getElementById("memoDate").value || todayISO();
   const title = document.getElementById("memoTitle").value.trim() || "메모";
   const body = document.getElementById("memoBody").value.trim();
-  if(!body){ showSnack("메모 내용을 입력해주세요"); return; }
-  state.memos.push({id:uid(), date, title, body, createdAt:new Date().toISOString()});
+  if(!body){ showSnack("메모 내용을 입력해주세요"); hapticError(); return; }
+  const existing = editingMemoId ? state.memos.find(memo => memo.id === editingMemoId) : null;
+  if(existing){
+    Object.assign(existing,{date,title,body,updatedAt:new Date().toISOString()});
+  }else{
+    state.memos.push({id:uid(),date,title,body,createdAt:new Date().toISOString(),updatedAt:null});
+  }
   save();
-  showSnack("메모 저장");
+  const message = existing ? "메모 수정 완료" : "메모 저장";
+  editingMemoId = null;
+  showSnack(message);
+  hapticSuccess();
   renderMemo();
 }
 
@@ -1062,10 +1231,14 @@ function recentOpRows(place){
 
 function renderEquipment(){ return ""; }
 
-function openEquipment(id){
+function openEquipment(id, options={}){
   const e = state.equipment.find(x => x.id === id);
   if(!e) return;
+  if(!selectedWarehouse) selectedWarehouse = e.place || warehouses[0];
   page = "equipmentDetail";
+  if(options.remember !== false) rememberLastVisit({kind:"equipment",id:e.id,name:e.name});
+  if(options.push !== false) pushNavigationState({page:"equipmentDetail",equipmentId:e.id});
+  updateBottomNav();
   document.getElementById("headTitle").innerHTML = `<div class="page-title">장비 상세</div><div class="date">${esc(e.name)}</div>`;
   view.innerHTML = `
     <button class="back" id="backEquip" type="button">‹ 장비</button>
@@ -1084,7 +1257,7 @@ function openEquipment(id){
       <button class="btn primary" id="saveEquip" type="button" style="width:100%;margin-top:14px">저장</button>
     </div>
   `;
-  document.getElementById("backEquip")?.addEventListener("click", () => { page = "warehouse"; setHead(); renderWarehouse(); });
+  document.getElementById("backEquip")?.addEventListener("click", () => window.history.back());
   document.getElementById("saveEquip")?.addEventListener("click", () => saveEquipmentInline(id));
 }
 
@@ -1105,7 +1278,7 @@ function saveEquipmentInline(id){
   });
   save();
   showSnack("장비 저장");
-  openEquipment(id);
+  openEquipment(id,{push:false,remember:false});
 }
 
 
@@ -1142,7 +1315,7 @@ function editEquipment(id){
   });
   save();
   showSnack("장비 저장");
-  openEquipment(id);
+  openEquipment(id,{push:false,remember:false});
 }
 
 
@@ -1356,6 +1529,22 @@ function bindGlobal(){
   document.getElementById("restoreBtn")?.addEventListener("click", () => { closeMenu(); document.getElementById("restoreFile").click(); });
   document.getElementById("restoreFile")?.addEventListener("change", e => { if(e.target.files[0]) restoreFile(e.target.files[0]); });
   document.getElementById("resetBtn")?.addEventListener("click", () => { closeMenu(); resetAll(); });
+  document.getElementById("settingsBtn")?.addEventListener("click", () => {
+    closeMenu();
+    const toggle = document.getElementById("hapticsToggle");
+    if(toggle) toggle.checked = state.settings?.haptics !== false;
+    document.getElementById("settingsModal").classList.add("show");
+  });
+  document.getElementById("hapticsToggle")?.addEventListener("change", event => {
+    state.settings = state.settings || {};
+    state.settings.haptics = event.target.checked;
+    save();
+    if(event.target.checked) hapticSuccess();
+    showSnack(event.target.checked ? "햅틱 반응 켜짐" : "햅틱 반응 꺼짐");
+  });
+  document.getElementById("closeSettings")?.addEventListener("click", () => document.getElementById("settingsModal").classList.remove("show"));
+  document.getElementById("settingsModal")?.addEventListener("click", event => { if(event.target.id === "settingsModal") event.currentTarget.classList.remove("show"); });
+
   document.getElementById("appInfoBtn")?.addEventListener("click", () => {
     closeMenu();
     document.getElementById("appInfoModal").classList.add("show");
@@ -1368,6 +1557,9 @@ function bindGlobal(){
     if(event.target.id === "entryModal") closeEntryModal();
   });
 
+  document.addEventListener("click", event => { if(event.target.closest?.("button")) hapticTap(); }, {capture:true});
+  window.addEventListener("popstate", event => restoreNavigation(event.state || {page:"home"}));
+
   let lastTouchEnd = 0;
   document.addEventListener("touchend", e => {
     const now = Date.now();
@@ -1378,6 +1570,38 @@ function bindGlobal(){
 
 function closeMenu(){
   document.getElementById("moreMenu").classList.remove("show");
+}
+
+function restoreNavigation(nav){
+  restoringNavigation = true;
+  try{
+    document.getElementById("entryModal")?.classList.remove("show");
+    document.getElementById("appInfoModal")?.classList.remove("show");
+    document.getElementById("settingsModal")?.classList.remove("show");
+    if(nav?.recordId && state.records.some(record => record.id === nav.recordId)){
+      openDetail(nav.recordId,{push:false,remember:false});
+      return;
+    }
+    if(nav?.equipmentId && state.equipment.some(item => item.id === nav.equipmentId)){
+      openEquipment(nav.equipmentId,{push:false,remember:false});
+      return;
+    }
+    page = nav?.page || "home";
+    selectedWarehouse = null;
+    editingMemoId = nav?.memoId || null;
+    if(page === "warehouse" && nav?.warehouse && warehouses.includes(nav.warehouse)){
+      selectedWarehouse = nav.warehouse;
+      warehouseTab = nav.tab === "equipment" ? "equipment" : "material";
+    }
+    if(page === "register"){
+      registerMode = nav.mode === "quick" ? "quick" : "normal";
+      registerFlow = nav.flow === "입고" ? "입고" : "출고";
+    }
+    updateBottomNav();
+    render();
+  }finally{
+    restoringNavigation = false;
+  }
 }
 
 let appStarted = false;
@@ -1431,6 +1655,7 @@ function init(){
   try{
     bindGlobal();
     render();
+    replaceNavigationState({page:"home"});
     appStarted = true;
     setTimeout(hideSplash, 500);
   }catch(error){
@@ -1439,7 +1664,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190d")
+      navigator.serviceWorker.register("./sw.js?v=0190e")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });

@@ -1,6 +1,7 @@
-const VERSION = "Alpha 0.19.0d Stable";
-const KEY = "victor_state_alpha_0_19_0d";
+const VERSION = "Alpha 0.19.0e UX Beta";
+const KEY = "victor_state_alpha_0_19_0e";
 const MIGRATE_KEYS = [
+  "victor_state_alpha_0_19_0d",
   "victor_state_alpha_0_19_0c",
   "victor_state_alpha_0_19_0b",
   "victor_state_alpha_0_19_0a",
@@ -386,6 +387,8 @@ function defaultState(){
     },
     equipment: defaultEquipment.map(x => ({...x})),
     equipmentCategories: [...defaultEquipmentCategories],
+    settings: {haptics:true},
+    ui: {lastVisit:null},
     survey: null,
     lastBackup: null,
     logs: []
@@ -516,7 +519,8 @@ function normalize(raw){
     date:typeof m.date === "string" && m.date ? m.date : todayISO(),
     title:typeof m.title === "string" && m.title ? m.title : "메모",
     body:typeof m.body === "string" ? m.body : "",
-    createdAt:typeof m.createdAt === "string" && m.createdAt ? m.createdAt : new Date().toISOString()
+    createdAt:typeof m.createdAt === "string" && m.createdAt ? m.createdAt : new Date().toISOString(),
+    updatedAt:typeof m.updatedAt === "string" ? m.updatedAt : null
   }));
 
   if(!state.assetOps || typeof state.assetOps !== "object" || Array.isArray(state.assetOps)) state.assetOps = d.assetOps;
@@ -552,6 +556,12 @@ function normalize(raw){
     etc: typeof e.etc === "string" ? e.etc : (typeof e.memo === "string" ? e.memo : ""),
     status: typeof e.status === "string" && e.status ? e.status : "정상"
   }));
+
+  state.settings = state.settings && typeof state.settings === "object" && !Array.isArray(state.settings)
+    ? {haptics: state.settings.haptics !== false}
+    : {haptics:true};
+  state.ui = state.ui && typeof state.ui === "object" && !Array.isArray(state.ui) ? {...state.ui} : {lastVisit:null};
+  if(!state.ui.lastVisit || typeof state.ui.lastVisit !== "object") state.ui.lastVisit = null;
 
   if(!("survey" in state)) state.survey = null;
   if(!Array.isArray(state.logs)) state.logs = [];
