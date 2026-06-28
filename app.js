@@ -248,7 +248,7 @@ function renderWarehouse(){
       <div class="section-title">${esc(selectedWarehouse)}</div>
       <div class="row-sub">📌 중요 메모</div>
       <div class="memo-box">${info.memo ? esc(info.memo) : "등록된 메모가 없습니다."}</div>
-      <button class="btn secondary" id="editInfo" type="button" style="width:100%;margin-top:12px">보관 메모 수정</button>
+      <button class="btn secondary" id="editInfo" type="button" style="width:100%;margin-top:12px">메모 수정</button>
     </div>
     ${typeof renderOps === "function" ? renderOps(selectedWarehouse) : ""}
     <div class="card">
@@ -1002,28 +1002,64 @@ function renderEquipment(){ return ""; }
 function openEquipment(id){
   const e = state.equipment.find(x => x.id === id);
   if(!e) return;
+  page = "equipmentDetail";
+  document.getElementById("headTitle").innerHTML = `<div class="page-title">장비 상세</div><div class="date">${esc(e.name)}</div>`;
+  view.innerHTML = `
+    <button class="back" id="backEquip" type="button">‹ 장비</button>
+    <div class="card">
+      <div class="section-title">${esc(e.name)}</div>
+      <div class="detail-grid">
+        <div class="detail-row"><div class="detail-label">분류</div><div class="detail-value">${esc(e.cat || "-")}</div></div>
+        <div class="detail-row"><div class="detail-label">세부사항</div><div class="detail-value">${esc(e.detail || e.spec || "-")}</div></div>
+        <div class="detail-row"><div class="detail-label">보관장소</div><div class="detail-value">${esc(e.place || e.warehouse || "-")}</div></div>
+        <div class="detail-row"><div class="detail-label">배터리</div><div class="detail-value">${esc(e.battery || "-")}</div></div>
+        <div class="detail-row"><div class="detail-label">연료유</div><div class="detail-value">${esc(e.fuel || "-")}</div></div>
+        <div class="detail-row"><div class="detail-label">기타사항</div><div class="detail-value">${esc(e.etc || e.memo || "-")}</div></div>
+        <div class="detail-row"><div class="detail-label">상태</div><div class="detail-value">${esc(e.status || "정상")}</div></div>
+      </div>
+      <button class="btn primary" id="editEquip" type="button" style="width:100%;margin-top:14px">수정</button>
+    </div>
+  `;
+  document.getElementById("backEquip").addEventListener("click", () => { page = "warehouse"; setHead(); renderWarehouse(); });
+  document.getElementById("editEquip").addEventListener("click", () => editEquipment(id));
+}
+
+function editEquipment(id){
+  const e = state.equipment.find(x => x.id === id);
+  if(!e) return;
   const name = prompt("장비명", e.name);
   if(name === null) return;
-  const cat = prompt(`분류\n${equipmentCategories.join(", ")}`, e.cat);
+  const cat = prompt(`분류`, e.cat || "기타장비");
   if(cat === null) return;
-  const detail = prompt("세부사항", e.detail || "");
+  const detail = prompt("세부사항", e.detail || e.spec || "");
   if(detail === null) return;
-  const place = prompt("보관 위치", e.place);
+  const place = prompt("보관 위치", e.place || e.warehouse || warehouses[0]);
   if(place === null) return;
-  ensureWarehouse(place);
+  if(typeof ensureWarehouse === "function") ensureWarehouse(place);
   const battery = prompt("배터리", e.battery || "");
   if(battery === null) return;
   const fuel = prompt("연료유/용량", e.fuel || "");
   if(fuel === null) return;
-  const etc = prompt("기타사항", e.etc || "");
+  const etc = prompt("기타사항", e.etc || e.memo || "");
   if(etc === null) return;
-  const status = prompt("상태", e.status);
+  const status = prompt("상태", e.status || "정상");
   if(status === null) return;
-  Object.assign(e, {name:name||"장비", cat:cat||"기타장비", detail, place:place||warehouses[0], battery, fuel, etc, status:status||"정상"});
+  Object.assign(e, {
+    name:name||"장비",
+    cat:cat||"기타장비",
+    detail,
+    place:place||warehouses[0],
+    battery,
+    fuel,
+    etc,
+    status:status||"정상"
+  });
   save();
   showSnack("장비 저장");
-  renderWarehouse();
+  openEquipment(id);
 }
+
+
 
 function addEquipment(){
   const name = prompt("장비명", "");
@@ -1215,7 +1251,7 @@ function bindGlobal(){
   document.getElementById("closeUpdate").addEventListener("click", () => document.getElementById("updateModal").classList.remove("show"));
   document.getElementById("appInfoBtn").addEventListener("click", () => {
     closeMenu();
-    alert(`Victor\n방제자원 관리 시스템\n\nVersion 0.18.6\n\nBy\n통영해양경찰서 주무관 정홍준`);
+    alert(`Victor\n방제자원 관리 시스템\n\nVersion 0.18.9\n\nBy\n통영해양경찰서 주무관 정홍준`);
   });
 
   let lastTouchEnd = 0;
