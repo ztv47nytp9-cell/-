@@ -1,6 +1,7 @@
-const VERSION = "Alpha 0.19.0a";
-const KEY = "victor_state_alpha_0_19_0a";
+const VERSION = "Alpha 0.19.0b Stable";
+const KEY = "victor_state_alpha_0_19_0b";
 const MIGRATE_KEYS = [
+  "victor_state_alpha_0_19_0a",
   "victor_state_alpha_0_19_0",
   "victor_state_alpha_0_18_9",
   "victor_state_alpha_0_18_6_recovery",
@@ -386,6 +387,7 @@ function defaultState(){
 }
 
 function oldName(w){
+  if(typeof w !== "string") return "";
   return {
     "통영해양경찰서 방제창고":"통영해양경찰서",
     "경찰서 창고":"통영해양경찰서",
@@ -405,21 +407,25 @@ function normalize(raw){
   if(!raw || typeof raw !== "object") return d;
 
   const whSet = new Set(defaultWarehouses);
-  if(Array.isArray(raw.warehouses)) raw.warehouses.forEach(w => whSet.add(oldName(w)));
+  if(Array.isArray(raw.warehouses)) raw.warehouses.forEach(w => {
+    const name = oldName(w).trim();
+    if(name) whSet.add(name);
+  });
   if(raw.stock && typeof raw.stock === "object") Object.keys(raw.stock).forEach(w => whSet.add(oldName(w)));
   const warehouseList = [...whSet];
 
   const catMap = new Map(defaultCatalog.map(i => [i.name, {...i}]));
   if(Array.isArray(raw.catalog)){
     raw.catalog.forEach(i => {
-      if(!i || !i.name) return;
-      const nm = i.name === "고형식 오일펜스" ? "팽창형 오일펜스" : i.name;
+      if(!i || typeof i !== "object" || typeof i.name !== "string" || !i.name.trim()) return;
+      const sourceName = i.name.trim();
+      const nm = sourceName === "고형식 오일펜스" ? "팽창형 오일펜스" : sourceName;
       catMap.set(nm, {
-        cat:i.cat || "기타",
+        cat:typeof i.cat === "string" && i.cat ? i.cat : "기타",
         name:nm,
-        unit:i.unit || "개",
-        spec:i.spec || "",
-        kind:i.kind || "consume"
+        unit:typeof i.unit === "string" && i.unit ? i.unit : "개",
+        spec:typeof i.spec === "string" ? i.spec : "",
+        kind:i.kind === "returnable" ? "returnable" : "consume"
       });
     });
   }
@@ -445,39 +451,47 @@ function normalize(raw){
       if(!newStock[nw]) return;
       Object.keys(raw.stock[w] || {}).forEach(n => {
         const nn = n === "고형식 오일펜스" ? "팽창형 오일펜스" : n;
-        if(nn in newStock[nw]) newStock[nw][nn] = Number(raw.stock[w][n] || 0);
+        if(nn in newStock[nw]){
+          const value = Number(raw.stock[w][n] || 0);
+          newStock[nw][nn] = Number.isFinite(value) ? Math.max(0, value) : 0;
+        }
       });
     });
   }
   state.stock = newStock;
 
-  state.warehouseInfos = raw.warehouseInfos || {};
+  state.warehouseInfos = raw.warehouseInfos && typeof raw.warehouseInfos === "object" && !Array.isArray(raw.warehouseInfos)
+    ? {...raw.warehouseInfos}
+    : {};
   warehouseList.forEach(w => {
-    const old = state.warehouseInfos[w] || {};
-    state.warehouseInfos[w] = {memo: old.memo || "", updated: old.updated || ""};
+    const old = state.warehouseInfos[w] && typeof state.warehouseInfos[w] === "object" ? state.warehouseInfos[w] : {};
+    state.warehouseInfos[w] = {
+      memo: typeof old.memo === "string" ? old.memo : "",
+      updated: typeof old.updated === "string" ? old.updated : ""
+    };
   });
 
   if(!Array.isArray(state.records)) state.records = [];
-  state.records = state.records.map(r => ({
-    id: r.id || uid(),
-    type: r.type || "사고",
-    flow: r.flow || (r.status === "pending" ? "긴급" : "출고"),
-    title: r.title || r.incident || "기록",
-    date: r.date || todayISO(),
+  state.records = state.records.filter(r => r && typeof r === "object").map(r => ({
+    id: typeof r.id === "string" && r.id ? r.id : uid(),
+    type: typeof r.type === "string" && r.type ? r.type : "사고",
+    flow: typeof r.flow === "string" && r.flow ? r.flow : (r.status === "pending" ? "긴급" : "출고"),
+    title: typeof r.title === "string" && r.title ? r.title : (typeof r.incident === "string" && r.incident ? r.incident : "기록"),
+    date: typeof r.date === "string" && r.date ? r.date : todayISO(),
     warehouse: oldName(r.warehouse || ""),
-    memo: r.memo || "",
-    status: r.status || "done",
-    sourceId: r.sourceId || null,
-    items: Array.isArray(r.items) ? r.items.map(it => {
-      let nm = it.name || it.material || catalogList[0].name;
+    memo: typeof r.memo === "string" ? r.memo : "",
+    status: r.status === "pending" ? "pending" : "done",
+    sourceId: typeof r.sourceId === "string" ? r.sourceId : null,
+    items: Array.isArray(r.items) ? r.items.filter(it => it && typeof it === "object").map(it => {
+      let nm = typeof it.name === "string" && it.name ? it.name : (typeof it.material === "string" && it.material ? it.material : catalogList[0].name);
       if(nm === "고형식 오일펜스") nm = "팽창형 오일펜스";
       const f = catalogList.find(x => x.name === nm) || catalogList[0];
       return {
-        cat: it.cat || f.cat,
+        cat: typeof it.cat === "string" && it.cat ? it.cat : f.cat,
         name: nm,
-        qty: Number(it.qty ?? it.total ?? 0),
-        unit: it.unit || f.unit,
-        kind: it.kind || f.kind,
+        qty: Number.isFinite(Number(it.qty ?? it.total ?? 0)) ? Number(it.qty ?? it.total ?? 0) : 0,
+        unit: typeof it.unit === "string" && it.unit ? it.unit : f.unit,
+        kind: it.kind === "returnable" ? "returnable" : f.kind,
         returned: Number(it.returned || 0),
         damaged: Number(it.damaged || 0)
       };
@@ -485,15 +499,15 @@ function normalize(raw){
   }));
 
   if(!Array.isArray(state.memos)) state.memos = [];
-  state.memos = state.memos.map(m => ({
-    id:m.id || uid(),
-    date:m.date || todayISO(),
-    title:m.title || "메모",
-    body:m.body || "",
-    createdAt:m.createdAt || new Date().toISOString()
+  state.memos = state.memos.filter(m => m && typeof m === "object").map(m => ({
+    id:typeof m.id === "string" && m.id ? m.id : uid(),
+    date:typeof m.date === "string" && m.date ? m.date : todayISO(),
+    title:typeof m.title === "string" && m.title ? m.title : "메모",
+    body:typeof m.body === "string" ? m.body : "",
+    createdAt:typeof m.createdAt === "string" && m.createdAt ? m.createdAt : new Date().toISOString()
   }));
 
-  if(!state.assetOps) state.assetOps = d.assetOps;
+  if(!state.assetOps || typeof state.assetOps !== "object" || Array.isArray(state.assetOps)) state.assetOps = d.assetOps;
   if(!state.assetOps["방제지휘차량"]) state.assetOps["방제지휘차량"] = {distanceBase:0, logs:[]};
   if(!Array.isArray(state.assetOps["방제지휘차량"].logs)) state.assetOps["방제지휘차량"].logs = [];
   if(typeof state.assetOps["방제지휘차량"].distanceBase !== "number") state.assetOps["방제지휘차량"].distanceBase = 0;
@@ -502,22 +516,24 @@ function normalize(raw){
   if(typeof state.assetOps["소형방제정"].hoursBase !== "number") state.assetOps["소형방제정"].hoursBase = 0;
   if(typeof state.assetOps["소형방제정"].fuelBase !== "number") state.assetOps["소형방제정"].fuelBase = 0;
 
-  const existingEquipment = Array.isArray(state.equipment) ? state.equipment : [];
+  const existingEquipment = Array.isArray(state.equipment)
+    ? state.equipment.filter(e => e && typeof e === "object")
+    : [];
   const mergedEquipment = [...existingEquipment];
   defaultEquipment.forEach(def => {
     const exists = mergedEquipment.some(e => e.id === def.id || (e.name === def.name && (e.detail || e.spec || "") === def.detail && oldName(e.place || e.warehouse || "") === def.place));
     if(!exists) mergedEquipment.push({...def});
   });
   state.equipment = mergedEquipment.map(e => ({
-    id: e.id || uid(),
-    cat: e.cat || "기타장비",
-    name: e.name || "장비",
-    detail: e.detail || e.spec || "",
-    place: oldName(e.place || e.warehouse || warehouseList[0]),
-    battery: e.battery || "",
-    fuel: e.fuel || "",
-    etc: e.etc || e.memo || "",
-    status: e.status || "정상"
+    id: typeof e.id === "string" && e.id ? e.id : uid(),
+    cat: typeof e.cat === "string" && e.cat ? e.cat : "기타장비",
+    name: typeof e.name === "string" && e.name ? e.name : "장비",
+    detail: typeof e.detail === "string" ? e.detail : (typeof e.spec === "string" ? e.spec : ""),
+    place: oldName(e.place || e.warehouse || warehouseList[0]) || warehouseList[0],
+    battery: typeof e.battery === "string" ? e.battery : "",
+    fuel: typeof e.fuel === "string" ? e.fuel : "",
+    etc: typeof e.etc === "string" ? e.etc : (typeof e.memo === "string" ? e.memo : ""),
+    status: typeof e.status === "string" && e.status ? e.status : "정상"
   }));
 
   if(!("survey" in state)) state.survey = null;
@@ -530,15 +546,30 @@ function loadState(){
   for(const k of [KEY, ...MIGRATE_KEYS]){
     try{
       const raw = localStorage.getItem(k);
-      if(raw) return normalize(JSON.parse(raw));
-    }catch(e){}
+      if(raw){
+        const restored = normalize(JSON.parse(raw));
+        if(k !== KEY){
+          try{ localStorage.setItem(KEY, JSON.stringify(restored)); }
+          catch(e){ console.warn("[Victor] 이전 데이터의 새 키 저장 실패", e); }
+        }
+        return restored;
+      }
+    }catch(e){
+      console.warn(`[Victor] 저장 데이터 복구 실패: ${k}`, e);
+    }
   }
   return defaultState();
 }
 
 function save(){
   refreshGlobals(state);
-  localStorage.setItem(KEY, JSON.stringify(state));
+  try{
+    localStorage.setItem(KEY, JSON.stringify(state));
+    return true;
+  }catch(e){
+    console.error("[Victor] 데이터 저장 실패", e);
+    throw new Error("데이터를 저장하지 못했습니다. 브라우저 저장 공간을 확인해주세요.");
+  }
 }
 
 function uid(){

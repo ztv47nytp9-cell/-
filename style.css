@@ -165,3 +165,6 @@ input[type="date"]{height:46px;line-height:20px;-webkit-appearance:none;appearan
 .inline-field label{font-size:12px;color:#667085;font-weight:850;display:block;margin-bottom:6px}
 .inline-field input,.inline-field textarea{width:100%;border:1px solid var(--border);border-radius:11px;padding:10px 11px;background:#fff;font-size:15px;color:#101828;box-sizing:border-box}
 .inline-field textarea{min-height:72px;resize:vertical}
+
+.startup-error{margin-top:20px;border:1px solid #F3B7B7}
+.error-message{margin-top:12px;padding:12px;border-radius:12px;background:#FFF3F3;color:#B42318;font-size:13px;line-height:1.5;word-break:break-word}

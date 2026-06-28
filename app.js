@@ -94,9 +94,6 @@ function doneRecords(){
 }
 
 
-function pendingRecords(){ return state.records.filter(r => r.status === "pending"); }
-function doneRecords(){ return state.records.filter(r => r.status !== "pending"); }
-
 function totalByMatcher(matcher){
   return warehouses.reduce((sum,w) => {
     const bucket = state.stock[w] || {};
@@ -201,7 +198,12 @@ function renderHome(){
   document.getElementById("goHistory")?.addEventListener("click", () => { historyFilter = "all"; setPage("history"); });
   document.getElementById("dashPending")?.addEventListener("click", () => { historyFilter = "pending"; setPage("history"); });
   document.getElementById("dashWarehouse")?.addEventListener("click", () => setPage("warehouse"));
-  document.getElementById("dashCatalog")?.addEventListener("click", () => { selectedWarehouse = warehouses[0]; warehouseTab = "material"; setPage("warehouse"); });
+  document.getElementById("dashCatalog")?.addEventListener("click", () => {
+    setPage("warehouse");
+    selectedWarehouse = warehouses[0];
+    warehouseTab = "material";
+    renderWarehouse();
+  });
   document.getElementById("dashHistory")?.addEventListener("click", () => { historyFilter = "all"; setPage("history"); });
   view.querySelectorAll("[data-detail]").forEach(b => b.addEventListener("click", () => openDetail(b.dataset.detail)));
 }
@@ -354,60 +356,6 @@ function quickRecordCard(){
   return `<div class="callout">긴급기록은 사고 현장에서 자재 사용량만 빠르게 남기는 임시 기록입니다. 저장 후 이력에서 보관 장소와 제목을 정해 재고에 반영합니다.</div>`;
 }
 
-
-function ensureWarehouse(name){
-  name = String(name || "").trim();
-  if(!name) return false;
-  if(!state.warehouses.includes(name)){
-    state.warehouses.push(name);
-    state.stock[name] = {};
-    state.catalog.forEach(i => state.stock[name][i.name] = 0);
-    state.warehouseInfos[name] = {memo:"", updated:""};
-    refreshGlobals(state);
-    save();
-  }
-  return true;
-}
-
-function ensureCatalogItem(item){
-  if(!item || !item.name) return false;
-  if(!state.catalog.some(x => x.name === item.name)){
-    state.catalog.push(item);
-    state.warehouses.forEach(w => {
-      if(!state.stock[w]) state.stock[w] = {};
-      state.stock[w][item.name] = 0;
-    });
-    refreshGlobals(state);
-    save();
-  }
-  return true;
-}
-
-function stockAvailable(warehouse, items){
-  return items.every(it => (state.stock[warehouse]?.[it.name] || 0) >= Number(it.qty || 0));
-}
-
-function applyStock(warehouse, items, flow){
-  items.forEach(it => {
-    if(!state.stock[warehouse]) state.stock[warehouse] = {};
-    if(!(it.name in state.stock[warehouse])) state.stock[warehouse][it.name] = 0;
-    if(flow === "입고") state.stock[warehouse][it.name] += Number(it.qty || 0);
-    else state.stock[warehouse][it.name] -= Number(it.qty || 0);
-  });
-}
-
-function reverseStock(warehouse, items, flow){
-  items.forEach(it => {
-    if(!state.stock[warehouse]) state.stock[warehouse] = {};
-    if(!(it.name in state.stock[warehouse])) state.stock[warehouse][it.name] = 0;
-    if(flow === "입고") state.stock[warehouse][it.name] -= Number(it.qty || 0);
-    else state.stock[warehouse][it.name] += Number(it.qty || 0);
-  });
-}
-
-function createFlowRecord({flow,type,title,date,warehouse,memo,items,status="done",sourceId=null}){
-  return {id:uid(), flow, type, title, date, warehouse, memo, status, sourceId, items:items.map(x=>({...x}))};
-}
 
 function renderRegister(){
   draftItems = draftItems.length ? draftItems : [];
@@ -1084,22 +1032,6 @@ function editEquipment(id){
 
 
 
-function addEquipment(){
-  const name = prompt("장비명", "");
-  if(!name) return;
-  const cat = prompt(`분류\n${equipmentCategories.join(", ")}`, equipmentCategories[0] || "기타장비") || "기타장비";
-  const detail = prompt("세부사항", "") || "";
-  const place = prompt("보관 위치", selectedWarehouse || warehouses[0]) || (selectedWarehouse || warehouses[0]);
-  ensureWarehouse(place);
-  const battery = prompt("배터리", "") || "";
-  const fuel = prompt("연료유/용량", "") || "";
-  const etc = prompt("기타사항", "") || "";
-  const status = prompt("상태", "정상") || "정상";
-  state.equipment.push({id:uid(),cat,name,detail,place,battery,fuel,etc,status});
-  save();
-  showSnack("장비 추가");
-  if(page === "warehouse") renderWarehouse();
-}
 
 
 function openManageSettings(){
@@ -1125,41 +1057,6 @@ function openManageSettings(){
   document.getElementById("addEquipmentBtn")?.addEventListener("click", addEquipmentFromManage);
 }
 
-function addWarehouse(){
-  const name = prompt("추가할 창고명", "");
-  if(!name) return;
-  if(state.warehouses.includes(name)){ showSnack("이미 있는 창고입니다"); return; }
-  ensureWarehouse(name);
-  showSnack("창고 추가 완료");
-  openManageSettings();
-}
-
-function addCategory(){
-  const name = prompt("추가할 자재목록/분류명", "");
-  if(!name) return;
-  if(cats.includes(name)){ showSnack("이미 있는 분류입니다"); return; }
-  const itemName = prompt("분류를 생성하기 위한 첫 자재명을 입력하세요\n예: 예비 품목", `${name} 품목`);
-  if(!itemName) return;
-  const unit = prompt("단위", "개") || "개";
-  ensureCatalogItem({cat:name,name:itemName,unit,spec:"",kind:"consume"});
-  showSnack("자재목록 추가 완료");
-  openManageSettings();
-}
-
-function addMaterial(){
-  const cat = prompt(`분류명\n현재 분류: ${cats.join(", ")}`, cats[0] || "기타");
-  if(!cat) return;
-  const name = prompt("자재명", "");
-  if(!name) return;
-  if(state.catalog.some(x => x.name === name)){ showSnack("이미 있는 자재입니다"); return; }
-  const unit = prompt("단위", "개") || "개";
-  const spec = prompt("세부사항", "") || "";
-  const kindInput = prompt("구분\n소모품: 1 / 회수품: 2", "1");
-  const kind = kindInput === "2" ? "returnable" : "consume";
-  ensureCatalogItem({cat,name,unit,spec,kind});
-  showSnack("자재 추가 완료");
-  openManageSettings();
-}
 
 function addEquipmentFromManage(){
   const name = prompt("장비명", "");
@@ -1185,7 +1082,8 @@ function addWarehouse(){
   if(state.warehouses.includes(name)){ showSnack("이미 있는 창고입니다"); return; }
   ensureWarehouse(name);
   showSnack("창고 추가 완료");
-  if(page === "warehouse") renderWarehouse();
+  if(page === "manage") openManageSettings();
+  else if(page === "warehouse") renderWarehouse();
 }
 
 function addMaterialChoice(){
@@ -1209,7 +1107,8 @@ function addCategory(){
   const unit = prompt("단위", "개") || "개";
   ensureCatalogItem({cat:name,name:itemName,unit,spec:"",kind:"consume"});
   showSnack("자재목록 추가 완료");
-  if(page === "warehouse") renderWarehouse();
+  if(page === "manage") openManageSettings();
+  else if(page === "warehouse") renderWarehouse();
 }
 
 function addMaterial(){
@@ -1224,7 +1123,8 @@ function addMaterial(){
   const kind = kindInput === "2" ? "returnable" : "consume";
   ensureCatalogItem({cat,name,unit,spec,kind});
   showSnack("자재 추가 완료");
-  if(page === "warehouse") renderWarehouse();
+  if(page === "manage") openManageSettings();
+  else if(page === "warehouse") renderWarehouse();
 }
 
 function addEquipmentCategory(){
@@ -1274,7 +1174,7 @@ function bindGlobal(){
   document.getElementById("closeUpdate")?.addEventListener("click", () => document.getElementById("updateModal").classList.remove("show"));
   document.getElementById("appInfoBtn")?.addEventListener("click", () => {
     closeMenu();
-    alert(`Victor\n방제자원 관리 시스템\n\nVersion 0.19.0a\n\nBy\n통영해양경찰서 주무관 정홍준`);
+    alert(`Victor\n방제자원 관리 시스템\n\nVersion 0.19.0b Stable\n\nBy\n통영해양경찰서 주무관 정홍준`);
   });
 
   let lastTouchEnd = 0;
@@ -1289,12 +1189,69 @@ function closeMenu(){
   document.getElementById("moreMenu").classList.remove("show");
 }
 
+let appStarted = false;
+
+function hideSplash(){
+  document.getElementById("splash")?.classList.add("hide");
+}
+
+function showStartupError(error){
+  console.error("[Victor] 시작 실패", error);
+  hideSplash();
+  const message = error?.message || "알 수 없는 오류";
+  view.innerHTML = `
+    <div class="card startup-error">
+      <div class="section-title">앱을 안전하게 시작하지 못했습니다.</div>
+      <div class="row-sub" style="margin-top:8px">저장된 데이터는 삭제되지 않았습니다.</div>
+      <div class="error-message">${esc(message)}</div>
+      <button class="btn primary" id="retryApp" type="button" style="width:100%;margin-top:14px">다시 시작</button>
+      <button class="btn secondary" id="refreshAppCache" type="button" style="width:100%;margin-top:10px">앱 캐시 새로 받기</button>
+    </div>`;
+  document.getElementById("retryApp")?.addEventListener("click", () => location.reload());
+  document.getElementById("refreshAppCache")?.addEventListener("click", async () => {
+    try{
+      if("serviceWorker" in navigator){
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(registrations.map(registration => registration.unregister()));
+      }
+      if("caches" in window){
+        const keys = await caches.keys();
+        await Promise.all(keys.filter(key => key.startsWith("victor-")).map(key => caches.delete(key)));
+      }
+    }finally{
+      location.reload();
+    }
+  });
+}
+
 function init(){
-  bindGlobal();
-  render();
-  setTimeout(() => document.getElementById("splash").classList.add("hide"), 500);
+  // 렌더링 오류가 발생해도 시작 화면이 영구적으로 남지 않게 먼저 안전 타이머를 건다.
+  setTimeout(hideSplash, 1800);
+
+  window.addEventListener("error", event => {
+    if(!appStarted) showStartupError(event.error || new Error(event.message));
+    else showSnack("처리 중 오류가 발생했습니다");
+  });
+  window.addEventListener("unhandledrejection", event => {
+    if(!appStarted) showStartupError(event.reason);
+    else showSnack("처리 중 오류가 발생했습니다");
+  });
+
+  try{
+    bindGlobal();
+    render();
+    appStarted = true;
+    setTimeout(hideSplash, 500);
+  }catch(error){
+    showStartupError(error);
+  }
+
   if("serviceWorker" in navigator){
-    window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(()=>{}));
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("./sw.js?v=0190b")
+        .then(registration => registration.update())
+        .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
+    });
   }
 }
 
