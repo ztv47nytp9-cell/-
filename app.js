@@ -198,11 +198,11 @@ function renderHome(){
     <div class="section-head"><div class="section-title">최근 기록</div><button class="link-btn" id="goHistory">더보기 ›</button></div>
     <div class="list-card">${recent.length ? recent.map(recordRow).join("") : `<div class="emptybox">아직 기록이 없습니다.</div>`}</div>
   `;
-  document.getElementById("goHistory").addEventListener("click", () => { historyFilter = "all"; setPage("history"); });
-  document.getElementById("dashPending").addEventListener("click", () => { historyFilter = "pending"; setPage("history"); });
-  document.getElementById("dashWarehouse").addEventListener("click", () => setPage("warehouse"));
-  document.getElementById("dashCatalog").addEventListener("click", () => { selectedWarehouse = warehouses[0]; warehouseTab = "material"; setPage("warehouse"); });
-  document.getElementById("dashHistory").addEventListener("click", () => { historyFilter = "all"; setPage("history"); });
+  document.getElementById("goHistory")?.addEventListener("click", () => { historyFilter = "all"; setPage("history"); });
+  document.getElementById("dashPending")?.addEventListener("click", () => { historyFilter = "pending"; setPage("history"); });
+  document.getElementById("dashWarehouse")?.addEventListener("click", () => setPage("warehouse"));
+  document.getElementById("dashCatalog")?.addEventListener("click", () => { selectedWarehouse = warehouses[0]; warehouseTab = "material"; setPage("warehouse"); });
+  document.getElementById("dashHistory")?.addEventListener("click", () => { historyFilter = "all"; setPage("history"); });
   view.querySelectorAll("[data-detail]").forEach(b => b.addEventListener("click", () => openDetail(b.dataset.detail)));
 }
 
@@ -237,7 +237,7 @@ function renderWarehouse(){
       warehouseTab = "material";
       renderWarehouse();
     }));
-    document.getElementById("addWarehouseInline").addEventListener("click", addWarehouse);
+    document.getElementById("addWarehouseInline")?.addEventListener("click", addWarehouse);
     return;
   }
 
@@ -259,10 +259,10 @@ function renderWarehouse(){
       ${warehouseTab === "material" ? `<input class="search" id="stockSearch" placeholder="자재 검색"><div id="stockList"></div><button class="btn secondary" id="addMaterialInline" type="button" style="width:100%;margin-top:12px">+ 신규 추가</button>` : renderWarehouseEquipment(selectedWarehouse)}
     </div>
   `;
-  document.getElementById("backWh").addEventListener("click", () => { selectedWarehouse = null; renderWarehouse(); });
-  document.getElementById("editInfo").addEventListener("click", () => editWarehouseInfo(selectedWarehouse));
-  document.getElementById("tabMaterial").addEventListener("click", () => { warehouseTab = "material"; renderWarehouse(); });
-  document.getElementById("tabEquipment").addEventListener("click", () => { warehouseTab = "equipment"; renderWarehouse(); });
+  document.getElementById("backWh")?.addEventListener("click", () => { selectedWarehouse = null; renderWarehouse(); });
+  document.getElementById("editInfo")?.addEventListener("click", () => editWarehouseInfo(selectedWarehouse));
+  document.getElementById("tabMaterial")?.addEventListener("click", () => { warehouseTab = "material"; renderWarehouse(); });
+  document.getElementById("tabEquipment")?.addEventListener("click", () => { warehouseTab = "equipment"; renderWarehouse(); });
 
   const baseBtn = document.getElementById("editOpBase");
   if(baseBtn) baseBtn.addEventListener("click", () => editOpBase(selectedWarehouse));
@@ -270,8 +270,8 @@ function renderWarehouse(){
   if(opBtn) opBtn.addEventListener("click", () => addOpLog(selectedWarehouse));
 
   if(warehouseTab === "material"){
-    document.getElementById("stockSearch").addEventListener("input", renderStockList);
-    document.getElementById("addMaterialInline").addEventListener("click", addMaterialChoice);
+    document.getElementById("stockSearch")?.addEventListener("input", renderStockList);
+    document.getElementById("addMaterialInline")?.addEventListener("click", addMaterialChoice);
     renderStockList();
   }else{
     const addEquipBtn = document.getElementById("addEquip");
@@ -448,14 +448,14 @@ function renderRegister(){
       <button class="btn primary" id="saveRecord" type="button">${registerMode === "quick" ? "미반영으로 저장" : registerFlow + " 저장"}</button>
     </div>
   `;
-  document.getElementById("modeNormal").addEventListener("click", () => { registerMode = "normal"; renderRegister(); setHead(); });
-  document.getElementById("modeQuick").addEventListener("click", () => { registerMode = "quick"; renderRegister(); setHead(); });
+  document.getElementById("modeNormal")?.addEventListener("click", () => { registerMode = "normal"; renderRegister(); setHead(); });
+  document.getElementById("modeQuick")?.addEventListener("click", () => { registerMode = "quick"; renderRegister(); setHead(); });
   const outBtn = document.getElementById("flowOut");
   if(outBtn) outBtn.addEventListener("click", () => { registerFlow = "출고"; renderRegister(); });
   const inBtn = document.getElementById("flowIn");
   if(inBtn) inBtn.addEventListener("click", () => { registerFlow = "입고"; renderRegister(); });
-  document.getElementById("addItem").addEventListener("click", addDraftItem);
-  document.getElementById("saveRecord").addEventListener("click", saveRecord);
+  document.getElementById("addItem")?.addEventListener("click", addDraftItem);
+  document.getElementById("saveRecord")?.addEventListener("click", saveRecord);
   renderItems();
 }
 
@@ -589,7 +589,7 @@ function renderHistory(){
     <div id="histList">${renderHistoryListHtml(filtered)}</div>
   `;
   view.querySelectorAll("[data-hfilter]").forEach(b => b.addEventListener("click", () => { historyFilter = b.dataset.hfilter; renderHistory(); }));
-  document.getElementById("histSearch").addEventListener("input", () => {
+  document.getElementById("histSearch")?.addEventListener("input", () => {
     const q = document.getElementById("histSearch").value.trim();
     const searched = filtered.filter(r => !q || [r.title,r.type,r.flow,r.warehouse,r.memo,...r.items.map(i=>i.name)].join(" ").includes(q));
     document.getElementById("histList").innerHTML = renderHistoryListHtml(searched);
@@ -673,10 +673,10 @@ function openDetail(id){
     ${r.status === "pending" ? `<button class="btn primary" id="applyPending" type="button" style="width:100%;margin-bottom:9px">재고 반영</button>` : ""}
     <button class="btn danger" id="deleteRecord" type="button" style="width:100%">삭제</button>
   `;
-  document.getElementById("backHist").addEventListener("click", () => setPage("history"));
+  document.getElementById("backHist")?.addEventListener("click", () => setPage("history"));
   const applyBtn = document.getElementById("applyPending");
   if(applyBtn) applyBtn.addEventListener("click", () => applyPendingRecord(id));
-  document.getElementById("deleteRecord").addEventListener("click", () => {
+  document.getElementById("deleteRecord")?.addEventListener("click", () => {
     if(!confirm(r.status === "pending" ? "미반영 기록을 삭제할까요?" : "기록을 삭제하고 재고를 복구할까요?")) return;
     if(r.status === "done" && r.flow === "재고수정"){
       r.items.forEach(i => { if(i.before !== undefined) state.stock[r.warehouse][i.name] = Number(i.before); });
@@ -713,7 +713,7 @@ function renderMemo(){
       </div>
     `).join("") : `<div class="emptybox">아직 메모가 없습니다.</div>`}</div>
   `;
-  document.getElementById("saveMemo").addEventListener("click", saveMemo);
+  document.getElementById("saveMemo")?.addEventListener("click", saveMemo);
   view.querySelectorAll("[data-memo-del]").forEach(b => b.addEventListener("click", () => {
     if(!confirm("메모를 삭제할까요?")) return;
     state.memos = state.memos.filter(x => x.id !== b.dataset.memoDel);
@@ -852,10 +852,10 @@ function renderSurvey(){
     }
   }
   input.addEventListener("input", clean);
-  document.getElementById("surveyPrev").addEventListener("click", () => { state.survey.index = Math.max(0,idx-1); save(); renderSurvey(); });
-  document.getElementById("surveyNext").addEventListener("click", () => saveSurveyValue(true));
-  document.getElementById("surveyReview").addEventListener("click", renderSurveyReview);
-  document.getElementById("exitSurvey").addEventListener("click", () => { if(confirm("재고조사를 중단하고 나가시겠습니까? 진행상황은 저장됩니다.")) setPage("home"); });
+  document.getElementById("surveyPrev")?.addEventListener("click", () => { state.survey.index = Math.max(0,idx-1); save(); renderSurvey(); });
+  document.getElementById("surveyNext")?.addEventListener("click", () => saveSurveyValue(true));
+  document.getElementById("surveyReview")?.addEventListener("click", renderSurveyReview);
+  document.getElementById("exitSurvey")?.addEventListener("click", () => { if(confirm("재고조사를 중단하고 나가시겠습니까? 진행상황은 저장됩니다.")) setPage("home"); });
   clean();
   input.focus();
 }
@@ -888,9 +888,9 @@ function renderSurveyReview(){
     <button class="btn primary" id="applySurvey" type="button" style="width:100%;margin-top:10px">재고 반영</button>
     <button class="btn gray" id="cancelSurvey" type="button" style="width:100%;margin-top:10px">취소</button>
   `;
-  document.getElementById("backSurvey").addEventListener("click", renderSurvey);
-  document.getElementById("cancelSurvey").addEventListener("click", () => setPage("home"));
-  document.getElementById("applySurvey").addEventListener("click", () => {
+  document.getElementById("backSurvey")?.addEventListener("click", renderSurvey);
+  document.getElementById("cancelSurvey")?.addEventListener("click", () => setPage("home"));
+  document.getElementById("applySurvey")?.addEventListener("click", () => {
     if(!confirm("검토한 실사 수량으로 재고를 반영할까요?")) return;
     items.forEach(it => {
       const key = it.warehouse + "|" + it.name;
@@ -1021,8 +1021,8 @@ function openEquipment(id){
       <button class="btn primary" id="saveEquip" type="button" style="width:100%;margin-top:14px">저장</button>
     </div>
   `;
-  document.getElementById("backEquip").addEventListener("click", () => { page = "warehouse"; setHead(); renderWarehouse(); });
-  document.getElementById("saveEquip").addEventListener("click", () => saveEquipmentInline(id));
+  document.getElementById("backEquip")?.addEventListener("click", () => { page = "warehouse"; setHead(); renderWarehouse(); });
+  document.getElementById("saveEquip")?.addEventListener("click", () => saveEquipmentInline(id));
 }
 
 function saveEquipmentInline(id){
@@ -1102,8 +1102,28 @@ function addEquipment(){
 }
 
 
-function openManageSettings(){ openSettings(); }
-
+function openManageSettings(){
+  closeMenu();
+  page = "manage";
+  document.getElementById("headTitle").innerHTML = `<div class="page-title">관리 설정</div><div class="date">창고·자재·장비 추가</div>`;
+  document.querySelectorAll(".nav").forEach(b => b.classList.remove("active"));
+  view.innerHTML = `
+    <div class="manage-grid">
+      <button class="manage-card" id="addWarehouseBtn" type="button">🏢 창고 추가</button>
+      <button class="manage-card" id="addCategoryBtn" type="button">📁 자재목록 추가</button>
+      <button class="manage-card" id="addMaterialBtn" type="button">📦 자재 추가</button>
+      <button class="manage-card" id="addEquipmentBtn" type="button">🛠️ 장비 추가</button>
+    </div>
+    <div class="card">
+      <div class="section-title">관리 원칙</div>
+      <div class="row-sub">추가한 창고·자재·장비는 등록, 보관, 재고수정, 이력 화면에 자동 반영됩니다.</div>
+    </div>
+  `;
+  document.getElementById("addWarehouseBtn")?.addEventListener("click", addWarehouse);
+  document.getElementById("addCategoryBtn")?.addEventListener("click", addCategory);
+  document.getElementById("addMaterialBtn")?.addEventListener("click", addMaterial);
+  document.getElementById("addEquipmentBtn")?.addEventListener("click", addEquipmentFromManage);
+}
 
 function addWarehouse(){
   const name = prompt("추가할 창고명", "");
@@ -1232,33 +1252,10 @@ function addEquipment(){
   if(page === "warehouse") renderWarehouse();
 }
 
-
-function openSettings(){
-  closeMenu();
-  page = "settings";
-  document.getElementById("headTitle").innerHTML = `<div class="page-title">설정</div><div class="date">앱 관리</div>`;
-  document.querySelectorAll(".nav").forEach(b => b.classList.remove("active"));
-  view.innerHTML = `
-    <div class="settings-list">
-      <button class="settings-btn" id="settingsBackup" type="button">데이터 백업<span>현재 데이터를 JSON 파일로 저장합니다.</span></button>
-      <button class="settings-btn" id="settingsRestore" type="button">데이터 복원<span>백업 파일을 불러와 데이터를 복원합니다.</span></button>
-      <button class="settings-btn" id="settingsReset" type="button">전체 초기화<span>모든 저장 데이터를 삭제합니다.</span></button>
-    </div>
-  `;
-  document.getElementById("settingsBackup").addEventListener("click", backup);
-  document.getElementById("settingsRestore").addEventListener("click", () => document.getElementById("restoreInput").click());
-  document.getElementById("settingsReset").addEventListener("click", hardReset);
-}
-
-function appInfo(){
-  alert(`VICTOR\\nMarine Pollution Response\\n방제자원 관리 시스템\\n\\nAlpha 0.19.0`);
-}
-
-
 function bindGlobal(){
   document.querySelectorAll(".nav").forEach(b => b.addEventListener("click", () => setPage(b.dataset.page)));
 
-  document.getElementById("moreBtn").addEventListener("click", () => {
+  document.getElementById("moreBtn")?.addEventListener("click", () => {
     document.getElementById("moreMenu").classList.toggle("show");
   });
 
@@ -1268,13 +1265,16 @@ function bindGlobal(){
     if(!menu.contains(e.target) && !btn.contains(e.target)) menu.classList.remove("show");
   });
 
-  document.getElementById("manageBtn")?.addEventListener("click", openSettings); backup(); }); document.getElementById("restoreFile").click(); });
-  document.getElementById("restoreFile").addEventListener("change", e => { if(e.target.files[0]) restoreFile(e.target.files[0]); }); resetAll(); });
-  document.getElementById("updateBtn").addEventListener("click", () => { closeMenu(); document.getElementById("updateModal").classList.add("show"); });
-  document.getElementById("closeUpdate").addEventListener("click", () => document.getElementById("updateModal").classList.remove("show"));
-  document.getElementById("appInfoBtn").addEventListener("click", () => {
+  document.getElementById("manageBtn")?.addEventListener("click", openManageSettings);
+  document.getElementById("backupBtn")?.addEventListener("click", () => { closeMenu(); backup(); });
+  document.getElementById("restoreBtn")?.addEventListener("click", () => { closeMenu(); document.getElementById("restoreFile").click(); });
+  document.getElementById("restoreFile")?.addEventListener("change", e => { if(e.target.files[0]) restoreFile(e.target.files[0]); });
+  document.getElementById("resetBtn")?.addEventListener("click", () => { closeMenu(); resetAll(); });
+  document.getElementById("updateBtn")?.addEventListener("click", () => { closeMenu(); document.getElementById("updateModal").classList.add("show"); });
+  document.getElementById("closeUpdate")?.addEventListener("click", () => document.getElementById("updateModal").classList.remove("show"));
+  document.getElementById("appInfoBtn")?.addEventListener("click", () => {
     closeMenu();
-    alert(`Victor\n방제자원 관리 시스템\n\nVersion 0.19.0\n\nBy\n통영해양경찰서 주무관 정홍준`);
+    alert(`Victor\n방제자원 관리 시스템\n\nVersion 0.19.0a\n\nBy\n통영해양경찰서 주무관 정홍준`);
   });
 
   let lastTouchEnd = 0;
