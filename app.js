@@ -43,7 +43,6 @@ function setPage(next){
   editingId = null;
   registerMode = "normal";
   document.querySelectorAll(".nav").forEach(b => b.classList.toggle("active", b.dataset.page === page));
-  setHead();
   render();
 }
 
@@ -59,7 +58,7 @@ function setHead(){
 function render(){
   setHead();
   if(page === "home") renderHome();
-  page = "warehouse"; setHead(); renderWarehouse();
+  if(page === "warehouse") renderWarehouse();
   if(page === "register") renderRegister();
   if(page === "history") renderHistory();
   if(page === "memo") renderMemo();
@@ -249,7 +248,7 @@ function renderWarehouse(){
       <div class="section-title">${esc(selectedWarehouse)}</div>
       <div class="row-sub">📌 중요 메모</div>
       <div class="memo-box">${info.memo ? esc(info.memo) : "등록된 메모가 없습니다."}</div>
-      <button class="btn secondary" id="editInfo" type="button" style="width:100%;margin-top:12px">보관 메모 수정</button>
+      <button class="btn secondary" id="editInfo" type="button" style="width:100%;margin-top:12px">메모 수정</button>
     </div>
     ${typeof renderOps === "function" ? renderOps(selectedWarehouse) : ""}
     <div class="card">
@@ -919,78 +918,78 @@ function opTotal(place,field){
 }
 
 function renderOps(place){
-  if(!["방제지휘차량","소형방제정"].includes(place)) return "";
+  if(!state.assetOps || !state.assetOps[place]) return "";
+  const op = state.assetOps[place];
   if(place === "방제지휘차량"){
-    return `<div class="card"><div class="section-title">차량 관리</div>
-      <div class="metric" style="height:82px"><div><div class="metric-label">누적 주행거리</div><div class="metric-value">${opTotal(place,"distance")}km</div></div></div>
-      <div class="btn-row" style="display:grid;grid-template-columns:1fr 1fr;margin-top:12px">
-        <button class="btn secondary" id="editOpBase" type="button">초기값</button>
-        <button class="btn primary" id="addOpLog" type="button">일일 기록</button>
-      </div>
-      <div class="section-title" style="margin-top:16px">최근 이력</div>${recentOpRows(place)}
+    const total = Number(op.distanceBase || 0) + (op.logs || []).reduce((a,l)=>a+Number(l.distance || 0),0);
+    return `<div class="card">
+      <div class="section-title">운행이력</div>
+      <div class="row-sub">누적 주행거리 ${Number(total).toLocaleString("ko-KR")}km</div>
+      <button class="btn secondary" id="editOpBase" type="button" style="width:100%;margin-top:10px">기준값 수정</button>
+      <button class="btn primary" id="addOpLog" type="button" style="width:100%;margin-top:8px">운행기록 추가</button>
     </div>`;
   }
-  return `<div class="card"><div class="section-title">소형방제정 관리</div>
-    <div class="grid2">
-      <div class="metric" style="height:82px"><div><div class="metric-label">누적 구동시간</div><div class="metric-value">${opTotal(place,"hours")}h</div></div></div>
-      <div class="metric" style="height:82px"><div><div class="metric-label">누적 연료소모</div><div class="metric-value">${opTotal(place,"fuel")}L</div></div></div>
-    </div>
-    <div class="btn-row" style="display:grid;grid-template-columns:1fr 1fr;margin-top:12px">
-      <button class="btn secondary" id="editOpBase" type="button">초기값</button>
-      <button class="btn primary" id="addOpLog" type="button">일일 기록</button>
-    </div>
-    <div class="section-title" style="margin-top:16px">최근 이력</div>${recentOpRows(place)}
-  </div>`;
+  if(place === "소형방제정"){
+    const port = Number(op.portHoursBase ?? op.hoursBase ?? 0) + (op.logs || []).reduce((a,l)=>a+Number(l.portHours ?? l.hours ?? 0),0);
+    const stbd = Number(op.starboardHoursBase ?? op.hoursBase ?? 0) + (op.logs || []).reduce((a,l)=>a+Number(l.starboardHours ?? l.hours ?? 0),0);
+    const fuel = Number(op.fuelBase || 0) + (op.logs || []).reduce((a,l)=>a+Number(l.fuel || 0),0);
+    return `<div class="card">
+      <div class="section-title">운항이력</div>
+      <div class="row-sub">좌현 엔진 ${port.toFixed(1)}h · 우현 엔진 ${stbd.toFixed(1)}h</div>
+      <div class="row-sub">총 구동시간 ${(port+stbd).toFixed(1)}h · 연료소모 ${fuel.toFixed(1)}L</div>
+      <button class="btn secondary" id="editOpBase" type="button" style="width:100%;margin-top:10px">기준값 수정</button>
+      <button class="btn primary" id="addOpLog" type="button" style="width:100%;margin-top:8px">운항기록 추가</button>
+    </div>`;
+  }
+  return "";
 }
+
 
 function editOpBase(place){
+  const op = state.assetOps[place];
   if(place === "방제지휘차량"){
-    const v = prompt("방제지휘차량 초기 누적 주행거리(km)", state.assetOps[place].distanceBase || 0);
-    if(v === null) return;
-    const n = Number(v);
-    if(Number.isNaN(n) || n < 0){ showSnack("올바른 숫자를 입력해주세요"); return; }
-    state.assetOps[place].distanceBase = n;
-  }else{
-    const h = prompt("소형방제정 초기 누적 구동시간(h)", state.assetOps[place].hoursBase || 0);
-    if(h === null) return;
-    const hn = Number(h);
-    if(Number.isNaN(hn) || hn < 0){ showSnack("올바른 숫자를 입력해주세요"); return; }
-    const f = prompt("소형방제정 초기 누적 연료소모량(L)", state.assetOps[place].fuelBase || 0);
-    if(f === null) return;
-    const fn = Number(f);
-    if(Number.isNaN(fn) || fn < 0){ showSnack("올바른 숫자를 입력해주세요"); return; }
-    state.assetOps[place].hoursBase = hn;
-    state.assetOps[place].fuelBase = fn;
+    const distance = prompt("기준 누적 주행거리(km)", op.distanceBase || 0);
+    if(distance === null) return;
+    op.distanceBase = Number(distance || 0);
+  }else if(place === "소형방제정"){
+    const port = prompt("좌현 엔진 기준 구동시간(h)", op.portHoursBase ?? op.hoursBase ?? 0);
+    if(port === null) return;
+    const stbd = prompt("우현 엔진 기준 구동시간(h)", op.starboardHoursBase ?? op.hoursBase ?? 0);
+    if(stbd === null) return;
+    const fuel = prompt("기준 연료소모량(L)", op.fuelBase || 0);
+    if(fuel === null) return;
+    op.portHoursBase = Number(port || 0);
+    op.starboardHoursBase = Number(stbd || 0);
+    op.fuelBase = Number(fuel || 0);
   }
   save();
-  showSnack("초기값 저장");
+  showSnack("기준값 저장");
   renderWarehouse();
 }
 
+
 function addOpLog(place){
+  const op = state.assetOps[place];
   if(place === "방제지휘차량"){
-    const d = prompt("일일 주행거리(km)", 0);
-    if(d === null) return;
-    const dn = Number(d);
-    if(Number.isNaN(dn) || dn < 0){ showSnack("올바른 주행거리를 입력해주세요"); return; }
+    const distance = prompt("이번 운행거리(km)", 0);
+    if(distance === null) return;
     const memo = prompt("메모", "") || "";
-    state.assetOps[place].logs.push({id:uid(),date:todayISO(),distance:dn,memo,createdAt:new Date().toISOString()});
-  }else{
-    const h = prompt("일일 구동시간(h)", 0);
-    if(h === null) return;
-    const hn = Number(h);
-    if(Number.isNaN(hn) || hn < 0){ showSnack("올바른 구동시간을 입력해주세요"); return; }
-    const f = prompt("일일 연료소모량(L)", 0);
-    if(f === null) return;
-    const fn = Number(f);
-    if(Number.isNaN(fn) || fn < 0){ showSnack("올바른 연료소모량을 입력해주세요"); return; }
+    op.logs.push({id:uid(), date:todayISO(), distance:Number(distance||0), memo});
+  }else if(place === "소형방제정"){
+    const port = prompt("좌현 엔진 구동시간(h)", 0);
+    if(port === null) return;
+    const stbd = prompt("우현 엔진 구동시간(h)", 0);
+    if(stbd === null) return;
+    const fuel = prompt("연료소모량(L)", 0);
+    if(fuel === null) return;
     const memo = prompt("메모", "") || "";
-    state.assetOps[place].logs.push({id:uid(),date:todayISO(),hours:hn,fuel:fn,memo,createdAt:new Date().toISOString()});
+    op.logs.push({id:uid(), date:todayISO(), portHours:Number(port||0), starboardHours:Number(stbd||0), fuel:Number(fuel||0), memo});
   }
   save();
-  showSnack("일일 이력 저장");
+  showSnack("운영기록 추가");
   renderWarehouse();
 }
+
 
 function recentOpRows(place){
   const logs = [...((state.assetOps?.[place]?.logs) || [])].slice(-5).reverse();
@@ -1000,12 +999,38 @@ function recentOpRows(place){
 
 function renderEquipment(){ return ""; }
 
+
 function openEquipment(id){
+  const e = state.equipment.find(x => x.id === id);
+  if(!e) return;
+  page = "equipmentDetail";
+  document.getElementById("headTitle").innerHTML = `<div class="page-title">장비 상세</div><div class="date">${esc(e.name)}</div>`;
+  view.innerHTML = `
+    <button class="back" id="backEquip" type="button">‹ 장비</button>
+    <div class="card">
+      <div class="section-title">${esc(e.name)}</div>
+      <div class="detail-grid">
+        <div class="detail-row"><div class="detail-label">분류</div><div class="detail-value">${esc(e.cat || "-")}</div></div>
+        <div class="detail-row"><div class="detail-label">세부사항</div><div class="detail-value">${esc(e.detail || "-")}</div></div>
+        <div class="detail-row"><div class="detail-label">보관장소</div><div class="detail-value">${esc(e.place || "-")}</div></div>
+        <div class="detail-row"><div class="detail-label">배터리</div><div class="detail-value">${esc(e.battery || "-")}</div></div>
+        <div class="detail-row"><div class="detail-label">연료유</div><div class="detail-value">${esc(e.fuel || "-")}</div></div>
+        <div class="detail-row"><div class="detail-label">기타사항</div><div class="detail-value">${esc(e.etc || "-")}</div></div>
+        <div class="detail-row"><div class="detail-label">상태</div><div class="detail-value">${esc(e.status || "정상")}</div></div>
+      </div>
+      <button class="btn primary" id="editEquip" type="button" style="width:100%;margin-top:14px">수정</button>
+    </div>
+  `;
+  document.getElementById("backEquip").addEventListener("click", () => { page = "warehouse"; setHead(); renderWarehouse(); });
+  document.getElementById("editEquip").addEventListener("click", () => editEquipment(id));
+}
+
+function editEquipment(id){
   const e = state.equipment.find(x => x.id === id);
   if(!e) return;
   const name = prompt("장비명", e.name);
   if(name === null) return;
-  const cat = prompt(`분류\n${equipmentCategories.join(", ")}`, e.cat);
+  const cat = prompt(`분류\\n${equipmentCategories.join(", ")}`, e.cat);
   if(cat === null) return;
   const detail = prompt("세부사항", e.detail || "");
   if(detail === null) return;
@@ -1023,8 +1048,9 @@ function openEquipment(id){
   Object.assign(e, {name:name||"장비", cat:cat||"기타장비", detail, place:place||warehouses[0], battery, fuel, etc, status:status||"정상"});
   save();
   showSnack("장비 저장");
-  renderWarehouse();
+  openEquipment(id);
 }
+
 
 function addEquipment(){
   const name = prompt("장비명", "");
@@ -1040,30 +1066,11 @@ function addEquipment(){
   state.equipment.push({id:uid(),cat,name,detail,place,battery,fuel,etc,status});
   save();
   showSnack("장비 추가");
-  page = "warehouse"; setHead(); renderWarehouse();
+  if(page === "warehouse") renderWarehouse();
 }
 
 
-function openManageSettings(){
-  closeMenu();
-  page = "settings";
-  document.getElementById("headTitle").innerHTML = `<div class="page-title">설정</div><div class="date">앱 관리</div>`;
-  document.querySelectorAll(".nav").forEach(b => b.classList.remove("active"));
-  view.innerHTML = `
-    <div class="settings-list">
-      <button class="settings-btn" id="settingsBackup" type="button">데이터 백업<span>현재 데이터를 JSON 파일로 저장합니다.</span></button>
-      <button class="settings-btn" id="settingsRestore" type="button">데이터 복원<span>백업 파일을 불러와 데이터를 복원합니다.</span></button>
-      <button class="settings-btn" id="settingsHelp" type="button">업데이트 내역<span>버전별 변경사항을 확인합니다.</span></button>
-      <button class="settings-btn" id="settingsInfo" type="button">앱 정보<span>Victor 버전 및 개발자 정보를 확인합니다.</span></button>
-      <button class="settings-btn" id="settingsReset" type="button">전체 초기화<span>모든 저장 데이터를 삭제합니다.</span></button>
-    </div>
-  `;
-  document.getElementById("settingsBackup").addEventListener("click", backup);
-  document.getElementById("settingsRestore").addEventListener("click", () => document.getElementById("restoreInput").click());
-  document.getElementById("settingsHelp").addEventListener("click", openHelp);
-  document.getElementById("settingsInfo").addEventListener("click", showInfo);
-  document.getElementById("settingsReset").addEventListener("click", hardReset);
-}
+function openManageSettings(){ openSettings(); }
 
 
 function addWarehouse(){
@@ -1126,14 +1133,20 @@ function addWarehouse(){
   if(state.warehouses.includes(name)){ showSnack("이미 있는 창고입니다"); return; }
   ensureWarehouse(name);
   showSnack("창고 추가 완료");
-  page = "warehouse"; setHead(); renderWarehouse();
+  if(page === "warehouse") renderWarehouse();
 }
 
-function addMaterialChoice(){ openAddMaterialChoice(); }
+function addMaterialChoice(){
+  const choice = prompt("신규 추가\n1. 자재목록 추가\n2. 자재 추가", "2");
+  if(choice === "1") addCategory();
+  else if(choice === "2") addMaterial();
+}
 
-
-function addEquipmentChoice(){ openAddEquipmentChoice(); }
-
+function addEquipmentChoice(){
+  const choice = prompt("신규 추가\n1. 장비목록 추가\n2. 장비 추가", "2");
+  if(choice === "1") addEquipmentCategory();
+  else if(choice === "2") addEquipment();
+}
 
 function addCategory(){
   const name = prompt("추가할 자재목록/분류명", "");
@@ -1144,7 +1157,7 @@ function addCategory(){
   const unit = prompt("단위", "개") || "개";
   ensureCatalogItem({cat:name,name:itemName,unit,spec:"",kind:"consume"});
   showSnack("자재목록 추가 완료");
-  page = "warehouse"; setHead(); renderWarehouse();
+  if(page === "warehouse") renderWarehouse();
 }
 
 function addMaterial(){
@@ -1159,7 +1172,7 @@ function addMaterial(){
   const kind = kindInput === "2" ? "returnable" : "consume";
   ensureCatalogItem({cat,name,unit,spec,kind});
   showSnack("자재 추가 완료");
-  page = "warehouse"; setHead(); renderWarehouse();
+  if(page === "warehouse") renderWarehouse();
 }
 
 function addEquipmentCategory(){
@@ -1167,7 +1180,7 @@ function addEquipmentCategory(){
   if(!name) return;
   if(!equipmentCategories.includes(name)) equipmentCategories.push(name);
   showSnack("장비목록 추가 완료");
-  page = "warehouse"; setHead(); renderWarehouse();
+  if(page === "warehouse") renderWarehouse();
 }
 
 function addEquipment(){
@@ -1184,7 +1197,29 @@ function addEquipment(){
   state.equipment.push({id:uid(),cat,name,detail,place,battery,fuel,etc,status});
   save();
   showSnack("장비 추가 완료");
-  page = "warehouse"; setHead(); renderWarehouse();
+  if(page === "warehouse") renderWarehouse();
+}
+
+
+function openSettings(){
+  closeMenu();
+  page = "settings";
+  document.getElementById("headTitle").innerHTML = `<div class="page-title">설정</div><div class="date">앱 관리</div>`;
+  document.querySelectorAll(".nav").forEach(b => b.classList.remove("active"));
+  view.innerHTML = `
+    <div class="settings-list">
+      <button class="settings-btn" id="settingsBackup" type="button">데이터 백업<span>현재 데이터를 JSON 파일로 저장합니다.</span></button>
+      <button class="settings-btn" id="settingsRestore" type="button">데이터 복원<span>백업 파일을 불러와 데이터를 복원합니다.</span></button>
+      <button class="settings-btn" id="settingsReset" type="button">전체 초기화<span>모든 저장 데이터를 삭제합니다.</span></button>
+    </div>
+  `;
+  document.getElementById("settingsBackup").addEventListener("click", backup);
+  document.getElementById("settingsRestore").addEventListener("click", () => document.getElementById("restoreInput").click());
+  document.getElementById("settingsReset").addEventListener("click", hardReset);
+}
+
+function appInfo(){
+  alert(`VICTOR\\nMarine Pollution Response\\n방제자원 관리 시스템\\n\\nAlpha 0.18.8`);
 }
 
 function openAddMaterialChoice(){
@@ -1225,6 +1260,66 @@ function openAddEquipmentChoice(){
   document.getElementById("choiceEquipment").addEventListener("click", addEquipment);
 }
 
+function addMaterialChoice(){ openAddMaterialChoice(); }
+function addEquipmentChoice(){ openAddEquipmentChoice(); }
+
+function addEquipmentCategory(){
+  const name = prompt("추가할 장비목록/분류명", "");
+  if(!name) return;
+  if(!equipmentCategories.includes(name)) equipmentCategories.push(name);
+  showSnack("장비목록 추가 완료");
+  page = "warehouse"; setHead(); renderWarehouse();
+}
+
+
+
+function addMaterialChoice(){ openAddMaterialChoice(); }
+function addEquipmentChoice(){ openAddEquipmentChoice(); }
+
+
+function addCategory(){
+  const name = prompt("추가할 자재목록/분류명", "");
+  if(!name) return;
+  if(cats.includes(name)){ showSnack("이미 있는 분류입니다"); return; }
+  const itemName = prompt("분류를 생성하기 위한 첫 자재명을 입력하세요", `${name} 품목`);
+  if(!itemName) return;
+  const unit = prompt("단위", "개") || "개";
+  ensureCatalogItem({cat:name,name:itemName,unit,spec:"",kind:"consume"});
+  showSnack("자재목록 추가 완료");
+  page = "warehouse"; setHead(); renderWarehouse();
+}
+
+function addMaterial(){
+  const cat = prompt(`분류명\\n현재 분류: ${cats.join(", ")}`, cats[0] || "기타");
+  if(!cat) return;
+  const name = prompt("자재명", "");
+  if(!name) return;
+  if(state.catalog.some(x => x.name === name)){ showSnack("이미 있는 자재입니다"); return; }
+  const unit = prompt("단위", "개") || "개";
+  const spec = prompt("세부사항", "") || "";
+  const kindInput = prompt("구분\\n소모품: 1 / 회수품: 2", "1");
+  const kind = kindInput === "2" ? "returnable" : "consume";
+  ensureCatalogItem({cat,name,unit,spec,kind});
+  showSnack("자재 추가 완료");
+  page = "warehouse"; setHead(); renderWarehouse();
+}
+
+function addEquipment(){
+  const name = prompt("장비명", "");
+  if(!name) return;
+  const cat = prompt(`분류\\n${equipmentCategories.join(", ")}`, equipmentCategories[0] || "기타장비") || "기타장비";
+  const detail = prompt("세부사항", "") || "";
+  const place = prompt("보관 위치", selectedWarehouse || warehouses[0]) || (selectedWarehouse || warehouses[0]);
+  ensureWarehouse(place);
+  const battery = prompt("배터리", "") || "";
+  const fuel = prompt("연료유/용량", "") || "";
+  const etc = prompt("기타사항", "") || "";
+  const status = prompt("상태", "정상") || "정상";
+  state.equipment.push({id:uid(),cat,name,detail,place,battery,fuel,etc,status});
+  save();
+  showSnack("장비 추가 완료");
+  page = "warehouse"; setHead(); renderWarehouse();
+}
 
 function bindGlobal(){
   document.querySelectorAll(".nav").forEach(b => b.addEventListener("click", () => setPage(b.dataset.page)));
@@ -1239,16 +1334,13 @@ function bindGlobal(){
     if(!menu.contains(e.target) && !btn.contains(e.target)) menu.classList.remove("show");
   });
 
-  document.getElementById("manageBtn")?.addEventListener("click", openManageSettings);
-  document.getElementById("backupBtn").addEventListener("click", () => { closeMenu(); backup(); });
-  document.getElementById("restoreBtn").addEventListener("click", () => { closeMenu(); document.getElementById("restoreFile").click(); });
-  document.getElementById("restoreFile").addEventListener("change", e => { if(e.target.files[0]) restoreFile(e.target.files[0]); });
-  document.getElementById("resetBtn").addEventListener("click", () => { closeMenu(); resetAll(); });
+  document.getElementById("manageBtn")?.addEventListener("click", openSettings); backup(); }); document.getElementById("restoreFile").click(); });
+  document.getElementById("restoreFile").addEventListener("change", e => { if(e.target.files[0]) restoreFile(e.target.files[0]); }); resetAll(); });
   document.getElementById("updateBtn").addEventListener("click", () => { closeMenu(); document.getElementById("updateModal").classList.add("show"); });
   document.getElementById("closeUpdate").addEventListener("click", () => document.getElementById("updateModal").classList.remove("show"));
   document.getElementById("appInfoBtn").addEventListener("click", () => {
     closeMenu();
-    alert(`Victor\n방제자원 관리 시스템\n\nVersion 0.18.7aa\n\nBy\n통영해양경찰서 주무관 정홍준`);
+    alert(`Victor\n방제자원 관리 시스템\n\nVersion 0.18.8\n\nBy\n통영해양경찰서 주무관 정홍준`);
   });
 
   let lastTouchEnd = 0;
