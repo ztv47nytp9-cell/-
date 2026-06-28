@@ -7,6 +7,7 @@ let registerMode = "normal";
 let registerFlow = "출고";
 let warehouseTab = "material";
 let historyFilter = "all";
+const stockEditReasons = ["재고조사","오기입 수정","폐기","파손","전산 수정","기타"];
 
 const view = document.getElementById("view");
 
@@ -195,10 +196,10 @@ function renderWarehouse(){
 }
 
 function renderWarehouseEquipment(place){
-  const list = (state.equipment || []).filter(e => e.place === place && !["방제지휘차량","소형방제정"].includes(e.name));
+  const list = (state.equipment || []).filter(e => e.place === place);
   return `<div>
     <button class="btn primary" id="addEquip" type="button" style="width:100%;margin-bottom:12px">장비 추가</button>
-    <div class="list-card">${list.length ? list.map(e => `<button class="list-row" data-equip="${e.id}" type="button"><div><div class="row-title">${esc(e.name)}</div><div class="row-sub">${esc(e.cat)} · ${esc(e.status)}${e.detail ? " · " + esc(e.detail) : ""}${e.etc ? " · 메모 있음" : ""}</div></div><div class="chev">›</div></button>`).join("") : `<div class="emptybox">이 보관 장소에 등록된 장비가 없습니다.</div>`}</div>
+    <div class="list-card">${list.length ? list.map(e => `<button class="list-row" data-equip="${e.id}" type="button"><div><div class="row-title">${esc(e.cat)} · ${esc(e.name)}</div><div class="row-sub">${e.detail ? esc(e.detail) + " · " : ""}${esc(e.status)}${e.battery ? " · 배터리 " + esc(e.battery) : ""}${e.fuel ? " · 연료 " + esc(e.fuel) : ""}${e.etc ? " · " + esc(e.etc) : ""}</div></div><div class="chev">›</div></button>`).join("") : `<div class="emptybox">이 보관 장소에 등록된 장비가 없습니다.</div>`}</div>
   </div>`;
 }
 
@@ -233,13 +234,45 @@ function renderStockList(){
 
 function editStock(name){
   const item = itemOf(name);
-  const cur = state.stock[selectedWarehouse][name] || 0;
-  const val = prompt(`${name}\n현재 ${qtyText(cur,item.unit)}\n수정할 수량`, cur);
+  const cur = Number(state.stock[selectedWarehouse][name] || 0);
+  const val = prompt(`${name}\n현재 ${qtyText(cur,item.unit)}\n변경 후 수량`, cur);
   if(val === null) return;
   const num = Number(val);
   if(Number.isNaN(num) || num < 0){ showSnack("올바른 수량을 입력해주세요"); return; }
+  if(num === cur){ showSnack("변경된 수량이 없습니다"); return; }
+
+  const reason = prompt(`변경사유\n${stockEditReasons.join(" / ")}`, "재고조사");
+  if(reason === null) return;
+  const finalReason = stockEditReasons.includes(reason) ? reason : (reason.trim() || "기타");
+  const memo = prompt("메모", "") || "";
+  const diff = num - cur;
+
   state.stock[selectedWarehouse][name] = num;
+
+  state.records.push({
+    id: uid(),
+    flow: "재고수정",
+    type: "재고수정",
+    title: `${name} 재고수정`,
+    date: todayISO(),
+    warehouse: selectedWarehouse,
+    memo: `변경사유: ${finalReason}${memo ? "\n" + memo : ""}`,
+    status: "done",
+    sourceId: null,
+    items: [{
+      cat: item.cat,
+      name,
+      qty: Math.abs(diff),
+      unit: item.unit,
+      kind: item.kind,
+      before: cur,
+      after: num,
+      diff
+    }]
+  });
+
   save();
+  showSnack(`재고수정 이력 생성 (${diff > 0 ? "+" : ""}${diff}${item.unit})`);
   renderStockList();
 }
 
@@ -573,7 +606,7 @@ function openDetail(id){
     </div>
     <div class="card">
       <div class="section-title">출고 자재</div>
-      ${r.items.map(i => `<div class="stock-line"><div><div class="stock-name">${esc(i.name)}</div><div class="stock-spec">${esc(i.cat)}</div></div><div class="stock-qty">${qtyText(i.qty,i.unit)}</div></div>`).join("")}
+      ${r.items.map(i => `<div class="stock-line"><div><div class="stock-name">${esc(i.name)}</div><div class="stock-spec">${esc(i.cat)}${i.before !== undefined ? " · " + qtyText(i.before,i.unit) + " → " + qtyText(i.after,i.unit) : ""}</div></div><div class="stock-qty">${i.before !== undefined ? (i.diff > 0 ? "+" : "") + qtyText(i.diff,i.unit) : qtyText(i.qty,i.unit)}</div></div>`).join("")}
     </div>
     ${r.status === "pending" ? `<button class="btn primary" id="applyPending" type="button" style="width:100%;margin-bottom:9px">재고 반영</button>` : ""}
     <button class="btn danger" id="deleteRecord" type="button" style="width:100%">삭제</button>
@@ -583,7 +616,11 @@ function openDetail(id){
   if(applyBtn) applyBtn.addEventListener("click", () => applyPendingRecord(id));
   document.getElementById("deleteRecord").addEventListener("click", () => {
     if(!confirm(r.status === "pending" ? "미반영 기록을 삭제할까요?" : "기록을 삭제하고 재고를 복구할까요?")) return;
-    if(r.status === "done" && r.flow !== "긴급") reverseStock(r.warehouse, r.items, r.flow || "출고");
+    if(r.status === "done" && r.flow === "재고수정"){
+      r.items.forEach(i => { if(i.before !== undefined) state.stock[r.warehouse][i.name] = Number(i.before); });
+    }else if(r.status === "done" && r.flow !== "긴급"){
+      reverseStock(r.warehouse, r.items, r.flow || "출고");
+    }
     state.records = state.records.filter(x => x.id !== id);
     save();
     showSnack("삭제되었습니다");
@@ -929,14 +966,18 @@ function openEquipment(id){
 function addEquipment(){
   const name = prompt("장비명", "");
   if(!name) return;
-  const cat = prompt(`분류\n${equipmentCategories.join(", ")}`, "기타장비") || "기타장비";
+  const cat = prompt(`분류\n${equipmentCategories.join(", ")}`, equipmentCategories[0] || "기타장비") || "기타장비";
+  const detail = prompt("세부사항", "") || "";
   const place = prompt("보관 위치", selectedWarehouse || warehouses[0]) || (selectedWarehouse || warehouses[0]);
+  ensureWarehouse(place);
+  const battery = prompt("배터리", "") || "";
+  const fuel = prompt("연료유/용량", "") || "";
+  const etc = prompt("기타사항", "") || "";
   const status = prompt("상태", "정상") || "정상";
-  const memo = prompt("메모", "") || "";
-  state.equipment.push({id:uid(),cat,name,place,status,memo});
+  state.equipment.push({id:uid(),cat,name,detail,place,battery,fuel,etc,status});
   save();
   showSnack("장비 추가");
-  renderWarehouse();
+  if(page === "warehouse") renderWarehouse();
 }
 
 
@@ -1038,7 +1079,7 @@ function bindGlobal(){
   document.getElementById("closeUpdate").addEventListener("click", () => document.getElementById("updateModal").classList.remove("show"));
   document.getElementById("appInfoBtn").addEventListener("click", () => {
     closeMenu();
-    alert(`Victor\n방제자원 관리 시스템\n\nVersion 0.18.4\n\nBy\n통영해양경찰서 주무관 정홍준`);
+    alert(`Victor\n방제자원 관리 시스템\n\nVersion 0.18.5a\n\nBy\n통영해양경찰서 주무관 정홍준`);
   });
 
   let lastTouchEnd = 0;

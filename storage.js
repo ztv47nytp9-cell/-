@@ -1,6 +1,8 @@
-const VERSION = "Alpha 0.18.4";
-const KEY = "victor_state_alpha_0_18_4";
+const VERSION = "Alpha 0.18.5";
+const KEY = "victor_state_alpha_0_18_5";
 const MIGRATE_KEYS = [
+  "victor_state_alpha_0_18_4a",
+  "victor_state_alpha_0_18_4",
   "victor_state_alpha_0_18_3",
   "victor_state_alpha_0_18_2",
   "victor_state_alpha_0_18_1",
@@ -38,20 +40,295 @@ const defaultCatalog = [
 
 const types = ["사고","파출소 지급","함정 지급","훈련","작업","기타"];
 const flowTypes = ["출고","입고"];
-const equipmentCategories = ["유회수기","이송펌프","고압세척기","발전기","흡수펌프","저수심 유류회수세트","세척기","보일러","분전개폐기","동력분무기","저장용기","기타장비"];
+const equipmentCategories = ["고압세척기", "기타장비", "동력분무기", "동력캐리어", "발전기", "보일러", "세척기", "유량계측기", "유회수기", "이송펌프", "이송펌프 동력부", "잠수펌프", "저수심 유류이적세트", "저장용기", "환풍구배풍"];
 
 const defaultEquipment = [
-  {id:"eq-001",cat:"유회수기",name:"유회수기",detail:"komara 20k",place:"VTS",battery:"",fuel:"",etc:"",status:"정상"},
-  {id:"eq-002",cat:"이송펌프",name:"이송펌프",detail:"이송펌프",place:"통영해양경찰서",battery:"",fuel:"",etc:"",status:"정상"},
-  {id:"eq-003",cat:"고압세척기",name:"고압세척기",detail:"고압세척기",place:"통영해양경찰서",battery:"",fuel:"",etc:"",status:"정상"},
-  {id:"eq-004",cat:"발전기",name:"발전기",detail:"발전기",place:"통영해양경찰서",battery:"",fuel:"",etc:"",status:"정상"},
-  {id:"eq-005",cat:"흡수펌프",name:"흡수펌프",detail:"흡수펌프",place:"한국석유공사 거제지사 창고",battery:"",fuel:"",etc:"",status:"정상"},
-  {id:"eq-006",cat:"저수심 유류회수세트",name:"저수심 유류회수세트",detail:"저수심 유류회수세트",place:"장승포",battery:"",fuel:"",etc:"",status:"정상"},
-  {id:"eq-007",cat:"세척기",name:"세척기",detail:"세척기",place:"통영해양경찰서",battery:"",fuel:"",etc:"",status:"정상"},
-  {id:"eq-008",cat:"보일러",name:"보일러",detail:"보일러",place:"통영해양경찰서",battery:"",fuel:"",etc:"",status:"정상"},
-  {id:"eq-009",cat:"분전개폐기",name:"분전개폐기",detail:"분전개폐기",place:"통영해양경찰서",battery:"",fuel:"",etc:"",status:"정상"},
-  {id:"eq-010",cat:"동력분무기",name:"동력분무기",detail:"동력분무기",place:"방제지휘차량",battery:"",fuel:"",etc:"",status:"정상"},
-  {id:"eq-011",cat:"저장용기",name:"저장용기",detail:"저장용기",place:"소형방제정",battery:"",fuel:"",etc:"",status:"정상"}
+  {
+    "id": "eq-vts-komara20k",
+    "cat": "유회수기",
+    "name": "komara 20k",
+    "detail": "회수부, 동력부, 이송부",
+    "place": "VTS",
+    "battery": "E&P 12V 31Ah",
+    "fuel": "경유 2.5L / 유압유 50L",
+    "etc": "",
+    "status": "정상"
+  },
+  {
+    "id": "eq-vts-dop160",
+    "cat": "이송펌프",
+    "name": "DOP-160",
+    "detail": "고점도",
+    "place": "VTS",
+    "battery": "E&P 12V 30Ah",
+    "fuel": "휘발유 2.5L / 유압유 50L",
+    "etc": "",
+    "status": "정상"
+  },
+  {
+    "id": "eq-vts-etg13",
+    "cat": "이송펌프 동력부",
+    "name": "ET/G13-NF30",
+    "detail": "동력부",
+    "place": "VTS",
+    "battery": "Rocket tiller 45L용 12V 45Ah",
+    "fuel": "경유 20L / 휘발유 20L",
+    "etc": "",
+    "status": "정상"
+  },
+  {
+    "id": "eq-vts-sy2002a",
+    "cat": "고압세척기",
+    "name": "SY2002A",
+    "detail": "",
+    "place": "VTS",
+    "battery": "Delko 12V 8Ah",
+    "fuel": "휘발유 2.5L",
+    "etc": "",
+    "status": "정상"
+  },
+  {
+    "id": "eq-vts-ig3000",
+    "cat": "발전기",
+    "name": "IG3000",
+    "detail": "",
+    "place": "VTS",
+    "battery": "전기",
+    "fuel": "",
+    "etc": "발전기 필요",
+    "status": "정상"
+  },
+  {
+    "id": "eq-vts-pd-s75ima",
+    "cat": "잠수펌프",
+    "name": "PD-S75IMA",
+    "detail": "원로펌프",
+    "place": "VTS",
+    "battery": "",
+    "fuel": "",
+    "etc": "센서 고장",
+    "status": "점검필요"
+  },
+  {
+    "id": "eq-police-d2401",
+    "cat": "유량계측기",
+    "name": "D-2401-2",
+    "detail": "",
+    "place": "통영해양경찰서",
+    "battery": "",
+    "fuel": "",
+    "etc": "",
+    "status": "정상"
+  },
+  {
+    "id": "eq-police-wb30xt",
+    "cat": "이송펌프",
+    "name": "WB30XT",
+    "detail": "배수용",
+    "place": "통영해양경찰서",
+    "battery": "",
+    "fuel": "휘발유 3.6L",
+    "etc": "",
+    "status": "정상"
+  },
+  {
+    "id": "eq-police-komaramini",
+    "cat": "유회수기",
+    "name": "komara mini",
+    "detail": "",
+    "place": "통영해양경찰서",
+    "battery": "",
+    "fuel": "",
+    "etc": "",
+    "status": "정상"
+  },
+  {
+    "id": "eq-command-dsv65b",
+    "cat": "저수심 유류이적세트",
+    "name": "DSV-65B",
+    "detail": "",
+    "place": "방제지휘차량",
+    "battery": "",
+    "fuel": "휘발유 0.65L",
+    "etc": "",
+    "status": "정상"
+  },
+  {
+    "id": "eq-small-komaramini",
+    "cat": "유회수기",
+    "name": "komara mini",
+    "detail": "",
+    "place": "소형방제정",
+    "battery": "E&P 12V 31Ah",
+    "fuel": "",
+    "etc": "",
+    "status": "정상"
+  },
+  {
+    "id": "eq-small-al75",
+    "cat": "이송펌프",
+    "name": "AL75",
+    "detail": "로터리로브",
+    "place": "소형방제정",
+    "battery": "Solite 12V 30Ah",
+    "fuel": "휘발유 2.5L / 유압유 30L",
+    "etc": "",
+    "status": "정상"
+  },
+  {
+    "id": "eq-korea-ksjet200",
+    "cat": "세척기",
+    "name": "KS-jet200",
+    "detail": "고압용",
+    "place": "한국석유공사 거제지사 창고",
+    "battery": "Rocket 12V 30Ah",
+    "fuel": "휘발유",
+    "etc": "",
+    "status": "정상"
+  },
+  {
+    "id": "eq-korea-dhv20es",
+    "cat": "세척기",
+    "name": "DHV20ES",
+    "detail": "저압용",
+    "place": "한국석유공사 거제지사 창고",
+    "battery": "E&P 12V 10Ah",
+    "fuel": "휘발유",
+    "etc": "",
+    "status": "정상"
+  },
+  {
+    "id": "eq-korea-multipower400",
+    "cat": "세척기",
+    "name": "멀티파워 400-II",
+    "detail": "저압용",
+    "place": "한국석유공사 거제지사 창고",
+    "battery": "E&P 12V 12Ah, 31Ah×2",
+    "fuel": "휘발유 20L",
+    "etc": "",
+    "status": "정상"
+  },
+  {
+    "id": "eq-korea-de200",
+    "cat": "보일러",
+    "name": "DE-200",
+    "detail": "세척기용",
+    "place": "한국석유공사 거제지사 창고",
+    "battery": "",
+    "fuel": "휘발유 1L / 등유 40L",
+    "etc": "",
+    "status": "정상"
+  },
+  {
+    "id": "eq-korea-eu10i",
+    "cat": "발전기",
+    "name": "EU-10i",
+    "detail": "휴대용",
+    "place": "한국석유공사 거제지사 창고",
+    "battery": "",
+    "fuel": "휘발유 2L",
+    "etc": "",
+    "status": "정상"
+  },
+  {
+    "id": "eq-korea-sg5000dx",
+    "cat": "발전기",
+    "name": "SG-5000DX",
+    "detail": "휴대용",
+    "place": "한국석유공사 거제지사 창고",
+    "battery": "",
+    "fuel": "휘발유 5L",
+    "etc": "",
+    "status": "정상"
+  },
+  {
+    "id": "eq-korea-eu20i",
+    "cat": "발전기",
+    "name": "EU-20i",
+    "detail": "휴대용",
+    "place": "한국석유공사 거제지사 창고",
+    "battery": "",
+    "fuel": "휘발유 2L",
+    "etc": "",
+    "status": "정상"
+  },
+  {
+    "id": "eq-korea-hgs42",
+    "cat": "환풍구배풍",
+    "name": "HGS-42",
+    "detail": "에어커튼",
+    "place": "한국석유공사 거제지사 창고",
+    "battery": "",
+    "fuel": "휘발유 없음",
+    "etc": "",
+    "status": "정상"
+  },
+  {
+    "id": "eq-korea-yc268",
+    "cat": "동력분무기",
+    "name": "YC-268",
+    "detail": "",
+    "place": "한국석유공사 거제지사 창고",
+    "battery": "",
+    "fuel": "휘발유 1.5L",
+    "etc": "",
+    "status": "정상"
+  },
+  {
+    "id": "eq-korea-komarastar",
+    "cat": "유회수기",
+    "name": "komara star",
+    "detail": "회수부, 동력부, 이송부",
+    "place": "한국석유공사 거제지사 창고",
+    "battery": "Delkor 12V 40Ah",
+    "fuel": "경유 2.5L / 유압유 50L",
+    "etc": "",
+    "status": "정상"
+  },
+  {
+    "id": "eq-jangseung-rbs100",
+    "cat": "유회수기",
+    "name": "RBS-100",
+    "detail": "멀티스키머",
+    "place": "장승포",
+    "battery": "Rocket tiller 45L용 12V 45Ah",
+    "fuel": "경유 2.5L",
+    "etc": "",
+    "status": "정상"
+  },
+  {
+    "id": "eq-police-kobot-s",
+    "cat": "유회수기",
+    "name": "KOBOT-S(소형)",
+    "detail": "로봇형 오일스키머",
+    "place": "통영해양경찰서",
+    "battery": "12V 12Ah",
+    "fuel": "",
+    "etc": "",
+    "status": "정상"
+  },
+  {
+    "id": "eq-jangseung-hc1000wdl",
+    "cat": "동력캐리어",
+    "name": "HC-1000WDL",
+    "detail": "",
+    "place": "장승포",
+    "battery": "Delkor 45Ah",
+    "fuel": "휘발유 20L / 유압유 30L",
+    "etc": "불용 불가",
+    "status": "정상"
+  },
+  {
+    "id": "eq-jangseung-sb50",
+    "cat": "저장용기",
+    "name": "SB-50",
+    "detail": "",
+    "place": "장승포",
+    "battery": "STX 14-bs, 12V 12Ah",
+    "fuel": "휘발유 2.5L",
+    "etc": "불용 불가",
+    "status": "정상"
+  }
 ];
 
 let warehouses = [...defaultWarehouses];
@@ -217,8 +494,13 @@ function normalize(raw){
   if(typeof state.assetOps["소형방제정"].hoursBase !== "number") state.assetOps["소형방제정"].hoursBase = 0;
   if(typeof state.assetOps["소형방제정"].fuelBase !== "number") state.assetOps["소형방제정"].fuelBase = 0;
 
-  if(!Array.isArray(state.equipment)) state.equipment = defaultEquipment.map(x => ({...x}));
-  state.equipment = state.equipment.map(e => ({
+  const existingEquipment = Array.isArray(state.equipment) ? state.equipment : [];
+  const mergedEquipment = [...existingEquipment];
+  defaultEquipment.forEach(def => {
+    const exists = mergedEquipment.some(e => e.id === def.id || (e.name === def.name && (e.detail || e.spec || "") === def.detail && oldName(e.place || e.warehouse || "") === def.place));
+    if(!exists) mergedEquipment.push({...def});
+  });
+  state.equipment = mergedEquipment.map(e => ({
     id: e.id || uid(),
     cat: e.cat || "기타장비",
     name: e.name || "장비",
