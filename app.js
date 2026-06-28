@@ -1008,21 +1008,44 @@ function openEquipment(id){
     <button class="back" id="backEquip" type="button">‹ 장비</button>
     <div class="card">
       <div class="section-title">${esc(e.name)}</div>
-      <div class="detail-grid">
-        <div class="detail-row"><div class="detail-label">분류</div><div class="detail-value">${esc(e.cat || "-")}</div></div>
-        <div class="detail-row"><div class="detail-label">세부사항</div><div class="detail-value">${esc(e.detail || e.spec || "-")}</div></div>
-        <div class="detail-row"><div class="detail-label">보관장소</div><div class="detail-value">${esc(e.place || e.warehouse || "-")}</div></div>
-        <div class="detail-row"><div class="detail-label">배터리</div><div class="detail-value">${esc(e.battery || "-")}</div></div>
-        <div class="detail-row"><div class="detail-label">연료유</div><div class="detail-value">${esc(e.fuel || "-")}</div></div>
-        <div class="detail-row"><div class="detail-label">기타사항</div><div class="detail-value">${esc(e.etc || e.memo || "-")}</div></div>
-        <div class="detail-row"><div class="detail-label">상태</div><div class="detail-value">${esc(e.status || "정상")}</div></div>
+      <div class="inline-form">
+        <div class="inline-field"><label>분류</label><input id="eqCat" value="${esc(e.cat || "")}"></div>
+        <div class="inline-field"><label>장비명</label><input id="eqName" value="${esc(e.name || "")}"></div>
+        <div class="inline-field"><label>세부사항</label><textarea id="eqDetail">${esc(e.detail || e.spec || "")}</textarea></div>
+        <div class="inline-field"><label>보관장소</label><input id="eqPlace" value="${esc(e.place || e.warehouse || "")}"></div>
+        <div class="inline-field"><label>배터리</label><input id="eqBattery" value="${esc(e.battery || "")}"></div>
+        <div class="inline-field"><label>연료유</label><input id="eqFuel" value="${esc(e.fuel || "")}"></div>
+        <div class="inline-field"><label>기타사항</label><textarea id="eqEtc">${esc(e.etc || e.memo || "")}</textarea></div>
+        <div class="inline-field"><label>상태</label><input id="eqStatus" value="${esc(e.status || "정상")}"></div>
       </div>
-      <button class="btn primary" id="editEquip" type="button" style="width:100%;margin-top:14px">수정</button>
+      <button class="btn primary" id="saveEquip" type="button" style="width:100%;margin-top:14px">저장</button>
     </div>
   `;
   document.getElementById("backEquip").addEventListener("click", () => { page = "warehouse"; setHead(); renderWarehouse(); });
-  document.getElementById("editEquip").addEventListener("click", () => editEquipment(id));
+  document.getElementById("saveEquip").addEventListener("click", () => saveEquipmentInline(id));
 }
+
+function saveEquipmentInline(id){
+  const e = state.equipment.find(x => x.id === id);
+  if(!e) return;
+  const place = document.getElementById("eqPlace").value.trim() || warehouses[0];
+  if(typeof ensureWarehouse === "function") ensureWarehouse(place);
+  Object.assign(e, {
+    cat: document.getElementById("eqCat").value.trim() || "기타장비",
+    name: document.getElementById("eqName").value.trim() || "장비",
+    detail: document.getElementById("eqDetail").value.trim(),
+    place,
+    battery: document.getElementById("eqBattery").value.trim(),
+    fuel: document.getElementById("eqFuel").value.trim(),
+    etc: document.getElementById("eqEtc").value.trim(),
+    status: document.getElementById("eqStatus").value.trim() || "정상"
+  });
+  save();
+  showSnack("장비 저장");
+  openEquipment(id);
+}
+
+
 
 function editEquipment(id){
   const e = state.equipment.find(x => x.id === id);
@@ -1079,28 +1102,8 @@ function addEquipment(){
 }
 
 
-function openManageSettings(){
-  closeMenu();
-  page = "manage";
-  document.getElementById("headTitle").innerHTML = `<div class="page-title">관리 설정</div><div class="date">창고·자재·장비 추가</div>`;
-  document.querySelectorAll(".nav").forEach(b => b.classList.remove("active"));
-  view.innerHTML = `
-    <div class="manage-grid">
-      <button class="manage-card" id="addWarehouseBtn" type="button">🏢 창고 추가</button>
-      <button class="manage-card" id="addCategoryBtn" type="button">📁 자재목록 추가</button>
-      <button class="manage-card" id="addMaterialBtn" type="button">📦 자재 추가</button>
-      <button class="manage-card" id="addEquipmentBtn" type="button">🛠️ 장비 추가</button>
-    </div>
-    <div class="card">
-      <div class="section-title">관리 원칙</div>
-      <div class="row-sub">추가한 창고·자재·장비는 등록, 보관, 재고수정, 이력 화면에 자동 반영됩니다.</div>
-    </div>
-  `;
-  document.getElementById("addWarehouseBtn").addEventListener("click", addWarehouse);
-  document.getElementById("addCategoryBtn").addEventListener("click", addCategory);
-  document.getElementById("addMaterialBtn").addEventListener("click", addMaterial);
-  document.getElementById("addEquipmentBtn").addEventListener("click", addEquipmentFromManage);
-}
+function openManageSettings(){ openSettings(); }
+
 
 function addWarehouse(){
   const name = prompt("추가할 창고명", "");
@@ -1229,6 +1232,29 @@ function addEquipment(){
   if(page === "warehouse") renderWarehouse();
 }
 
+
+function openSettings(){
+  closeMenu();
+  page = "settings";
+  document.getElementById("headTitle").innerHTML = `<div class="page-title">설정</div><div class="date">앱 관리</div>`;
+  document.querySelectorAll(".nav").forEach(b => b.classList.remove("active"));
+  view.innerHTML = `
+    <div class="settings-list">
+      <button class="settings-btn" id="settingsBackup" type="button">데이터 백업<span>현재 데이터를 JSON 파일로 저장합니다.</span></button>
+      <button class="settings-btn" id="settingsRestore" type="button">데이터 복원<span>백업 파일을 불러와 데이터를 복원합니다.</span></button>
+      <button class="settings-btn" id="settingsReset" type="button">전체 초기화<span>모든 저장 데이터를 삭제합니다.</span></button>
+    </div>
+  `;
+  document.getElementById("settingsBackup").addEventListener("click", backup);
+  document.getElementById("settingsRestore").addEventListener("click", () => document.getElementById("restoreInput").click());
+  document.getElementById("settingsReset").addEventListener("click", hardReset);
+}
+
+function appInfo(){
+  alert(`VICTOR\\nMarine Pollution Response\\n방제자원 관리 시스템\\n\\nAlpha 0.19.0`);
+}
+
+
 function bindGlobal(){
   document.querySelectorAll(".nav").forEach(b => b.addEventListener("click", () => setPage(b.dataset.page)));
 
@@ -1242,16 +1268,13 @@ function bindGlobal(){
     if(!menu.contains(e.target) && !btn.contains(e.target)) menu.classList.remove("show");
   });
 
-  document.getElementById("manageBtn")?.addEventListener("click", openManageSettings);
-  document.getElementById("backupBtn").addEventListener("click", () => { closeMenu(); backup(); });
-  document.getElementById("restoreBtn").addEventListener("click", () => { closeMenu(); document.getElementById("restoreFile").click(); });
-  document.getElementById("restoreFile").addEventListener("change", e => { if(e.target.files[0]) restoreFile(e.target.files[0]); });
-  document.getElementById("resetBtn").addEventListener("click", () => { closeMenu(); resetAll(); });
+  document.getElementById("manageBtn")?.addEventListener("click", openSettings); backup(); }); document.getElementById("restoreFile").click(); });
+  document.getElementById("restoreFile").addEventListener("change", e => { if(e.target.files[0]) restoreFile(e.target.files[0]); }); resetAll(); });
   document.getElementById("updateBtn").addEventListener("click", () => { closeMenu(); document.getElementById("updateModal").classList.add("show"); });
   document.getElementById("closeUpdate").addEventListener("click", () => document.getElementById("updateModal").classList.remove("show"));
   document.getElementById("appInfoBtn").addEventListener("click", () => {
     closeMenu();
-    alert(`Victor\n방제자원 관리 시스템\n\nVersion 0.18.9\n\nBy\n통영해양경찰서 주무관 정홍준`);
+    alert(`Victor\n방제자원 관리 시스템\n\nVersion 0.19.0\n\nBy\n통영해양경찰서 주무관 정홍준`);
   });
 
   let lastTouchEnd = 0;
