@@ -1,4 +1,4 @@
-const VERSION = "Alpha 0.19.0e UX Beta";
+const VERSION = "Alpha 0.19.0f Resource Beta";
 const KEY = "victor_state_alpha_0_19_0e";
 const MIGRATE_KEYS = [
   "victor_state_alpha_0_19_0d",
@@ -436,7 +436,9 @@ function normalize(raw){
         name:nm,
         unit:typeof i.unit === "string" && i.unit ? i.unit : "개",
         spec:typeof i.spec === "string" ? i.spec : "",
-        kind:i.kind === "returnable" ? "returnable" : "consume"
+        kind:i.kind === "returnable" ? "returnable" : "consume",
+        memo:typeof i.memo === "string" ? i.memo : "",
+        photo:typeof i.photo === "string" && i.photo.startsWith("data:image/") ? i.photo : ""
       });
     });
   }
@@ -554,7 +556,12 @@ function normalize(raw){
     battery: typeof e.battery === "string" ? e.battery : "",
     fuel: typeof e.fuel === "string" ? e.fuel : "",
     etc: typeof e.etc === "string" ? e.etc : (typeof e.memo === "string" ? e.memo : ""),
-    status: typeof e.status === "string" && e.status ? e.status : "정상"
+    status: typeof e.status === "string" && e.status ? e.status : "정상",
+    spec: typeof e.spec === "string" ? e.spec : (typeof e.detail === "string" ? e.detail : ""),
+    model: typeof e.model === "string" ? e.model : "",
+    qty: Number.isFinite(Number(e.qty)) && Number(e.qty) >= 0 ? Number(e.qty) : 1,
+    memo: typeof e.memo === "string" ? e.memo : (typeof e.etc === "string" ? e.etc : ""),
+    photo: typeof e.photo === "string" && e.photo.startsWith("data:image/") ? e.photo : ""
   }));
 
   state.settings = state.settings && typeof state.settings === "object" && !Array.isArray(state.settings)
