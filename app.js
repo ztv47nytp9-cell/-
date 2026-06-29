@@ -17,6 +17,7 @@ let historyFlowFilter = "all";
 let homeActivityTab = "history";
 let editingMemoId = null;
 let restoringNavigation = false;
+let globalSearchQuery = "";
 const stockEditReasons = ["재고조사","오기입 수정","폐기","파손","전산 수정","기타"];
 
 const view = document.getElementById("view");
@@ -60,6 +61,27 @@ function showFeedback(type,msg){
   showSnack(msg,type);
   if(type === "success") hapticSuccess();
   else if(type === "warning" || type === "error") hapticError();
+}
+
+function updateNetworkStatus(){
+  const badge = document.getElementById("networkStatus");
+  if(!badge) return;
+  const offline = typeof navigator !== "undefined" && navigator.onLine === false;
+  badge.textContent = offline ? "오프라인" : "온라인";
+  badge.classList.toggle("offline",offline);
+  badge.title = offline ? "저장된 앱과 데이터는 계속 사용할 수 있습니다" : "인터넷에 연결되어 있습니다";
+}
+
+function backupLabel(){
+  if(!state.lastBackup) return "데이터 백업 · 아직 없음";
+  const date = new Date(state.lastBackup);
+  if(Number.isNaN(date.getTime())) return "데이터 백업";
+  return `데이터 백업 · ${date.getMonth()+1}.${date.getDate()}`;
+}
+
+function updateBackupLabel(){
+  const button = document.getElementById("backupBtn");
+  if(button) button.textContent = backupLabel();
 }
 
 function scrollToTop(){
@@ -321,6 +343,10 @@ function renderHome(){
   const today = todayWorkSummary();
   const lastVisit = lastVisitText();
   view.innerHTML = `
+    <div class="card global-search-card">
+      <input class="search" id="globalSearch" value="${esc(globalSearchQuery)}" placeholder="자재·장비·창고 통합 찾기" aria-label="통합 찾기">
+      <div id="globalSearchResults"></div>
+    </div>
     <div class="home-quick card">
       <div class="section-title">바로 등록</div>
       <div class="home-quick-grid">
@@ -349,6 +375,8 @@ function renderHome(){
     ${homeActivityTab === "memo" ? `<button class="btn primary" id="homeNewMemo" type="button" style="width:100%;margin-bottom:10px">+ 새 메모 작성</button>` : ""}
     <div class="list-card">${homeActivityHtml()}</div>
   `;
+  document.getElementById("globalSearch")?.addEventListener("input", event => { globalSearchQuery=event.target.value; renderGlobalSearchResults(); });
+  renderGlobalSearchResults();
   document.getElementById("homeQuickEmergency")?.addEventListener("click", () => startHomeRegister("quick"));
   document.getElementById("homeQuickOut")?.addEventListener("click", () => startHomeRegister("normal","출고"));
   document.getElementById("homeQuickIn")?.addEventListener("click", () => startHomeRegister("normal","입고"));
@@ -364,6 +392,44 @@ function renderHome(){
   document.getElementById("homeNewMemo")?.addEventListener("click", () => { editingMemoId=null; setPage("memo"); });
   view.querySelectorAll("[data-detail]").forEach(button => button.addEventListener("click", () => openDetail(button.dataset.detail)));
   view.querySelectorAll("[data-home-memo]").forEach(button => button.addEventListener("click", () => { editingMemoId=button.dataset.homeMemo; page="memo"; updateBottomNav(); render(); pushNavigationState({page:"memo",memoId:editingMemoId}); }));
+}
+
+function globalSearchRows(){
+  const query = globalSearchQuery.trim().toLowerCase();
+  if(!query) return [];
+  const rows = [];
+  warehouses.forEach(name => {
+    const memo = state.warehouseInfos?.[name]?.memo || "";
+    if([name,memo].join(" ").toLowerCase().includes(query)) rows.push({kind:"warehouse",id:name,title:name,sub:"창고"});
+  });
+  catalog.forEach(item => {
+    if([item.name,item.spec,item.memo,item.cat].join(" ").toLowerCase().includes(query)) rows.push({kind:"material",id:item.name,title:item.name,sub:`자재 · ${item.spec || item.cat}`});
+  });
+  (state.equipment || []).forEach(item => {
+    if(equipmentSearchText(item).includes(query)) rows.push({kind:"equipment",id:item.id,title:item.name,sub:`장비 · ${item.place || "보관 미지정"}`});
+  });
+  return rows.slice(0,8);
+}
+
+function renderGlobalSearchResults(){
+  const target = document.getElementById("globalSearchResults");
+  if(!target) return;
+  const rows = globalSearchRows();
+  if(!globalSearchQuery.trim()){
+    target.innerHTML = `<div class="global-search-hint">이름·규격·메모·창고명으로 찾을 수 있습니다.</div>`;
+    return;
+  }
+  target.innerHTML = rows.length ? `<div class="global-search-list">${rows.map(row => `<button class="list-row" data-global-kind="${row.kind}" data-global-id="${esc(row.id)}" type="button"><div><div class="row-title">${esc(row.title)}</div><div class="row-sub">${esc(row.sub)}</div></div><div class="chev">›</div></button>`).join("")}</div>` : `<div class="global-search-hint">검색 결과가 없습니다.</div>`;
+  target.querySelectorAll("[data-global-kind]").forEach(button => button.addEventListener("click", () => {
+    const kind = button.dataset.globalKind;
+    const id = button.dataset.globalId;
+    globalSearchQuery = "";
+    if(kind === "warehouse"){
+      page="warehouse"; warehouseViewMode="warehouses"; selectedWarehouse=id; warehouseTab="material"; updateBottomNav(); render(); scrollToTop(); pushNavigationState({page:"warehouse",warehouse:id,tab:"material"});
+    }else if(kind === "material"){
+      page="warehouse"; warehouseViewMode="materials"; selectedWarehouse=null; updateBottomNav(); render(); scrollToTop(); openAllMaterialDetail(id); pushNavigationState({page:"warehouse",view:"materials"});
+    }else openEquipment(id);
+  }));
 }
 
 function warehouseSummary(w){
@@ -608,6 +674,7 @@ function renderRegister(){
     ${registerMode === "quick" ? quickRecordCard() : ""}
     <div class="form">
       ${registerMode === "normal" ? `
+        <button class="btn secondary" id="copyLastRecord" type="button">최근 등록 불러오기</button>
         <div class="flow-grid">
           <button class="flow-btn ${registerFlow === "출고" ? "active" : ""}" id="flowOut" type="button">출고</button>
           <button class="flow-btn ${registerFlow === "입고" ? "active" : ""}" id="flowIn" type="button">입고</button>
@@ -635,6 +702,7 @@ function renderRegister(){
   `;
   document.getElementById("modeNormal")?.addEventListener("click", () => { registerMode = "normal"; renderRegister(); setHead(); });
   document.getElementById("modeQuick")?.addEventListener("click", () => { registerMode = "quick"; renderRegister(); setHead(); });
+  document.getElementById("copyLastRecord")?.addEventListener("click", copyLastRecord);
   const outBtn = document.getElementById("flowOut");
   if(outBtn) outBtn.addEventListener("click", () => { registerFlow = "출고"; renderRegister(); });
   const inBtn = document.getElementById("flowIn");
@@ -642,6 +710,19 @@ function renderRegister(){
   document.getElementById("addItem")?.addEventListener("click", addDraftItem);
   document.getElementById("saveRecord")?.addEventListener("click", saveRecord);
   renderItems();
+}
+
+function copyLastRecord(){
+  const record = [...state.records].reverse().find(item => item.status !== "pending" && ["출고","입고"].includes(item.flow) && Array.isArray(item.items) && item.items.length);
+  if(!record){ showFeedback("info","불러올 최근 등록이 없습니다"); return; }
+  registerFlow = record.flow;
+  draftItems = record.items.map(item => ({cat:item.cat,name:item.name,qty:Number(item.qty || 0),unit:item.unit,kind:item.kind}));
+  renderRegister();
+  const type = document.getElementById("recType"); if(type && record.type) type.value = record.type;
+  const warehouse = document.getElementById("recWarehouse"); if(warehouse && record.warehouse) warehouse.value = record.warehouse;
+  const title = document.getElementById("recTitle"); if(title) title.value = record.title || "";
+  const memo = document.getElementById("recMemo"); if(memo) memo.value = record.memo || "";
+  showFeedback("success","최근 등록을 불러왔습니다");
 }
 
 function addDraftItem(){
@@ -661,7 +742,8 @@ function renderItems(){
       <div class="form">
         <label>분류<select data-cat="${idx}">${cats.map(c=>`<option value="${c}" ${it.cat===c?"selected":""}>${c}</option>`).join("")}</select></label>
         <label>자재<select data-name="${idx}">${catalog.filter(x=>x.cat===it.cat).map(x=>`<option value="${x.name}" ${it.name===x.name?"selected":""}>${x.name}</option>`).join("")}</select></label>
-        <label>출고량 (${esc(it.unit)})<input type="number" inputmode="decimal" min="0" step="0.1" data-qty="${idx}" value="${it.qty ?? ""}"></label>
+        <label>수량 (${esc(it.unit)})<input type="number" inputmode="decimal" min="0" step="0.1" data-qty="${idx}" value="${it.qty ?? ""}"></label>
+        <div class="qty-quick" aria-label="수량 빠른 입력"><button type="button" data-qty-add="1" data-qty-index="${idx}">+1</button><button type="button" data-qty-add="5" data-qty-index="${idx}">+5</button><button type="button" data-qty-add="10" data-qty-index="${idx}">+10</button><button type="button" data-qty-clear="${idx}">초기화</button></div>
         <button class="btn gray" data-remove="${idx}" type="button">삭제</button>
       </div>
     </div>
@@ -691,6 +773,15 @@ function renderItems(){
   }));
   area.querySelectorAll("[data-remove]").forEach(b => b.addEventListener("click", () => {
     draftItems.splice(Number(b.dataset.remove), 1);
+    renderItems();
+  }));
+  area.querySelectorAll("[data-qty-add]").forEach(button => button.addEventListener("click", () => {
+    const idx = Number(button.dataset.qtyIndex);
+    draftItems[idx].qty = Number(draftItems[idx].qty || 0) + Number(button.dataset.qtyAdd || 0);
+    renderItems();
+  }));
+  area.querySelectorAll("[data-qty-clear]").forEach(button => button.addEventListener("click", () => {
+    draftItems[Number(button.dataset.qtyClear)].qty = "";
     renderItems();
   }));
 }
@@ -1075,6 +1166,7 @@ function backup(){
   URL.revokeObjectURL(a.href);
   state.lastBackup = new Date().toISOString();
   save();
+  updateBackupLabel();
   showSnack("백업 완료");
 }
 
@@ -1506,6 +1598,10 @@ function bindGlobal(){
   });
 
   document.getElementById("backupBtn")?.addEventListener("click", () => { closeMenu(); backup(); });
+  updateBackupLabel();
+  updateNetworkStatus();
+  window.addEventListener("online", () => { updateNetworkStatus(); showFeedback("success","온라인으로 연결되었습니다"); });
+  window.addEventListener("offline", () => { updateNetworkStatus(); showFeedback("info","오프라인에서도 저장된 기능을 사용할 수 있습니다"); });
   document.getElementById("restoreBtn")?.addEventListener("click", () => { closeMenu(); document.getElementById("restoreFile").click(); });
   document.getElementById("restoreFile")?.addEventListener("change", e => { if(e.target.files[0]) restoreFile(e.target.files[0]); });
   document.getElementById("resetBtn")?.addEventListener("click", () => { closeMenu(); resetAll(); });
@@ -1651,7 +1747,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190f")
+      navigator.serviceWorker.register("./sw.js?v=0190g")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });

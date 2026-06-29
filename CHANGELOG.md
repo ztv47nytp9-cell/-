@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## Alpha 0.19.0g Convenience Beta
+
+- 홈 통합 찾기
+- 최근 등록 불러오기
+- 수량 빠른 입력 버튼
+- 연결 상태와 최근 백업일 안내
+- HNS 기능 제외
+
 ## Alpha 0.19.0f Resource Beta
 
 - 보관 화면 창고별·전체 자재·전체 장비 보기

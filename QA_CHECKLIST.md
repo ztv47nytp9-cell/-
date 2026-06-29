@@ -1,4 +1,12 @@
-# QA CHECKLIST - Alpha 0.19.0f Resource Beta
+# QA CHECKLIST - Alpha 0.19.0g Convenience Beta
+
+- [x] 홈 통합 찾기에서 자재 검색
+- [x] 수량 +5 입력값 반영
+- [x] 최근 입고 기록 불러오기
+- [x] 한국 현지 날짜 기준 입력
+- [x] 브라우저 시작 오류 및 콘솔 오류 없음
+- [x] 기존 로컬 저장 키 유지
+- [x] HNS 기능 미구현
 
 ## 자동 검증 완료
 
