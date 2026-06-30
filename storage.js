@@ -1,4 +1,4 @@
-const VERSION = "Alpha 0.19.0g Convenience Beta";
+const VERSION = "Alpha 0.19.0h Field Ops Beta";
 const KEY = "victor_state_alpha_0_19_0e";
 const MIGRATE_KEYS = [
   "victor_state_alpha_0_19_0d",
@@ -499,6 +499,14 @@ function normalize(raw){
     officialTitle: Boolean(r.officialTitle),
     createdAt: typeof r.createdAt === "string" && r.createdAt ? r.createdAt : new Date().toISOString(),
     appliedAt: typeof r.appliedAt === "string" ? r.appliedAt : null,
+    targetWarehouse: oldName(r.targetWarehouse || ""),
+    equipmentItems: Array.isArray(r.equipmentItems) ? r.equipmentItems.filter(it => it && typeof it === "object").map(it => ({
+      id: typeof it.id === "string" ? it.id : "",
+      name: typeof it.name === "string" && it.name ? it.name : "장비",
+      qty: Number.isFinite(Number(it.qty)) && Number(it.qty) > 0 ? Number(it.qty) : 1,
+      place: oldName(it.place || it.warehouse || ""),
+      spec: typeof it.spec === "string" ? it.spec : ""
+    })) : [],
     items: Array.isArray(r.items) ? r.items.filter(it => it && typeof it === "object").map(it => {
       let nm = typeof it.name === "string" && it.name ? it.name : (typeof it.material === "string" && it.material ? it.material : catalogList[0].name);
       if(nm === "고형식 오일펜스") nm = "팽창형 오일펜스";
@@ -510,7 +518,10 @@ function normalize(raw){
         unit: typeof it.unit === "string" && it.unit ? it.unit : f.unit,
         kind: it.kind === "returnable" ? "returnable" : f.kind,
         returned: Number(it.returned || 0),
-        damaged: Number(it.damaged || 0)
+        damaged: Number(it.damaged || 0),
+        before: Number.isFinite(Number(it.before)) ? Number(it.before) : undefined,
+        after: Number.isFinite(Number(it.after)) ? Number(it.after) : undefined,
+        diff: Number.isFinite(Number(it.diff)) ? Number(it.diff) : undefined
       };
     }).filter(it => it.qty > 0) : []
   }));
@@ -561,7 +572,25 @@ function normalize(raw){
     model: typeof e.model === "string" ? e.model : "",
     qty: Number.isFinite(Number(e.qty)) && Number(e.qty) >= 0 ? Number(e.qty) : 1,
     memo: typeof e.memo === "string" ? e.memo : (typeof e.etc === "string" ? e.etc : ""),
-    photo: typeof e.photo === "string" && e.photo.startsWith("data:image/") ? e.photo : ""
+    photo: typeof e.photo === "string" && e.photo.startsWith("data:image/") ? e.photo : "",
+    maintenance: Array.isArray(e.maintenance) ? e.maintenance.filter(log => log && typeof log === "object").map(log => ({
+      id: typeof log.id === "string" && log.id ? log.id : uid(),
+      type: typeof log.type === "string" && log.type ? log.type : "기타",
+      date: typeof log.date === "string" && log.date ? log.date : todayISO(),
+      content: typeof log.content === "string" ? log.content : "",
+      memo: typeof log.memo === "string" ? log.memo : "",
+      photo: typeof log.photo === "string" && log.photo.startsWith("data:image/") ? log.photo : "",
+      parts: Array.isArray(log.parts) ? log.parts.filter(part => part && typeof part === "object").map(part => ({name:String(part.name || ""),qty:Number(part.qty || 0)})).filter(part => part.name) : [],
+      createdAt: typeof log.createdAt === "string" ? log.createdAt : new Date().toISOString()
+    })) : [],
+    moves: Array.isArray(e.moves) ? e.moves.filter(move => move && typeof move === "object").map(move => ({
+      id: typeof move.id === "string" && move.id ? move.id : uid(),
+      date: typeof move.date === "string" && move.date ? move.date : todayISO(),
+      from: oldName(move.from || ""),
+      to: oldName(move.to || ""),
+      memo: typeof move.memo === "string" ? move.memo : "",
+      createdAt: typeof move.createdAt === "string" ? move.createdAt : new Date().toISOString()
+    })) : []
   }));
 
   state.settings = state.settings && typeof state.settings === "object" && !Array.isArray(state.settings)
