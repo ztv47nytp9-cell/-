@@ -1,4 +1,4 @@
-const VERSION = "Alpha 0.19.0h Field Ops Beta";
+const VERSION = "Alpha 0.19.0i Field Refine Beta";
 const KEY = "victor_state_alpha_0_19_0e";
 const MIGRATE_KEYS = [
   "victor_state_alpha_0_19_0d",
@@ -544,6 +544,14 @@ function normalize(raw){
   if(!Array.isArray(state.assetOps["소형방제정"].logs)) state.assetOps["소형방제정"].logs = [];
   if(typeof state.assetOps["소형방제정"].hoursBase !== "number") state.assetOps["소형방제정"].hoursBase = 0;
   if(typeof state.assetOps["소형방제정"].fuelBase !== "number") state.assetOps["소형방제정"].fuelBase = 0;
+  if(state.assetOps["방제지휘차량"].counterMode !== "absolute"){
+    state.assetOps["방제지휘차량"].distanceBase += state.assetOps["방제지휘차량"].logs.reduce((sum,log)=>sum+Number(log.distance || 0),0);
+    state.assetOps["방제지휘차량"].counterMode = "absolute";
+  }
+  if(state.assetOps["소형방제정"].counterMode !== "absolute"){
+    state.assetOps["소형방제정"].hoursBase += state.assetOps["소형방제정"].logs.reduce((sum,log)=>sum+Number(log.hours || 0),0);
+    state.assetOps["소형방제정"].counterMode = "absolute";
+  }
 
   state.equipmentCategories = [...new Set([
     ...defaultEquipmentCategories,
@@ -573,6 +581,7 @@ function normalize(raw){
     qty: Number.isFinite(Number(e.qty)) && Number(e.qty) >= 0 ? Number(e.qty) : 1,
     memo: typeof e.memo === "string" ? e.memo : (typeof e.etc === "string" ? e.etc : ""),
     photo: typeof e.photo === "string" && e.photo.startsWith("data:image/") ? e.photo : "",
+    photos: [...new Set([...(Array.isArray(e.photos) ? e.photos : []),e.photo].filter(photo => typeof photo === "string" && photo.startsWith("data:image/")))].slice(0,5),
     maintenance: Array.isArray(e.maintenance) ? e.maintenance.filter(log => log && typeof log === "object").map(log => ({
       id: typeof log.id === "string" && log.id ? log.id : uid(),
       type: typeof log.type === "string" && log.type ? log.type : "기타",

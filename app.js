@@ -12,6 +12,8 @@ let allResourceQuery = "";
 let allResourceCategory = "all";
 let allResourceWarehouse = "all";
 let resourceDraftPhoto = "";
+let resourceDraftPhotos = [];
+let resourcePhotoLimit = 1;
 let historyFilter = "all";
 let historyDateFilter = "all";
 let historyFlowFilter = "all";
@@ -42,6 +44,7 @@ function qtyText(q,u){
 }
 
 function integerUnit(unit){ return ["개","대","세트"].includes(unit); }
+function isDispersant(item){ return String(item?.cat || "").includes("유처리제") || String(item?.name || "").includes("유처리제"); }
 
 function hapticsAvailable(){ return typeof navigator !== "undefined" && typeof navigator.vibrate === "function"; }
 
@@ -745,6 +748,7 @@ function renderItems(){
         <label>분류<select data-cat="${idx}">${cats.map(c=>`<option value="${c}" ${it.cat===c?"selected":""}>${c}</option>`).join("")}</select></label>
         <label>자재<select data-name="${idx}">${catalog.filter(x=>x.cat===it.cat).map(x=>`<option value="${x.name}" ${it.name===x.name?"selected":""}>${x.name}</option>`).join("")}</select></label>
         <label>수량 (${esc(it.unit)})<input type="number" inputmode="${integerUnit(it.unit)?"numeric":"decimal"}" min="0" step="${integerUnit(it.unit)?"1":"0.1"}" data-qty="${idx}" value="${it.qty ?? ""}"></label>
+        ${isDispersant(it)?`<div class="can-converter"><label>18L 캔 수<input type="number" inputmode="numeric" min="0" step="1" data-can-qty="${idx}" value="${it.qty && Number(it.qty)%18===0?Number(it.qty)/18:""}" placeholder="캔 개수"></label><div data-can-result="${idx}">${it.qty?`${Number(it.qty)/18}캔 = ${Number(it.qty)}L`:"캔 수를 입력하면 리터로 환산됩니다"}</div></div>`:""}
         <div class="qty-quick" aria-label="수량 빠른 입력"><button type="button" data-qty-add="1" data-qty-index="${idx}">+1</button><button type="button" data-qty-add="5" data-qty-index="${idx}">+5</button><button type="button" data-qty-add="10" data-qty-index="${idx}">+10</button><button type="button" data-qty-clear="${idx}">초기화</button></div>
         <button class="btn gray" data-remove="${idx}" type="button">삭제</button>
       </div>
@@ -773,6 +777,7 @@ function renderItems(){
     i.value = val;
     draftItems[Number(i.dataset.qty)].qty = val === "" ? "" : Number(val);
   }));
+  area.querySelectorAll("[data-can-qty]").forEach(input=>input.addEventListener("input",()=>{const index=Number(input.dataset.canQty),cans=Math.max(0,Math.round(Number(input.value||0))),liters=cans*18;draftItems[index].qty=liters;const qtyInput=area.querySelector(`[data-qty="${index}"]`);if(qtyInput)qtyInput.value=liters||"";const result=area.querySelector(`[data-can-result="${index}"]`);if(result)result.textContent=`${cans}캔 = ${liters}L`;}));
   area.querySelectorAll("[data-remove]").forEach(b => b.addEventListener("click", () => {
     draftItems.splice(Number(b.dataset.remove), 1);
     renderItems();
@@ -1358,10 +1363,8 @@ function renderSurveyReview(){
 
 function opTotal(place,field){
   const op = state.assetOps?.[place] || {};
-  const logs = Array.isArray(op.logs) ? op.logs : [];
-  if(place === "방제지휘차량" && field === "distance") return (op.distanceBase || 0) + logs.reduce((a,l)=>a+Number(l.distance||0),0);
-  if(place === "소형방제정" && field === "hours") return (op.hoursBase || 0) + logs.reduce((a,l)=>a+Number(l.hours||0),0);
-  if(place === "소형방제정" && field === "fuel") return (op.fuelBase || 0) + logs.reduce((a,l)=>a+Number(l.fuel||0),0);
+  if(place === "방제지휘차량" && field === "distance") return Number(op.distanceBase || 0);
+  if(place === "소형방제정" && field === "hours") return Number(op.hoursBase || 0);
   return 0;
 }
 
@@ -1371,8 +1374,8 @@ function renderOps(place){
     return `<div class="card"><div class="section-title">차량 관리</div>
       <div class="metric" style="height:82px"><div><div class="metric-label">누적 주행거리</div><div class="metric-value">${opTotal(place,"distance")}km</div></div></div>
       <div class="btn-row" style="display:grid;grid-template-columns:1fr 1fr;margin-top:12px">
-        <button class="btn secondary" id="editOpBase" type="button">초기값</button>
-        <button class="btn primary" id="addOpLog" type="button">일일 기록</button>
+        <button class="btn secondary" id="editOpBase" type="button">현재 거리 수정</button>
+        <button class="btn primary" id="addOpLog" type="button">주행 기록</button>
       </div>
       <div class="section-title" style="margin-top:16px">최근 이력</div>${recentOpRows(place)}
     </div>`;
@@ -1380,11 +1383,11 @@ function renderOps(place){
   return `<div class="card"><div class="section-title">소형방제정 관리</div>
     <div class="grid2">
       <div class="metric" style="height:82px"><div><div class="metric-label">누적 구동시간</div><div class="metric-value">${opTotal(place,"hours")}h</div></div></div>
-      <div class="metric" style="height:82px"><div><div class="metric-label">누적 연료소모</div><div class="metric-value">${opTotal(place,"fuel")}L</div></div></div>
+      <div class="metric" style="height:82px"><div><div class="metric-label">운항 기록</div><div class="metric-value">${(state.assetOps?.[place]?.logs || []).length}건</div></div></div>
     </div>
     <div class="btn-row" style="display:grid;grid-template-columns:1fr 1fr;margin-top:12px">
-      <button class="btn secondary" id="editOpBase" type="button">초기값</button>
-      <button class="btn primary" id="addOpLog" type="button">일일 기록</button>
+        <button class="btn secondary" id="editOpBase" type="button">현재 시간 수정</button>
+        <button class="btn primary" id="addOpLog" type="button">운항 기록</button>
     </div>
     <div class="section-title" style="margin-top:16px">최근 이력</div>${recentOpRows(place)}
   </div>`;
@@ -1392,21 +1395,21 @@ function renderOps(place){
 
 function editOpBase(place){
   const vehicle=place==="방제지휘차량";
-  openEntryModal(`${entryHeader("초기값 수정",place)}<div class="form">${vehicle?`<label>누적 주행거리(km)<input id="opBaseDistance" type="number" inputmode="decimal" min="0" value="${Number(state.assetOps[place].distanceBase || 0)}"></label>`:`<label>누적 구동시간(h)<input id="opBaseHours" type="number" inputmode="decimal" min="0" value="${Number(state.assetOps[place].hoursBase || 0)}"></label><label>누적 연료소모량(L)<input id="opBaseFuel" type="number" inputmode="decimal" min="0" value="${Number(state.assetOps[place].fuelBase || 0)}"></label>`}<button class="btn primary" id="saveOpBase" type="button">저장</button></div>`);
+  openEntryModal(`${entryHeader(vehicle?"현재 누적거리 수정":"현재 누적 구동시간 수정",place)}<div class="form">${vehicle?`<label>계기판 누적거리(km)<input id="opBaseDistance" type="number" inputmode="decimal" min="0" value="${opTotal(place,"distance")}"></label>`:`<label>계기판 누적 구동시간(h)<input id="opBaseHours" type="number" inputmode="decimal" min="0" value="${opTotal(place,"hours")}"></label>`}<button class="btn primary" id="saveOpBase" type="button">덮어쓰기 저장</button></div>`);
   document.getElementById("saveOpBase")?.addEventListener("click",()=>{
     if(vehicle){ const value=Number(document.getElementById("opBaseDistance").value); if(!Number.isFinite(value)||value<0){showFeedback("error","올바른 숫자를 입력해주세요");return;} state.assetOps[place].distanceBase=value; }
-    else{ const hours=Number(document.getElementById("opBaseHours").value),fuel=Number(document.getElementById("opBaseFuel").value); if(!Number.isFinite(hours)||hours<0||!Number.isFinite(fuel)||fuel<0){showFeedback("error","올바른 숫자를 입력해주세요");return;} state.assetOps[place].hoursBase=hours; state.assetOps[place].fuelBase=fuel; }
+    else{ const hours=Number(document.getElementById("opBaseHours").value); if(!Number.isFinite(hours)||hours<0){showFeedback("error","올바른 숫자를 입력해주세요");return;} state.assetOps[place].hoursBase=hours; }
     save(); closeEntryModal(); showFeedback("success","초기값 저장"); renderWarehouse();
   });
 }
 
 function addOpLog(place){
   const vehicle=place==="방제지휘차량";
-  openEntryModal(`${entryHeader("일일 기록",place)}<div class="form"><label>날짜<input id="opLogDate" type="date" value="${todayISO()}"></label>${vehicle?`<label>주행거리(km)<input id="opLogDistance" type="number" inputmode="decimal" min="0" value="0"></label>`:`<label>구동시간(h)<input id="opLogHours" type="number" inputmode="decimal" min="0" value="0"></label><label>연료소모량(L)<input id="opLogFuel" type="number" inputmode="decimal" min="0" value="0"></label>`}<label>메모<textarea id="opLogMemo"></textarea></label><button class="btn primary" id="saveOpLog" type="button">저장</button></div>`);
+  openEntryModal(`${entryHeader(vehicle?"주행 기록":"운항 기록",place)}<div class="form"><label>날짜<input id="opLogDate" type="date" value="${todayISO()}"></label>${vehicle?`<label>현재 계기판 누적거리(km)<input id="opLogDistance" type="number" inputmode="decimal" min="0" value="${opTotal(place,"distance")}"></label>`:`<label>현재 계기판 누적시간(h)<input id="opLogHours" type="number" inputmode="decimal" min="0" value="${opTotal(place,"hours")}"></label><label>이번 연료소모량(L)<input id="opLogFuel" type="number" inputmode="decimal" min="0" value="0"></label>`}<label>메모<textarea id="opLogMemo"></textarea></label><button class="btn primary" id="saveOpLog" type="button">저장</button></div>`);
   document.getElementById("saveOpLog")?.addEventListener("click",()=>{
     const common={id:uid(),date:document.getElementById("opLogDate").value || todayISO(),memo:document.getElementById("opLogMemo").value.trim(),createdAt:new Date().toISOString()};
-    if(vehicle){ const distance=Number(document.getElementById("opLogDistance").value); if(!Number.isFinite(distance)||distance<0){showFeedback("error","올바른 주행거리를 입력해주세요");return;} state.assetOps[place].logs.push({...common,distance}); }
-    else{ const hours=Number(document.getElementById("opLogHours").value),fuel=Number(document.getElementById("opLogFuel").value); if(!Number.isFinite(hours)||hours<0||!Number.isFinite(fuel)||fuel<0){showFeedback("error","올바른 숫자를 입력해주세요");return;} state.assetOps[place].logs.push({...common,hours,fuel}); }
+    if(vehicle){ const before=opTotal(place,"distance"),after=Number(document.getElementById("opLogDistance").value); if(!Number.isFinite(after)||after<before){showFeedback("error","현재 누적거리는 이전 값보다 작을 수 없습니다");return;} state.assetOps[place].distanceBase=after; state.assetOps[place].logs.push({...common,before,after,diff:after-before}); }
+    else{ const before=opTotal(place,"hours"),after=Number(document.getElementById("opLogHours").value),fuel=Number(document.getElementById("opLogFuel").value); if(!Number.isFinite(after)||after<before||!Number.isFinite(fuel)||fuel<0){showFeedback("error","누적시간과 연료량을 확인해주세요");return;} state.assetOps[place].hoursBase=after; state.assetOps[place].logs.push({...common,before,after,diff:after-before,fuel}); }
     save(); closeEntryModal(); showFeedback("success","일일 이력 저장"); renderWarehouse();
   });
 }
@@ -1414,7 +1417,7 @@ function addOpLog(place){
 function recentOpRows(place){
   const logs = [...((state.assetOps?.[place]?.logs) || [])].slice(-5).reverse();
   if(!logs.length) return `<div class="emptybox">아직 일일 이력이 없습니다.</div>`;
-  return logs.map(l => `<div class="list-row"><div><div class="row-title">${esc(l.date || "")}</div><div class="row-sub">${place==="방제지휘차량" ? `${Number(l.distance||0)}km` : `${Number(l.hours||0)}h · ${Number(l.fuel||0)}L`}${l.memo ? ` · ${esc(l.memo)}` : ""}</div></div></div>`).join("");
+  return logs.map(l => `<div class="list-row"><div><div class="row-title">${esc(l.date || "")}</div><div class="row-sub">${l.after!==undefined?`${Number(l.before||0)} → ${Number(l.after)} · +${Number(l.diff||0)}${place==="방제지휘차량"?"km":"h"}`:(place==="방제지휘차량"?`기존 이력 +${Number(l.distance||0)}km`:`기존 이력 +${Number(l.hours||0)}h`)}${place==="소형방제정"&&Number(l.fuel||0)>0?` · 연료 ${Number(l.fuel)}L`:""}${l.memo ? ` · ${esc(l.memo)}` : ""}</div></div></div>`).join("");
 }
 
 function renderEquipment(){ return ""; }
@@ -1443,7 +1446,7 @@ function openEquipment(id, options={}){
       </div>
       ${item.memo || item.etc ? `<div class="callout" style="margin-top:12px">${esc(item.memo || item.etc)}</div>` : ""}
       ${legacy.length ? `<div class="row-sub" style="margin-top:10px">기존 정보 · ${esc(legacy.join(" · "))}</div>` : ""}
-      ${item.photo ? `<img class="resource-photo-large" src="${item.photo}" alt="${esc(item.name)} 사진">` : `<div class="photo-preview" style="margin-top:14px"><span>등록된 사진 없음</span></div>`}
+      ${(item.photos || (item.photo?[item.photo]:[])).length ? `<div class="equipment-gallery">${(item.photos || [item.photo]).map(photo=>`<img class="resource-photo-large" src="${photo}" alt="${esc(item.name)} 사진">`).join("")}</div>` : `<div class="photo-preview" style="margin-top:14px"><span>등록된 사진 없음</span></div>`}
       <button class="btn primary" id="editSimpleEquipment" type="button" style="width:100%;margin-top:14px">정보 수정</button>
     </div>
     <div class="card"><div class="section-head" style="margin:0 0 10px"><div class="section-title">관리이력</div><button class="btn secondary compact" id="addMaintenance" type="button">+ 이력 추가</button></div>
@@ -1572,9 +1575,11 @@ async function compressPhoto(file){
 function bindResourcePhotoInput(){
   ["resourceCamera","resourceFile"].forEach(inputId=>document.getElementById(inputId)?.addEventListener("change", async event => {
     try{
-      resourceDraftPhoto = await compressPhoto(event.target.files?.[0]);
+      const photo = await compressPhoto(event.target.files?.[0]);
+      if(resourceDraftPhotos.length>=resourcePhotoLimit){showFeedback("warning",`사진은 최대 ${resourcePhotoLimit}장까지 등록할 수 있습니다`);return;}
+      resourceDraftPhotos.push(photo); resourceDraftPhoto=resourceDraftPhotos[0] || "";
       const preview = document.getElementById("resourcePhotoPreview");
-      if(preview){ preview.classList.toggle("has-photo",Boolean(resourceDraftPhoto)); preview.innerHTML = resourceDraftPhoto ? `<img src="${resourceDraftPhoto}" alt="등록 사진">` : `<span>사진 없음</span>`; }
+      if(preview){ preview.classList.toggle("has-photo",Boolean(resourceDraftPhotos.length)); preview.innerHTML = resourceDraftPhotos.length ? resourceDraftPhotos.map((photo,index)=>`<div class="photo-thumb"><img src="${photo}" alt="등록 사진"><button type="button" data-photo-remove="${index}">×</button></div>`).join("") : `<span>사진 없음</span>`; preview.querySelectorAll('[data-photo-remove]').forEach(button=>button.addEventListener('click',()=>{resourceDraftPhotos.splice(Number(button.dataset.photoRemove),1);resourceDraftPhoto=resourceDraftPhotos[0]||'';button.parentElement.remove();})); }
       showFeedback("success","사진을 준비했습니다");
     }catch(error){
       resourceDraftPhoto = "";
@@ -1583,17 +1588,21 @@ function bindResourcePhotoInput(){
   }));
   document.getElementById("removeResourcePhoto")?.addEventListener("click", () => {
     resourceDraftPhoto = "";
+    resourceDraftPhotos = [];
     ["resourceCamera","resourceFile"].forEach(id=>{ const input=document.getElementById(id); if(input) input.value=""; });
     const preview = document.getElementById("resourcePhotoPreview"); if(preview){ preview.classList.remove("has-photo"); preview.innerHTML="<span>사진 없음</span>"; }
     showFeedback("info","사진을 제거했습니다");
   });
+  document.querySelectorAll("[data-photo-remove]").forEach(button=>button.addEventListener("click",()=>{resourceDraftPhotos.splice(Number(button.dataset.photoRemove),1);resourceDraftPhoto=resourceDraftPhotos[0]||"";button.parentElement.remove();}));
 }
 
 function simpleResourceForm(kind,existing=null){
   const isEquipment = kind === "equipment";
   const currentWarehouse = existing?.place || selectedWarehouse || warehouses[0];
   const currentPhoto = existing?.photo || "";
-  resourceDraftPhoto = currentPhoto;
+  resourcePhotoLimit = isEquipment ? 5 : 1;
+  resourceDraftPhotos = isEquipment ? [...(existing?.photos || (currentPhoto?[currentPhoto]:[]))] : (currentPhoto?[currentPhoto]:[]);
+  resourceDraftPhoto = resourceDraftPhotos[0] || "";
   openEntryModal(`
     ${entryHeader(existing ? `${isEquipment ? "장비" : "자재"} 수정` : `${isEquipment ? "장비" : "자재"} 빠른 등록`,currentWarehouse)}
     <div class="form entry-form simple-resource-form">
@@ -1603,7 +1612,7 @@ function simpleResourceForm(kind,existing=null){
       <label>보관창고<select id="resourceWarehouse">${warehouses.map(name => `<option value="${esc(name)}" ${name === currentWarehouse ? "selected" : ""}>${esc(name)}</option>`).join("")}</select></label>
       <label>메모<textarea id="resourceMemo" placeholder="필요한 내용만 간단히 입력하세요">${esc(existing?.memo || existing?.etc || "")}</textarea></label>
       <div class="photo-choice"><label class="btn secondary">사진 촬영<input id="resourceCamera" type="file" accept="image/*" capture="environment" hidden></label><label class="btn secondary">사진 선택<input id="resourceFile" type="file" accept="image/*" hidden></label></div>
-      ${photoPreviewHtml(currentPhoto)}
+      <div class="photo-preview ${resourceDraftPhotos.length?"has-photo":""}" id="resourcePhotoPreview">${resourceDraftPhotos.length?resourceDraftPhotos.map((photo,index)=>`<div class="photo-thumb"><img src="${photo}" alt="등록 사진"><button type="button" data-photo-remove="${index}">×</button></div>`).join(""):`<span>사진 없음</span>`}</div>
       <button class="btn gray" id="removeResourcePhoto" type="button">사진 제거</button>
       <button class="btn primary" id="saveSimpleResource" type="button">저장</button>
     </div>`);
@@ -1634,12 +1643,12 @@ function saveSimpleResource(kind,id=null){
     if(!equipment && state.equipment.some(item => item.name === name && item.place === place)){ showFeedback("error","이 창고에 같은 장비명이 있습니다"); return; }
     if(equipment){
       const previousPlace=equipment.place;
-      Object.assign(equipment,{name,spec,detail:spec,model:equipment.model || spec,qty,place,memo,etc:memo,photo:resourceDraftPhoto});
+      Object.assign(equipment,{name,spec,detail:spec,model:equipment.model || spec,qty,place,memo,etc:memo,photo:resourceDraftPhotos[0] || "",photos:resourceDraftPhotos.slice(0,5)});
       equipment.maintenance=equipment.maintenance || [];
       equipment.moves=equipment.moves || [];
       if(previousPlace && previousPlace!==place) equipment.moves.push({id:uid(),date:todayISO(),from:previousPlace,to:place,memo:"장비 정보 수정에서 보관창고 변경",createdAt:new Date().toISOString()});
     }else{
-      state.equipment.push({id:uid(),cat:"기타장비",name,spec,detail:spec,model:spec,qty,place,memo,etc:memo,photo:resourceDraftPhoto,battery:"",fuel:"",status:"정상",maintenance:[],moves:[]});
+      state.equipment.push({id:uid(),cat:"기타장비",name,spec,detail:spec,model:spec,qty,place,memo,etc:memo,photo:resourceDraftPhotos[0] || "",photos:resourceDraftPhotos.slice(0,5),battery:"",fuel:"",status:"정상",maintenance:[],moves:[]});
     }
   }
   save();
@@ -1887,7 +1896,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190h")
+      navigator.serviceWorker.register("./sw.js?v=0190i")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
