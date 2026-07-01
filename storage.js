@@ -1,4 +1,4 @@
-const VERSION = "Alpha 0.19.0i Field Refine Beta";
+const VERSION = "Alpha 0.19.0j Fast Survey Beta";
 const KEY = "victor_state_alpha_0_19_0e";
 const MIGRATE_KEYS = [
   "victor_state_alpha_0_19_0d",
@@ -582,6 +582,13 @@ function normalize(raw){
     memo: typeof e.memo === "string" ? e.memo : (typeof e.etc === "string" ? e.etc : ""),
     photo: typeof e.photo === "string" && e.photo.startsWith("data:image/") ? e.photo : "",
     photos: [...new Set([...(Array.isArray(e.photos) ? e.photos : []),e.photo].filter(photo => typeof photo === "string" && photo.startsWith("data:image/")))].slice(0,5),
+    accessories: Array.isArray(e.accessories) ? e.accessories.filter(part => part && typeof part === "object").map(part => ({
+      id: typeof part.id === "string" && part.id ? part.id : uid(),
+      name: String(part.name || "").trim(),
+      qty: Math.max(0, Number(part.qty || 0)),
+      memo: String(part.memo || ""),
+      updatedAt: typeof part.updatedAt === "string" ? part.updatedAt : new Date().toISOString()
+    })).filter(part => part.name) : [],
     maintenance: Array.isArray(e.maintenance) ? e.maintenance.filter(log => log && typeof log === "object").map(log => ({
       id: typeof log.id === "string" && log.id ? log.id : uid(),
       type: typeof log.type === "string" && log.type ? log.type : "기타",

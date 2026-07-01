@@ -1,4 +1,11 @@
-# QA CHECKLIST - Alpha 0.19.0h Field Ops Beta
+# QA CHECKLIST - Alpha 0.19.0j Fast Survey Beta
+
+- [x] 선택 창고·분류 밖 재고는 실사 반영에서 제외
+- [x] 실사 미입력 품목은 선택 범위 안에서만 0 처리
+- [x] 0·현재 수량·직접 입력 및 12개 일괄 입력
+- [x] 장비 현재 부속품과 관리이력 분리
+- [x] 등록 임시저장은 사진 데이터를 포함하지 않음
+- [x] 최근 차량·방제정 이력 수정·삭제 시 누적값 복구
 
 - [x] 브라우저 기본 prompt·confirm·alert 미사용
 - [x] 홈 전체 보관량 및 자주 쓰는 기능 구조
