@@ -256,3 +256,5 @@ button:active{transform:scale(.975);filter:brightness(.97)}
 .snackbar.success{background:#176B51}.snackbar.warning{background:#9A5A0A}.snackbar.error{background:#B42318}.snackbar.info{background:#183B56}
 @media(max-width:420px){.storage-view-switch button{font-size:12px;padding:10px 2px}.resource-detail-card .detail-grid{grid-template-columns:1fr}.storage-view-switch{top:76px}}
 @media(prefers-reduced-motion:reduce){button{transition:none}button:active{transform:none}}
+.photo-tools{display:flex;gap:4px;flex-wrap:wrap;margin-top:5px}.photo-tools button{border:0;border-radius:7px;padding:5px 7px;background:#eaf2fb;color:#25527a;font-size:11px}.photo-tools button:disabled{opacity:.35}
+.check-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:9px;margin-top:10px}.check-grid label{display:flex;align-items:center;gap:7px;background:#f3f7fb;border-radius:10px;padding:10px}.plain-button{border:0;background:transparent;text-align:left;padding:0;color:inherit;flex:1}.danger-text{color:#b42318}

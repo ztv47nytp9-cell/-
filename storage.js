@@ -1,4 +1,4 @@
-const VERSION = "Alpha 0.19.0j Fast Survey Beta";
+const VERSION = "Alpha 0.19.0k Workflow Beta";
 const KEY = "victor_state_alpha_0_19_0e";
 const MIGRATE_KEYS = [
   "victor_state_alpha_0_19_0d",
@@ -390,6 +390,7 @@ function defaultState(){
     settings: {haptics:true},
     ui: {lastVisit:null},
     survey: null,
+    trash: [],
     lastBackup: null,
     logs: []
   };
@@ -425,7 +426,8 @@ function normalize(raw){
   if(raw.stock && typeof raw.stock === "object") Object.keys(raw.stock).forEach(w => whSet.add(oldName(w)));
   const warehouseList = [...whSet];
 
-  const catMap = new Map(defaultCatalog.map(i => [i.name, {...i}]));
+  const deletedMaterialNames=new Set((Array.isArray(raw.trash)?raw.trash:[]).filter(entry=>entry?.kind==="material").map(entry=>entry?.data?.item?.name).filter(Boolean));
+  const catMap = new Map(defaultCatalog.filter(item=>!deletedMaterialNames.has(item.name)).map(i => [i.name, {...i}]));
   if(Array.isArray(raw.catalog)){
     raw.catalog.forEach(i => {
       if(!i || typeof i !== "object" || typeof i.name !== "string" || !i.name.trim()) return;
@@ -500,10 +502,13 @@ function normalize(raw){
     createdAt: typeof r.createdAt === "string" && r.createdAt ? r.createdAt : new Date().toISOString(),
     appliedAt: typeof r.appliedAt === "string" ? r.appliedAt : null,
     targetWarehouse: oldName(r.targetWarehouse || ""),
+    checklist: Array.isArray(r.checklist) ? r.checklist.filter(step => ["출동","회수","세척","복귀"].includes(step)) : [],
     equipmentItems: Array.isArray(r.equipmentItems) ? r.equipmentItems.filter(it => it && typeof it === "object").map(it => ({
       id: typeof it.id === "string" ? it.id : "",
       name: typeof it.name === "string" && it.name ? it.name : "장비",
       qty: Number.isFinite(Number(it.qty)) && Number(it.qty) > 0 ? Number(it.qty) : 1,
+      returnedQty: Math.max(0,Math.min(Number(it.qty || 1),Number(it.returnedQty || 0))),
+      returnHistory: Array.isArray(it.returnHistory) ? it.returnHistory.filter(log=>log&&typeof log==="object").map(log=>({id:String(log.id||uid()),date:String(log.date||todayISO()),qty:Math.max(0,Number(log.qty||0)),memo:String(log.memo||""),createdAt:String(log.createdAt||new Date().toISOString())})) : [],
       place: oldName(it.place || it.warehouse || ""),
       spec: typeof it.spec === "string" ? it.spec : ""
     })) : [],
@@ -563,8 +568,9 @@ function normalize(raw){
     : [];
   const mergedEquipment = [...existingEquipment];
   defaultEquipment.forEach(def => {
+    const inTrash = Array.isArray(state.trash) && state.trash.some(entry => entry?.kind === "equipment" && entry?.data?.id === def.id);
     const exists = mergedEquipment.some(e => e.id === def.id || (e.name === def.name && (e.detail || e.spec || "") === def.detail && oldName(e.place || e.warehouse || "") === def.place));
-    if(!exists) mergedEquipment.push({...def});
+    if(!exists && !inTrash) mergedEquipment.push({...def});
   });
   state.equipment = mergedEquipment.map(e => ({
     id: typeof e.id === "string" && e.id ? e.id : uid(),
@@ -586,6 +592,7 @@ function normalize(raw){
       id: typeof part.id === "string" && part.id ? part.id : uid(),
       name: String(part.name || "").trim(),
       qty: Math.max(0, Number(part.qty || 0)),
+      status: ["장착 중","예비 보유","수리 중"].includes(part.status) ? part.status : "예비 보유",
       memo: String(part.memo || ""),
       updatedAt: typeof part.updatedAt === "string" ? part.updatedAt : new Date().toISOString()
     })).filter(part => part.name) : [],
@@ -616,6 +623,7 @@ function normalize(raw){
   if(!state.ui.lastVisit || typeof state.ui.lastVisit !== "object") state.ui.lastVisit = null;
 
   if(!("survey" in state)) state.survey = null;
+  if(!Array.isArray(state.trash)) state.trash = [];
   if(!Array.isArray(state.logs)) state.logs = [];
   refreshGlobals(state);
   return state;
