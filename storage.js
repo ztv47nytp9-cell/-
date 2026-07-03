@@ -1,4 +1,4 @@
-const VERSION = "Alpha 0.19.0k Workflow Beta";
+const VERSION = "Alpha 0.19.0l Grouped Beta";
 const KEY = "victor_state_alpha_0_19_0e";
 const MIGRATE_KEYS = [
   "victor_state_alpha_0_19_0d",
@@ -29,6 +29,7 @@ const MIGRATE_KEYS = [
 ];
 
 const defaultWarehouses = ["통영해양경찰서","전용부두","VTS","장승포","한국석유공사 거제지사 창고","방제지휘차량","소형방제정"];
+const defaultWarehouseKinds = {"통영해양경찰서":"창고","전용부두":"창고","VTS":"창고","장승포":"파출소","한국석유공사 거제지사 창고":"창고","방제지휘차량":"차량","소형방제정":"함정"};
 
 const defaultCatalog = [
   {cat:"유흡착재",name:"매트형 유흡착재",unit:"kg",spec:"10kg/1BOX",kind:"consume"},
@@ -350,7 +351,7 @@ let cats = [...new Set(catalog.map(x => x.cat))];
 
 function refreshGlobals(state){
   warehouses = Array.isArray(state?.warehouses) && state.warehouses.length ? [...state.warehouses] : [...defaultWarehouses];
-  catalog = Array.isArray(state?.catalog) && state.catalog.length ? state.catalog.map(x => ({...x})) : defaultCatalog.map(x => ({...x}));
+  catalog = Array.isArray(state?.catalog) && state.catalog.length ? state.catalog : defaultCatalog.map(x => ({...x}));
   cats = [...new Set(catalog.map(x => x.cat))];
   const savedEquipmentCategories = Array.isArray(state?.equipmentCategories)
     ? state.equipmentCategories.filter(name => typeof name === "string" && name.trim()).map(name => name.trim())
@@ -381,6 +382,7 @@ function defaultState(){
     records: [],
     memos: [],
     warehouseInfos: defaultInfos(),
+    warehouseKinds: {...defaultWarehouseKinds},
     assetOps: {
       "방제지휘차량": {distanceBase:0, logs:[]},
       "소형방제정": {hoursBase:0, fuelBase:0, logs:[]}
@@ -440,7 +442,8 @@ function normalize(raw){
         spec:typeof i.spec === "string" ? i.spec : "",
         kind:i.kind === "returnable" ? "returnable" : "consume",
         memo:typeof i.memo === "string" ? i.memo : "",
-        photo:typeof i.photo === "string" && i.photo.startsWith("data:image/") ? i.photo : ""
+        photo:typeof i.photo === "string" && i.photo.startsWith("data:image/") ? i.photo : "",
+        updatedAt:typeof i.updatedAt === "string" ? i.updatedAt : ""
       });
     });
   }
@@ -485,6 +488,8 @@ function normalize(raw){
       updated: typeof old.updated === "string" ? old.updated : ""
     };
   });
+  state.warehouseKinds=raw.warehouseKinds&&typeof raw.warehouseKinds==="object"&&!Array.isArray(raw.warehouseKinds)?{...raw.warehouseKinds}:{};
+  warehouseList.forEach(name=>{const auto=defaultWarehouseKinds[name]||(name.includes("차량")?"차량":name.includes("정")||name.includes("함")?"함정":"기타");if(!["차량","함정","파출소","창고","기타"].includes(state.warehouseKinds[name]))state.warehouseKinds[name]=auto;});
 
   if(!Array.isArray(state.records)) state.records = [];
   state.records = state.records.filter(r => r && typeof r === "object").map(r => ({
@@ -557,6 +562,7 @@ function normalize(raw){
     state.assetOps["소형방제정"].hoursBase += state.assetOps["소형방제정"].logs.reduce((sum,log)=>sum+Number(log.hours || 0),0);
     state.assetOps["소형방제정"].counterMode = "absolute";
   }
+  warehouseList.forEach(name=>{const kind=state.warehouseKinds[name];if(kind==="차량"){if(!state.assetOps[name])state.assetOps[name]={distanceBase:0,logs:[],counterMode:"absolute"};if(!Array.isArray(state.assetOps[name].logs))state.assetOps[name].logs=[];if(!Number.isFinite(Number(state.assetOps[name].distanceBase)))state.assetOps[name].distanceBase=0;}else if(kind==="함정"){if(!state.assetOps[name])state.assetOps[name]={hoursBase:0,fuelBase:0,logs:[],counterMode:"absolute"};if(!Array.isArray(state.assetOps[name].logs))state.assetOps[name].logs=[];if(!Number.isFinite(Number(state.assetOps[name].hoursBase)))state.assetOps[name].hoursBase=0;}});
 
   state.equipmentCategories = [...new Set([
     ...defaultEquipmentCategories,
@@ -586,6 +592,7 @@ function normalize(raw){
     model: typeof e.model === "string" ? e.model : "",
     qty: Number.isFinite(Number(e.qty)) && Number(e.qty) >= 0 ? Number(e.qty) : 1,
     memo: typeof e.memo === "string" ? e.memo : (typeof e.etc === "string" ? e.etc : ""),
+    updatedAt: typeof e.updatedAt === "string" ? e.updatedAt : "",
     photo: typeof e.photo === "string" && e.photo.startsWith("data:image/") ? e.photo : "",
     photos: [...new Set([...(Array.isArray(e.photos) ? e.photos : []),e.photo].filter(photo => typeof photo === "string" && photo.startsWith("data:image/")))].slice(0,5),
     accessories: Array.isArray(e.accessories) ? e.accessories.filter(part => part && typeof part === "object").map(part => ({

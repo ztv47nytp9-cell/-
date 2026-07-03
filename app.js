@@ -24,6 +24,10 @@ let globalSearchQuery = "";
 let maintenanceDraftParts = [];
 let maintenanceDraftPhoto = "";
 let sharedSnapshot = null;
+let materialSortMode = "name";
+let equipmentSortMode = "name";
+let resourceSelectionMode = false;
+let selectedResources = new Set();
 let modalConfirmResolver = null;
 const REGISTER_DRAFT_KEY = "victor_register_draft_0_19_0j";
 let registerDraftTimer = null;
@@ -63,6 +67,13 @@ function scheduleRegisterDraft(){clearTimeout(registerDraftTimer);registerDraftT
 
 function integerUnit(unit){ return ["개","대","세트"].includes(unit); }
 function isDispersant(item){ return String(item?.cat || "").includes("유처리제") || String(item?.name || "").includes("유처리제"); }
+
+function collapsedGroups(){state.ui=state.ui||{};state.ui.collapsedGroups=state.ui.collapsedGroups||{};return state.ui.collapsedGroups;}
+function groupKey(scope,name){return `${scope}:${name}`;}
+function groupedSection(scope,name,count,content,forceOpen=false){const collapsed=!forceOpen&&Boolean(collapsedGroups()[groupKey(scope,name)]);return `<section class="group-section ${collapsed?"collapsed":""}"><button class="group-heading" data-group-toggle="${esc(groupKey(scope,name))}" type="button"><span>${esc(name)} <small>${count}</small></span><span>${collapsed?"›":"⌄"}</span></button><div class="group-content">${content}</div></section>`;}
+function bindGroupedSections(rerender){view.querySelectorAll("[data-group-toggle]").forEach(button=>button.addEventListener("click",()=>{const key=button.dataset.groupToggle;collapsedGroups()[key]=!collapsedGroups()[key];save();rerender();}));view.querySelector("[data-groups-all]")?.addEventListener("click",event=>{const keys=[...view.querySelectorAll("[data-group-toggle]")].map(button=>button.dataset.groupToggle),collapse=event.currentTarget.dataset.groupsAll==="collapse";keys.forEach(key=>collapsedGroups()[key]=collapse);save();rerender();});}
+function groupToolbar(sortMode,scope){return `<div class="group-toolbar"><label>정렬<select data-group-sort="${scope}"><option value="name" ${sortMode==="name"?"selected":""}>이름순</option><option value="qty" ${sortMode==="qty"?"selected":""}>수량순</option><option value="recent" ${sortMode==="recent"?"selected":""}>최근 수정순</option></select></label><button class="btn gray compact" data-groups-all="expand" type="button">전체 펼치기</button><button class="btn gray compact" data-groups-all="collapse" type="button">전체 접기</button></div>`;}
+function isTodayChanged(item){return String(item.updatedAt||item.updated||"").slice(0,10)===todayISO();}
 
 function hapticsAvailable(){ return typeof navigator !== "undefined" && typeof navigator.vibrate === "function"; }
 
@@ -449,6 +460,8 @@ function bindWarehouseActions(place=""){
 
 function bindWarehouseViewSwitcher(){
   view.querySelectorAll("[data-storage-view]").forEach(button => button.addEventListener("click", () => {
+    resourceSelectionMode=false;
+    selectedResources.clear();
     warehouseViewMode = button.dataset.storageView;
     selectedWarehouse = null;
     allResourceQuery = "";
@@ -475,8 +488,30 @@ function bindResourceFilters(renderList){
   document.getElementById("allResourceWarehouse")?.addEventListener("change", event => { allResourceWarehouse=event.target.value; renderList(); });
 }
 
+function bindResourceGroupControls(renderList){
+  document.querySelector("[data-group-sort]")?.addEventListener("change",event=>{if(warehouseViewMode==="materials")materialSortMode=event.target.value;else equipmentSortMode=event.target.value;renderList();});
+  document.getElementById("toggleResourceSelection")?.addEventListener("click",()=>{resourceSelectionMode=!resourceSelectionMode;if(!resourceSelectionMode)selectedResources.clear();renderWarehouse();});
+  document.getElementById("manageCategories")?.addEventListener("click",()=>openCategoryManager(warehouseViewMode==="materials"?"material":"equipment"));
+}
+
+function createBulkSafetyPoint(label){try{const copy=JSON.parse(JSON.stringify(state));if(copy.ui)delete copy.ui.bulkUndo;localStorage.setItem("victor_bulk_safety_0_19_0l",JSON.stringify({label,createdAt:new Date().toISOString(),state:copy}));return true;}catch(error){showFeedback("error","안전지점을 만들지 못했습니다");return false;}}
+async function restoreBulkSafetyPoint(){closeMenu();try{const point=JSON.parse(localStorage.getItem("victor_bulk_safety_0_19_0l")||"null");if(!point?.state){showFeedback("info","되돌릴 대량변경이 없습니다");return;}if(!await askConfirm("대량변경 되돌리기",`${point.label} 이전 상태로 되돌릴까요?`,"되돌리기",true))return;state=normalize(point.state);save();localStorage.removeItem("victor_bulk_safety_0_19_0l");showFeedback("success","대량변경을 되돌렸습니다");setPage("warehouse");}catch(error){showFeedback("error","안전지점을 복원하지 못했습니다");}}
+function renderBulkResourceActions(){const target=document.getElementById("bulkResourceActions");if(!target)return;const count=selectedResources.size;target.innerHTML=resourceSelectionMode?`<div class="bulk-bar"><strong>${count}개 선택</strong><button class="btn secondary compact" id="bulkCategory" type="button" ${count?"":"disabled"}>분류 변경</button><button class="btn secondary compact" id="bulkMove" type="button" ${count?"":"disabled"}>창고 이동</button></div>`:"";document.getElementById("bulkCategory")?.addEventListener("click",openBulkCategoryChange);document.getElementById("bulkMove")?.addEventListener("click",openBulkMove);}
+
+function openBulkCategoryChange(){const material=[...selectedResources].some(key=>key.startsWith("material:")),options=material?cats:equipmentCategories;openEntryModal(`${entryHeader("선택 항목 분류 변경",`${selectedResources.size}개 항목`)}<div class="form"><label>새 분류<select id="bulkCategoryTarget">${options.map(cat=>`<option>${esc(cat)}</option>`).join("")}</select></label><button class="btn primary" id="applyBulkCategory" type="button">변경</button></div>`);document.getElementById("applyBulkCategory")?.addEventListener("click",async()=>{const target=document.getElementById("bulkCategoryTarget").value;if(!await askConfirm("분류 변경",`${selectedResources.size}개 항목을 ${target}(으)로 변경할까요?`,"변경"))return;if(!createBulkSafetyPoint("분류 일괄 변경"))return;selectedResources.forEach(key=>{const [kind,id]=key.split(":");if(kind==="material"){const item=itemOf(id);if(item){item.cat=target;item.updatedAt=new Date().toISOString();state.records.forEach(record=>(record.items||[]).forEach(entry=>{if(entry.name===id)entry.cat=target;}));}}else{const item=state.equipment.find(row=>row.id===id);if(item){item.cat=target;item.updatedAt=new Date().toISOString();}}});save();selectedResources.clear();resourceSelectionMode=false;closeEntryModal();showFeedback("success","분류 변경 완료");renderWarehouse();});}
+
+function openBulkMove(){openEntryModal(`${entryHeader("선택 항목 창고 이동",`${selectedResources.size}개 항목`)}<div class="form"><label>출발 창고<select id="bulkMoveFrom">${warehouses.map(name=>`<option>${esc(name)}</option>`).join("")}</select></label><label>도착 창고<select id="bulkMoveTo">${warehouses.map((name,index)=>`<option ${index===1?"selected":""}>${esc(name)}</option>`).join("")}</select></label><div class="callout">자재는 출발 창고의 현재 수량 전부를 이동하고, 장비는 보관창고를 변경합니다.</div><button class="btn primary" id="applyBulkMove" type="button">이동</button></div>`);document.getElementById("applyBulkMove")?.addEventListener("click",async()=>{const from=document.getElementById("bulkMoveFrom").value,to=document.getElementById("bulkMoveTo").value;if(from===to){showFeedback("error","출발·도착 창고를 다르게 선택해주세요");return;}if(!await askConfirm("일괄 이동",`${selectedResources.size}개 항목을 ${to}(으)로 이동할까요?`,"이동"))return;if(!createBulkSafetyPoint("선택 항목 일괄 이동"))return;selectedResources.forEach(key=>{const [kind,id]=key.split(":");if(kind==="material"){const qty=Number(state.stock[from]?.[id]||0);if(qty>0){state.stock[from][id]=0;state.stock[to][id]=Number(state.stock[to]?.[id]||0)+qty;}}else{const item=state.equipment.find(row=>row.id===id);if(item){item.moves=item.moves||[];item.moves.push({id:uid(),date:todayISO(),from:item.place,to,memo:"선택 모드 일괄 이동",createdAt:new Date().toISOString()});item.place=to;item.updatedAt=new Date().toISOString();}}});save();selectedResources.clear();resourceSelectionMode=false;closeEntryModal();showFeedback("success","일괄 이동 완료");renderWarehouse();});}
+
+function openCategoryManager(kind){
+  const list=kind==="material"?cats:equipmentCategories;
+  openEntryModal(`${entryHeader("분류명 변경·병합",kind==="material"?"자재 분류":"장비 분류")}<div class="form"><label>기존 분류<select id="categorySource">${list.map(cat=>`<option>${esc(cat)}</option>`).join("")}</select></label><label>새 분류명 또는 병합할 분류<input id="categoryTarget" placeholder="새 분류명"></label><div class="callout" id="categoryImpact"></div><button class="btn primary" id="applyCategoryRename" type="button">변경·병합</button></div>`);
+  const update=()=>{const source=document.getElementById("categorySource").value,count=kind==="material"?catalog.filter(item=>item.cat===source).length:state.equipment.filter(item=>item.cat===source).length;document.getElementById("categoryImpact").textContent=`${source}에 포함된 ${count}개 항목과 연결된 과거 이력의 분류명이 함께 변경됩니다.`;};
+  update();document.getElementById("categorySource").onchange=update;
+  document.getElementById("applyCategoryRename").onclick=async()=>{const source=document.getElementById("categorySource").value,target=document.getElementById("categoryTarget").value.trim();if(!target){showFeedback("error","새 분류명을 입력해주세요");return;}if(source===target){showFeedback("info","같은 분류명입니다");return;}if(!await askConfirm("분류 변경",`${source}를 ${target}(으)로 변경하거나 병합할까요?`,"변경"))return;if(!createBulkSafetyPoint("분류명 변경·병합"))return;if(kind==="material"){catalog.filter(item=>item.cat===source).forEach(item=>{item.cat=target;item.updatedAt=new Date().toISOString();});state.records.forEach(record=>(record.items||[]).forEach(entry=>{if(entry.cat===source)entry.cat=target;}));}else{state.equipment.filter(item=>item.cat===source).forEach(item=>{item.cat=target;item.updatedAt=new Date().toISOString();});state.equipmentCategories=state.equipmentCategories||[];if(!state.equipmentCategories.includes(target))state.equipmentCategories.push(target);}save();closeEntryModal();showFeedback("success","분류 변경 완료");renderWarehouse();};
+}
+
 function renderAllMaterialsView(){
-  return `${resourceFilterControls(cats,"자재명·규격·메모 검색")}<div class="filter-result" id="allMaterialCount"></div><div class="list-card" id="allMaterialList"></div>`;
+  return `${resourceFilterControls(cats,"자재명·규격·메모 검색")}${groupToolbar(materialSortMode,"materials")}<div class="btn-row"><button class="btn secondary compact" id="toggleResourceSelection" type="button">${resourceSelectionMode?"선택 종료":"선택 모드"}</button><button class="btn secondary compact" id="manageCategories" type="button">분류 관리</button></div><div class="filter-result" id="allMaterialCount"></div><div id="allMaterialList"></div><div id="bulkResourceActions"></div>`;
 }
 
 function renderAllMaterialList(){
@@ -484,7 +519,7 @@ function renderAllMaterialList(){
   if(!target) return;
   const query = allResourceQuery.trim().toLowerCase();
   const selectedWarehouses = allResourceWarehouse === "all" ? warehouses : [allResourceWarehouse];
-  const rows = catalog.filter(item => {
+  let rows = catalog.filter(item => {
     if(allResourceCategory !== "all" && item.cat !== allResourceCategory) return false;
     return !query || [item.name,item.spec,item.memo,item.cat].join(" ").toLowerCase().includes(query);
   }).map(item => {
@@ -492,13 +527,10 @@ function renderAllMaterialList(){
     const locations = selectedWarehouses.filter(name => Number(state.stock[name]?.[item.name] || 0) > 0);
     return {...item,total,locations};
   });
+  rows.sort((a,b)=>materialSortMode==="qty"?b.total-a.total:materialSortMode==="recent"?String(b.updatedAt||"").localeCompare(String(a.updatedAt||"")):a.name.localeCompare(b.name,"ko"));
   document.getElementById("allMaterialCount").textContent = `검색 결과 ${rows.length}종`;
-  target.innerHTML = rows.length ? rows.map(item => `
-    <button class="list-row" data-all-material="${esc(item.name)}" type="button">
-      <div><div class="row-title">${esc(item.name)}</div><div class="row-sub">${esc(item.cat)}${item.spec ? " · " + esc(item.spec) : ""} · ${item.locations.length ? esc(item.locations.slice(0,2).join(", ")) + (item.locations.length > 2 ? ` 외 ${item.locations.length-2}곳` : "") : "보유 창고 없음"}</div></div>
-      <div class="stock-qty">${materialQtyText(item.total,item.unit,item)}</div>
-    </button>`).join("") : `<div class="emptybox">검색 결과가 없습니다.</div>`;
-  target.querySelectorAll("[data-all-material]").forEach(button => button.addEventListener("click", () => openAllMaterialDetail(button.dataset.allMaterial)));
+  const forceOpen=Boolean(query);target.innerHTML=rows.length?cats.map(cat=>{const grouped=rows.filter(item=>item.cat===cat);if(!grouped.length)return "";const content=grouped.map(item=>`<div class="list-row ${item.total===0?"zero-stock":""}">${resourceSelectionMode?`<input class="resource-check" data-select-material="${esc(item.name)}" type="checkbox" ${selectedResources.has(`material:${item.name}`)?"checked":""}>`:""}<button class="row-main" data-all-material="${esc(item.name)}" type="button"><div><div class="row-title">${esc(item.name)}${isTodayChanged(item)?` <span class="today-chip">오늘 수정</span>`:""}</div><div class="row-sub">${item.spec?esc(item.spec)+" · ":""}${item.locations.length?esc(item.locations.slice(0,2).join(", "))+(item.locations.length>2?` 외 ${item.locations.length-2}곳`:""):"보유 창고 없음"}</div></div><div class="stock-qty">${materialQtyText(item.total,item.unit,item)}</div></button></div>`).join("");return groupedSection("materials",cat,`${grouped.length}종`,content,forceOpen);}).join(""):`<div class="emptybox">검색 결과가 없습니다.</div>`;
+  bindGroupedSections(renderAllMaterialList);target.querySelectorAll("[data-all-material]").forEach(button=>button.addEventListener("click",()=>{if(!resourceSelectionMode)openAllMaterialDetail(button.dataset.allMaterial);}));target.querySelectorAll("[data-select-material]").forEach(input=>input.addEventListener("change",()=>{const key=`material:${input.dataset.selectMaterial}`;input.checked?selectedResources.add(key):selectedResources.delete(key);renderBulkResourceActions();}));renderBulkResourceActions();
 }
 
 function openAllMaterialDetail(name){
@@ -509,13 +541,16 @@ function openAllMaterialDetail(name){
     ${entryHeader(item.name,"전체 자재 상세")}
     <div class="card compact-card"><div class="row-sub">카테고리</div><div class="row-title">${esc(item.cat)}</div><div class="row-sub">규격 ${esc(item.spec || "없음")} · 단위 ${esc(item.unit)}</div>${item.memo ? `<div class="callout" style="margin-top:10px">${esc(item.memo)}</div>` : ""}${item.photo ? `<img class="resource-photo-large" src="${item.photo}" alt="${esc(item.name)} 사진">` : ""}</div>
     <div class="list-card">${warehouses.map(name => `<button class="list-row" data-material-warehouse="${esc(name)}" type="button"><div><div class="row-title">${esc(name)}</div></div><div class="stock-qty">${materialQtyText(state.stock[name]?.[item.name] || 0,item.unit,item)}</div></button>`).join("")}</div>
-    <div class="card"><div class="section-title">재고 변동 타임라인</div>${timeline.map(record=>{const entry=record.items.find(row=>row.name===name),sign=record.flow==="입고"?"+":record.flow==="출고"||record.flow==="긴급"?"-":"";return `<div class="stock-line"><div><div class="stock-name">${fmtDate(record.date)} · ${esc(record.title)}</div><div class="stock-spec">${esc(record.warehouse||"창고 미지정")} · ${esc(record.flow)}</div></div><div class="stock-qty">${entry.before!==undefined?`${materialQtyText(entry.before,entry.unit,entry)} → ${materialQtyText(entry.after,entry.unit,entry)}`:`${sign}${materialQtyText(entry.qty,entry.unit,entry)}`}</div></div>`;}).join("")||`<div class="emptybox">변동 이력이 없습니다.</div>`}</div><button class="btn danger" id="deleteMaterial" type="button" style="width:100%">자재를 임시 보관함으로 이동</button>`);
+    <button class="btn secondary" id="editMaterialInfo" type="button" style="width:100%;margin-top:10px">자재 정보·분류 수정</button><div class="card"><div class="section-title">재고 변동 타임라인</div>${timeline.map(record=>{const entry=record.items.find(row=>row.name===name),sign=record.flow==="입고"?"+":record.flow==="출고"||record.flow==="긴급"?"-":"";return `<div class="stock-line"><div><div class="stock-name">${fmtDate(record.date)} · ${esc(record.title)}</div><div class="stock-spec">${esc(record.warehouse||"창고 미지정")} · ${esc(record.flow)}</div></div><div class="stock-qty">${entry.before!==undefined?`${materialQtyText(entry.before,entry.unit,entry)} → ${materialQtyText(entry.after,entry.unit,entry)}`:`${sign}${materialQtyText(entry.qty,entry.unit,entry)}`}</div></div>`;}).join("")||`<div class="emptybox">변동 이력이 없습니다.</div>`}</div><button class="btn danger" id="deleteMaterial" type="button" style="width:100%">자재를 임시 보관함으로 이동</button>`);
   document.querySelectorAll("[data-material-warehouse]").forEach(button => button.addEventListener("click", () => { closeEntryModal(); warehouseViewMode="warehouses"; selectedWarehouse=button.dataset.materialWarehouse; warehouseTab="material"; renderWarehouse(); pushNavigationState({page:"warehouse",warehouse:selectedWarehouse,tab:"material"}); }));
+  document.getElementById("editMaterialInfo")?.addEventListener("click",()=>openMaterialInfoForm(item.name));
   document.getElementById("deleteMaterial")?.addEventListener("click",async()=>{if(!await askConfirm("자재 삭제",`${item.name}과 현재 재고를 임시 보관함으로 이동할까요?`,"이동",true))return;const stock={};warehouses.forEach(warehouse=>{stock[warehouse]=Number(state.stock[warehouse]?.[item.name]||0);delete state.stock[warehouse]?.[item.name];});state.trash=state.trash||[];state.trash.push({id:uid(),kind:"material",data:{item:JSON.parse(JSON.stringify(item)),stock},deletedAt:new Date().toISOString()});state.catalog=state.catalog.filter(row=>row.name!==item.name);save();closeEntryModal();showFeedback("success","자재를 임시 보관함으로 이동했습니다");renderAllMaterialList();});
 }
 
+function openMaterialInfoForm(name){const item=itemOf(name);if(!item)return;openEntryModal(`${entryHeader("자재 정보·분류 수정",item.name)}<div class="form"><label>품목명<input id="materialEditName" value="${esc(item.name)}"></label><label>분류<select id="materialEditCategory">${cats.map(cat=>`<option ${cat===item.cat?"selected":""}>${esc(cat)}</option>`).join("")}</select></label><label>규격<input id="materialEditSpec" value="${esc(item.spec||"")}"></label><label>메모<textarea id="materialEditMemo">${esc(item.memo||"")}</textarea></label><button class="btn primary" id="saveMaterialInfo" type="button">저장</button></div>`);document.getElementById("saveMaterialInfo")?.addEventListener("click",()=>{const nextName=document.getElementById("materialEditName").value.trim(),cat=document.getElementById("materialEditCategory").value;if(!nextName){showFeedback("error","품목명을 입력해주세요");return;}if(catalog.some(row=>row!==item&&row.name===nextName)){showFeedback("error","같은 이름의 자재가 이미 있습니다");return;}const oldName=item.name;Object.assign(item,{name:nextName,cat,spec:document.getElementById("materialEditSpec").value.trim(),memo:document.getElementById("materialEditMemo").value.trim(),updatedAt:new Date().toISOString()});if(oldName!==nextName)warehouses.forEach(warehouse=>{state.stock[warehouse][nextName]=Number(state.stock[warehouse]?.[oldName]||0);delete state.stock[warehouse][oldName];});state.records.forEach(record=>(record.items||[]).forEach(entry=>{if(entry.name===oldName){entry.name=nextName;entry.cat=cat;}}));save();closeEntryModal();showFeedback("success","자재 정보 저장 완료");renderAllMaterialList();});}
+
 function renderAllEquipmentView(){
-  return `${resourceFilterControls(equipmentCategories,"장비명·규격·모델명·메모·창고 검색")}<div class="filter-result" id="allEquipmentCount"></div><div class="list-card" id="allEquipmentList"></div>`;
+  return `${resourceFilterControls(equipmentCategories,"장비명·규격·모델명·메모·창고 검색")}${groupToolbar(equipmentSortMode,"equipment")}<div class="btn-row"><button class="btn secondary compact" id="toggleResourceSelection" type="button">${resourceSelectionMode?"선택 종료":"선택 모드"}</button><button class="btn secondary compact" id="manageCategories" type="button">분류 관리</button></div><div class="filter-result" id="allEquipmentCount"></div><div id="allEquipmentList"></div><div id="bulkResourceActions"></div>`;
 }
 
 function equipmentSearchText(item){
@@ -530,34 +565,33 @@ function renderAllEquipmentList(){
     if(allResourceCategory !== "all" && item.cat !== allResourceCategory) return false;
     if(allResourceWarehouse !== "all" && item.place !== allResourceWarehouse) return false;
     return !query || equipmentSearchText(item).includes(query);
-  }).sort((a,b)=>(a.place+a.name).localeCompare(b.place+b.name,"ko"));
+  }).sort((a,b)=>equipmentSortMode==="qty"?Number(b.qty||0)-Number(a.qty||0):equipmentSortMode==="recent"?String(b.updatedAt||"").localeCompare(String(a.updatedAt||"")):a.name.localeCompare(b.name,"ko"));
   document.getElementById("allEquipmentCount").textContent = `검색 결과 ${rows.length}건`;
-  target.innerHTML = rows.length ? rows.map(item => `
-    <button class="list-row" data-all-equipment="${item.id}" type="button">
-      <div><div><span class="badge blue">${esc(item.cat || "기타장비")}</span></div><div class="row-title" style="margin-top:7px">${esc(item.name)}</div><div class="row-sub">${esc(item.spec || item.detail || item.model || "규격 없음")} · ${esc(item.place || "보관 미지정")}${item.memo || item.etc ? " · " + esc(item.memo || item.etc) : ""}</div></div>
-      <div><div class="stock-qty">${Number(item.qty ?? 1)}개</div><div class="chev">›</div></div>
-    </button>`).join("") : `<div class="emptybox">검색 결과가 없습니다.</div>`;
-  target.querySelectorAll("[data-all-equipment]").forEach(button => button.addEventListener("click", () => openEquipment(button.dataset.allEquipment)));
+  const forceOpen=Boolean(query);target.innerHTML=rows.length?equipmentCategories.map(cat=>{const grouped=rows.filter(item=>(item.cat||"기타장비")===cat);if(!grouped.length)return "";const content=grouped.map(item=>`<div class="list-row ${Number(item.qty||0)===0?"zero-stock":""}">${resourceSelectionMode?`<input class="resource-check" data-select-equipment="${item.id}" type="checkbox" ${selectedResources.has(`equipment:${item.id}`)?"checked":""}>`:""}<button class="row-main" data-all-equipment="${item.id}" type="button"><div><div class="row-title">${esc(item.name)}${isTodayChanged(item)?` <span class="today-chip">오늘 수정</span>`:""}</div><div class="row-sub">${esc(item.spec||item.detail||item.model||"규격 없음")} · ${esc(item.place||"보관 미지정")}${item.memo||item.etc?" · "+esc(item.memo||item.etc):""}</div></div><div class="stock-qty">${Number(item.qty??1)}개</div></button></div>`).join("");return groupedSection("equipment",cat,`${grouped.length}건`,content,forceOpen);}).join(""):`<div class="emptybox">검색 결과가 없습니다.</div>`;
+  bindGroupedSections(renderAllEquipmentList);target.querySelectorAll("[data-all-equipment]").forEach(button=>button.addEventListener("click",()=>{if(!resourceSelectionMode)openEquipment(button.dataset.allEquipment);}));target.querySelectorAll("[data-select-equipment]").forEach(input=>input.addEventListener("change",()=>{const key=`equipment:${input.dataset.selectEquipment}`;input.checked?selectedResources.add(key):selectedResources.delete(key);renderBulkResourceActions();}));renderBulkResourceActions();
+}
+
+function renderWarehouseGroupList(){
+  const order=["차량","함정","파출소","창고","기타"];
+  return `<div class="group-toolbar"><button class="btn gray compact" data-groups-all="expand" type="button">전체 펼치기</button><button class="btn gray compact" data-groups-all="collapse" type="button">전체 접기</button></div>`+order.map(kind=>{const names=warehouses.filter(name=>warehouseKind(name)===kind).sort((a,b)=>a.localeCompare(b,"ko"));if(!names.length)return "";const rows=names.map(name=>{const summary=warehouseSummary(name),info=state.warehouseInfos[name]||{};return `<button class="list-row" data-wh="${esc(name)}" type="button"><div><div class="row-title">${esc(name)}</div><div class="row-sub">관리품목 ${summary.count}종 · 총 보유량 ${Number(summary.totalKg).toLocaleString("ko-KR")}kg${info.memo?" · 메모 있음":""}</div></div><div class="chev">›</div></button>`;}).join("");return groupedSection("warehouses",kind,`${names.length}곳`,`<div class="list-card">${rows}</div>`);}).join("")+`<button class="btn secondary" id="addWarehouseInline" type="button" style="width:100%;margin-top:10px">+ 신규 보관장소 추가</button>`;
 }
 
 function renderWarehouse(){
   if(!selectedWarehouse){
-    const body = warehouseViewMode === "materials" ? renderAllMaterialsView() : warehouseViewMode === "equipment" ? renderAllEquipmentView() : `
-      <div class="list-card">${warehouses.map(name => {
-        const summary = warehouseSummary(name);
-        const info = state.warehouseInfos[name] || {};
-        return `<button class="list-row" data-wh="${esc(name)}" type="button"><div><div class="row-title">${esc(name)}</div><div class="row-sub">관리품목 ${summary.count}종 · 총 보유량 ${Number(summary.totalKg).toLocaleString("ko-KR")}kg${info.memo ? " · 메모 있음" : ""}</div></div><div class="chev">›</div></button>`;
-      }).join("")}</div><button class="btn secondary" id="addWarehouseInline" type="button" style="width:100%;margin-top:10px">+ 신규 창고 추가</button>`;
+    const body = warehouseViewMode === "materials" ? renderAllMaterialsView() : warehouseViewMode === "equipment" ? renderAllEquipmentView() : renderWarehouseGroupList();
     view.innerHTML = warehouseViewSwitcher() + warehouseActions() + body;
     bindWarehouseViewSwitcher();
     bindWarehouseActions();
     if(warehouseViewMode === "materials"){
       bindResourceFilters(renderAllMaterialList);
+      bindResourceGroupControls(renderAllMaterialList);
       renderAllMaterialList();
     }else if(warehouseViewMode === "equipment"){
       bindResourceFilters(renderAllEquipmentList);
+      bindResourceGroupControls(renderAllEquipmentList);
       renderAllEquipmentList();
     }else{
+      bindGroupedSections(renderWarehouse);
       view.querySelectorAll("[data-wh]").forEach(button => button.addEventListener("click", () => { selectedWarehouse=button.dataset.wh; warehouseTab="material"; renderWarehouse(); pushNavigationState({page:"warehouse",warehouse:selectedWarehouse,tab:warehouseTab}); }));
       document.getElementById("addWarehouseInline")?.addEventListener("click", addWarehouse);
     }
@@ -571,7 +605,7 @@ function renderWarehouse(){
     <div class="card"><div class="section-title">${esc(selectedWarehouse)}</div><div class="row-sub">📌 중요 메모</div><div class="memo-box">${info.memo ? esc(info.memo) : "등록된 메모가 없습니다."}</div><button class="btn secondary" id="editInfo" type="button" style="width:100%;margin-top:12px">메모 수정</button></div>
     ${typeof renderOps === "function" ? renderOps(selectedWarehouse) : ""}
     <div class="card"><div class="tabbar"><button class="tabbtn ${warehouseTab === "material" ? "active" : ""}" id="tabMaterial" type="button">자재</button><button class="tabbtn ${warehouseTab === "equipment" ? "active" : ""}" id="tabEquipment" type="button">장비</button></div>
-    ${warehouseTab === "material" ? `<input class="search" id="stockSearch" placeholder="자재 검색"><div id="stockList"></div><button class="btn secondary" id="addMaterialInline" type="button" style="width:100%;margin-top:12px">+ 신규 추가</button>` : renderWarehouseEquipment(selectedWarehouse)}</div>`;
+    ${warehouseTab === "material" ? `${groupToolbar(materialSortMode,"warehouse-material")}<input class="search" id="stockSearch" placeholder="자재 검색"><div id="stockList"></div><button class="btn secondary" id="addMaterialInline" type="button" style="width:100%;margin-top:12px">+ 신규 추가</button>` : renderWarehouseEquipment(selectedWarehouse)}</div>`;
   bindWarehouseViewSwitcher();
   bindWarehouseActions(selectedWarehouse);
   document.getElementById("backWh")?.addEventListener("click", () => window.history.back());
@@ -582,24 +616,27 @@ function renderWarehouse(){
   const opBtn = document.getElementById("addOpLog"); if(opBtn) opBtn.addEventListener("click", () => addOpLog(selectedWarehouse));
   bindOpLogActions(selectedWarehouse);
   if(warehouseTab === "material"){
+    document.querySelector('[data-group-sort="warehouse-material"]')?.addEventListener("change",event=>{materialSortMode=event.target.value;renderStockList();});
     document.getElementById("stockSearch")?.addEventListener("input", renderStockList);
     document.getElementById("addMaterialInline")?.addEventListener("click", addMaterialChoice);
     renderStockList();
   }else{
+    bindGroupedSections(renderWarehouse);
+    document.querySelector('[data-group-sort="warehouse-equipment"]')?.addEventListener("change",event=>{equipmentSortMode=event.target.value;renderWarehouse();});
     document.getElementById("addEquip")?.addEventListener("click", addEquipmentChoice);
     view.querySelectorAll("[data-equip]").forEach(button => button.addEventListener("click", () => openEquipment(button.dataset.equip)));
   }
 }
 
 function renderWarehouseEquipment(place){
-  const list = (state.equipment || []).filter(item => item.place === place);
-  return `<div><div class="list-card">${list.length ? list.map(item => `<button class="list-row" data-equip="${item.id}" type="button"><div><div><span class="badge blue">${esc(item.cat || "기타장비")}</span></div><div class="row-title" style="margin-top:7px">${esc(item.name)}</div><div class="row-sub">${esc(item.spec || item.detail || "규격 없음")} · ${Number(item.qty ?? 1)}개${item.memo || item.etc ? " · " + esc(item.memo || item.etc) : ""}</div></div><div class="chev">›</div></button>`).join("") : `<div class="emptybox">이 보관 장소에 등록된 장비가 없습니다.</div>`}</div><button class="btn secondary" id="addEquip" type="button" style="width:100%;margin-top:12px">+ 신규 추가</button></div>`;
+  const list=(state.equipment||[]).filter(item=>item.place===place);const groups=equipmentCategories.map(cat=>{const rows=list.filter(item=>(item.cat||"기타장비")===cat).sort((a,b)=>equipmentSortMode==="qty"?Number(b.qty||0)-Number(a.qty||0):equipmentSortMode==="recent"?String(b.updatedAt||"").localeCompare(String(a.updatedAt||"")):a.name.localeCompare(b.name,"ko"));if(!rows.length)return"";return groupedSection(`warehouse-equipment-${place}`,cat,`${rows.length}건`,rows.map(item=>`<button class="list-row ${Number(item.qty||0)===0?"zero-stock":""}" data-equip="${item.id}" type="button"><div><div class="row-title">${esc(item.name)}${isTodayChanged(item)?` <span class="today-chip">오늘 수정</span>`:""}</div><div class="row-sub">${esc(item.spec||item.detail||"규격 없음")} · ${Number(item.qty??1)}개${item.memo||item.etc?" · "+esc(item.memo||item.etc):""}</div></div><div class="chev">›</div></button>`).join(""));}).join("");return `<div>${groupToolbar(equipmentSortMode,"warehouse-equipment")}${groups||`<div class="emptybox">이 보관 장소에 등록된 장비가 없습니다.</div>`}<button class="btn secondary" id="addEquip" type="button" style="width:100%;margin-top:12px">+ 신규 추가</button></div>`;
 }
 
 function editWarehouseInfo(w){
   const info = state.warehouseInfos[w] || {memo:"",updated:""};
-  openEntryModal(`${entryHeader("창고 메모 수정",w)}<div class="form"><label>중요 메모<textarea id="warehouseMemo" placeholder="창고 특이사항을 입력하세요">${esc(info.memo || "")}</textarea></label><button class="btn primary" id="saveWarehouseMemo" type="button">저장</button></div>`);
+  openEntryModal(`${entryHeader("보관장소 정보 수정",w)}<div class="form"><label>유형<select id="warehouseKindEdit">${["차량","함정","파출소","창고","기타"].map(kind=>`<option ${kind===warehouseKind(w)?"selected":""}>${kind}</option>`).join("")}</select></label><label>중요 메모<textarea id="warehouseMemo" placeholder="보관장소 특이사항을 입력하세요">${esc(info.memo || "")}</textarea></label><button class="btn primary" id="saveWarehouseMemo" type="button">저장</button></div>`);
   document.getElementById("saveWarehouseMemo")?.addEventListener("click", () => {
+    const kind=document.getElementById("warehouseKindEdit").value;state.warehouseKinds=state.warehouseKinds||{};state.warehouseKinds[w]=kind;if(kind==="차량"&&!state.assetOps[w])state.assetOps[w]={distanceBase:0,logs:[],counterMode:"absolute"};if(kind==="함정"&&!state.assetOps[w])state.assetOps[w]={hoursBase:0,fuelBase:0,logs:[],counterMode:"absolute"};
     state.warehouseInfos[w] = {memo:document.getElementById("warehouseMemo").value.trim(),updated:todayISO()};
     save(); closeEntryModal(); showFeedback("success","보관 메모 저장"); renderWarehouse();
   });
@@ -611,16 +648,17 @@ function renderStockList(){
   const html = cats.map(cat => {
     const items = catalog.filter(i => i.cat === cat && (!q || i.name.includes(q) || cat.includes(q)));
     if(!items.length) return "";
-    return `<div class="group-title">${cat}</div>${items.map(i => `
-      <button class="stock-line" data-stock="${esc(i.name)}" type="button">
+    const sorted=items.sort((a,b)=>materialSortMode==="qty"?Number(state.stock[selectedWarehouse]?.[b.name]||0)-Number(state.stock[selectedWarehouse]?.[a.name]||0):materialSortMode==="recent"?String(b.updatedAt||"").localeCompare(String(a.updatedAt||"")):a.name.localeCompare(b.name,"ko"));return groupedSection(`warehouse-material-${selectedWarehouse}`,cat,`${items.length}종`,sorted.map(i => `
+      <button class="stock-line ${Number(state.stock[selectedWarehouse]?.[i.name]||0)===0?"zero-stock":""}" data-stock="${esc(i.name)}" type="button">
         <div>
-          <div class="stock-name">${esc(i.name)}</div>
+          <div class="stock-name">${esc(i.name)}${isTodayChanged(i)?` <span class="today-chip">오늘 수정</span>`:""}</div>
           <div class="stock-spec">${i.spec ? esc(i.spec)+" · " : ""}${i.kind === "returnable" ? "출고/회수품" : "소모품"} · 단위 ${esc(i.unit)}</div>
         </div>
         <div class="stock-qty">${materialQtyText(state.stock[selectedWarehouse][i.name], i.unit,i)}</div>
-      </button>`).join("")}`;
+      </button>`).join(""),Boolean(q));
   }).join("");
   el.innerHTML = html || `<div class="emptybox">검색 결과가 없습니다.</div>`;
+  bindGroupedSections(renderStockList);
   el.querySelectorAll("[data-stock]").forEach(b => b.addEventListener("click", () => editStock(b.dataset.stock)));
 }
 
@@ -630,7 +668,7 @@ function editStock(name){
   const integerOnly = ["개","대","세트"].includes(item.unit);
   openEntryModal(`${entryHeader("자재 수량 수정",`${selectedWarehouse} · ${name}`)}
     <div class="callout">현재 수량 ${materialQtyText(cur,item.unit,item)}</div><div class="form">
-      <label>변경 수량 (${esc(item.unit)})<input id="stockNewQty" class="big-input" type="number" inputmode="decimal" min="0" step="${integerOnly ? "1" : "0.1"}" value="${cur}"></label>
+      <label>변경 수량 (${esc(item.unit)})<input id="stockNewQty" class="big-input" type="number" inputmode="decimal" min="0" step="${integerOnly ? "1" : "0.1"}" value="${cur===0?"":cur}"></label>
       <div class="qty-quick"><button type="button" data-stock-add="-1">-1</button><button type="button" data-stock-add="1">+1</button><button type="button" data-stock-add="5">+5</button><button type="button" data-stock-add="10">+10</button></div>
       <label>변경 사유<select id="stockReason">${stockEditReasons.map(reason => `<option value="${esc(reason)}">${esc(reason)}</option>`).join("")}</select></label>
       <label>메모<textarea id="stockMemo" placeholder="필요한 경우 입력하세요"></textarea></label>
@@ -648,6 +686,7 @@ function editStock(name){
     const memo=document.getElementById("stockMemo").value.trim();
     const diff=num-cur;
     state.stock[selectedWarehouse][name]=num;
+    item.updatedAt=new Date().toISOString();
     state.records.push({id:uid(),flow:"재고수정",type:"재고수정",title:`${name} 재고수정`,date:todayISO(),warehouse:selectedWarehouse,memo:`변경사유: ${reason}${memo ? "\n"+memo : ""}`,status:"done",sourceId:null,equipmentItems:[],createdAt:new Date().toISOString(),items:[{cat:item.cat,name,qty:Math.abs(diff),unit:item.unit,kind:item.kind,before:cur,after:num,diff}]});
     save(); closeEntryModal(); showFeedback("success",`재고수정 완료 (${diff>0?"+":""}${diff}${item.unit})`); renderStockList();
   });
@@ -698,13 +737,12 @@ function renderRegister(){
       <div>
         <div class="section-head" style="margin:5px 0 8px">
           <div class="section-title" style="font-size:16px">${registerMode === "quick" ? "사용 내역" : registerFlow}</div>
-          <div class="btn-row"><button class="btn secondary compact" id="addItem" type="button">+ 자재 추가</button><button class="btn secondary compact" id="addFavoriteBundle" type="button">품목 묶음</button>${registerMode === "quick" || registerFlow === "출고" ? `<button class="btn secondary compact" id="addEquipmentItem" type="button">+ 장비 추가</button>` : ""}</div>
+          <div class="btn-row"><button class="btn secondary compact" id="addItem" type="button">+ 자재 추가</button>${registerMode === "quick" || registerFlow === "출고" ? `<button class="btn secondary compact" id="addEquipmentItem" type="button">+ 장비 추가</button>` : ""}</div>
         </div>
         <div id="itemArea"></div>
         <div id="equipmentItemArea"></div>
         <div id="stockAfterPreview"></div>
       </div>
-      <div class="card" style="margin:4px 0"><div class="section-title" style="font-size:15px">현장 체크</div><div class="check-grid"><label><input type="checkbox" data-field-check="출동"> 출동</label><label><input type="checkbox" data-field-check="회수"> 회수</label><label><input type="checkbox" data-field-check="세척"> 세척</label><label><input type="checkbox" data-field-check="복귀"> 복귀</label></div></div>
       <label>메모<textarea id="recMemo" placeholder="${registerMode === "quick" ? "현장 메모를 간단히 입력하세요" : "메모를 입력하세요"}"></textarea></label>
       <button class="btn primary" id="saveRecord" type="button">${registerMode === "quick" ? "미반영으로 저장" : registerFlow + " 저장"}</button>
     </div>
@@ -717,7 +755,6 @@ function renderRegister(){
   const inBtn = document.getElementById("flowIn");
   if(inBtn) inBtn.addEventListener("click", () => { registerFlow = "입고"; draftEquipmentItems=[]; renderRegister(); });
   document.getElementById("addItem")?.addEventListener("click", addDraftItem);
-  document.getElementById("addFavoriteBundle")?.addEventListener("click",addFavoriteBundle);
   document.getElementById("addEquipmentItem")?.addEventListener("click", addDraftEquipmentItem);
   document.getElementById("saveRecord")?.addEventListener("click", saveRecord);
   document.getElementById("discardRegisterDraft")?.addEventListener("click",()=>{clearRegisterDraft();draftItems=[];draftEquipmentItems=[];renderRegister();});
@@ -731,13 +768,6 @@ function renderRegister(){
   if(registerFormDraft){[["recType","type"],["recWarehouse","warehouse"],["recDate","date"],["recTitle","title"],["recMemo","memo"]].forEach(([id,key])=>{const input=document.getElementById(id);if(input&&registerFormDraft[key]!==undefined)input.value=registerFormDraft[key];});}
   view.querySelectorAll("input,select,textarea").forEach(input=>input.addEventListener("input",scheduleRegisterDraft));
   scheduleRegisterDraft();
-}
-
-function addFavoriteBundle(){
-  const bundle=catalog.filter(item=>item.cat.includes("유흡착재")).slice(0,3);
-  if(!bundle.length){showFeedback("info","추가할 유흡착재 묶음이 없습니다");return;}
-  bundle.forEach(item=>{if(!draftItems.some(draft=>draft.name===item.name))draftItems.push({...item,qty:""});});
-  renderItems();scheduleRegisterDraft();showFeedback("success","유흡착재 묶음을 추가했습니다");
 }
 
 function updateStockAfterPreview(){
@@ -863,7 +893,7 @@ async function saveRecord(){
   const memo = document.getElementById("recMemo").value.trim();
   const items = draftItems.map(x => ({...x, qty:integerUnit(x.unit)?Math.round(Number(x.qty || 0)):Number(x.qty || 0)})).filter(x => x.qty > 0);
   const equipmentItems = draftEquipmentItems.map(x => ({...x,qty:Math.round(Number(x.qty || 0))})).filter(x=>x.qty>0);
-  const checklist=[...document.querySelectorAll("[data-field-check]:checked")].map(input=>input.dataset.fieldCheck);
+  const checklist=[];
 
   if(registerMode === "normal" && !title){ showSnack("제목을 입력해주세요"); return; }
   if(!items.length && !equipmentItems.length){ showSnack("자재 또는 장비를 추가해주세요"); return; }
@@ -969,7 +999,7 @@ function renderHistory(){
     </div>
     <input class="search" id="histSearch" placeholder="제목·창고·자재·장비 검색">
     <div class="filter-result">검색 결과 ${filtered.length}건 ${historyDateFilter !== "all" || historyFlowFilter !== "all" ? `<button class="link-btn" id="clearHistoryFilter" type="button">필터 초기화</button>` : ""}</div>
-    <div id="histList">${renderHistoryListHtml(filtered)}</div>
+    <div class="group-toolbar"><button class="btn gray compact" data-groups-all="expand" type="button">전체 펼치기</button><button class="btn gray compact" data-groups-all="collapse" type="button">전체 접기</button></div><div id="histList">${renderHistoryListHtml(filtered)}</div>
   `;
   view.querySelectorAll("[data-hfilter]").forEach(button => button.addEventListener("click", () => { historyFilter=button.dataset.hfilter; renderHistory(); }));
   document.getElementById("historyDateFilter")?.addEventListener("change", event => { historyDateFilter=event.target.value; renderHistory(); });
@@ -979,17 +1009,18 @@ function renderHistory(){
     const query = document.getElementById("histSearch").value.trim();
     const searched = filtered.filter(record => !query || [record.title,record.type,record.flow,record.warehouse,record.memo,...record.items.map(item=>item.name),...(record.equipmentItems || []).map(item=>item.name)].join(" ").includes(query));
     document.getElementById("histList").innerHTML = renderHistoryListHtml(searched);
+    bindGroupedSections(renderHistory);
     bindHistoryRows();
   });
+  bindGroupedSections(renderHistory);
   bindHistoryRows();
 }
 
 function renderHistoryListHtml(records){
   if(!records.length) return `<div class="emptybox">기록이 없습니다.</div>`;
-  return historyDateGroups(records).map(g => `
-    <div class="group-title">${fmtDate(g.date)}</div>
-    <div class="list-card">
-      ${g.records.map(r => `
+  const defs=["처리 필요","자재 입·출고","장비 사용·반납","재고실사·재고수정","창고 간 이동","기타 기록"];
+  const typeOf=r=>r.status==="pending"?"처리 필요":r.flow==="재고수정"?"재고실사·재고수정":r.flow==="이송"?"창고 간 이동":(r.equipmentItems||[]).length?"장비 사용·반납":["입고","출고","긴급"].includes(r.flow)?"자재 입·출고":"기타 기록";
+  return defs.map(type=>{const typeRows=records.filter(record=>typeOf(record)===type);if(!typeRows.length)return"";const content=historyDateGroups(typeRows).map(g=>`<div class="history-date-label">${fmtDate(g.date)}</div><div class="list-card">${g.records.map(r => `
         <button class="list-row" data-detail="${r.id}" type="button">
           <div>
             <div><span class="badge ${r.status === "pending" ? "red" : (r.flow === "입고" ? "green" : r.flow === "재고수정" ? "orange" : "blue")}">${r.status === "pending" ? "미반영" : esc(r.flow || r.type)}</span></div>
@@ -998,9 +1029,7 @@ function renderHistoryListHtml(records){
           </div>
           <div class="chev">›</div>
         </button>
-      `).join("")}
-    </div>
-  `).join("");
+      `).join("")}</div>`).join("");return groupedSection("history",type,`${typeRows.length}건`,content);}).join("");
 }
 
 function bindHistoryRows(){
@@ -1177,7 +1206,6 @@ function openDetail(id, options={}){
     </div>
     ${r.items.length ? `<div class="card"><div class="section-title">${r.flow === "입고" ? "입고 자재" : r.flow === "이송" ? "이송 자재" : "사용 자재"}</div>${r.items.map(i => `<div class="stock-line"><div><div class="stock-name">${esc(i.name)}</div><div class="stock-spec">${esc(i.cat)}${i.before !== undefined ? " · " + materialQtyText(i.before,i.unit,i) + " → " + materialQtyText(i.after,i.unit,i) : ""}</div></div><div class="stock-qty">${i.before !== undefined ? (i.diff > 0 ? "+" : "") + materialQtyText(i.diff,i.unit,i) : materialQtyText(i.qty,i.unit,i)}</div></div>`).join("")}</div>` : ""}
     ${(r.equipmentItems || []).length ? `<div class="card"><div class="section-title">사용 장비</div>${r.equipmentItems.map((item,index)=>{const returned=Math.min(Number(item.qty||0),Number(item.returnedQty||0)),using=Number(item.qty||0)-returned;return `<div class="stock-line"><button class="plain-button" data-used-equipment="${item.id}" type="button"><div class="stock-name">${esc(item.name)}</div><div class="stock-spec">${esc(item.place || "보관 미지정")} · 사용 중 ${using}대 · 반납 ${returned}대</div></button><button class="btn secondary compact" data-return-equipment="${index}" type="button">부분 반납</button></div>`;}).join("")}</div>` : ""}
-    ${(r.checklist||[]).length?`<div class="card"><div class="section-title">현장 체크</div><div class="row-sub">${["출동","회수","세척","복귀"].map(step=>`${(r.checklist||[]).includes(step)?"✓":"○"} ${step}`).join(" · ")}</div></div>`:""}
     <button class="btn danger" id="deleteRecord" type="button" style="width:100%">삭제</button>`;
   document.getElementById("backHist")?.addEventListener("click", () => window.history.back());
   view.querySelectorAll("[data-used-equipment]").forEach(button=>button.addEventListener("click",()=>openEquipment(button.dataset.usedEquipment)));
@@ -1467,26 +1495,30 @@ function renderFastSurveyReview(){const items=fastSurveyItems();items.forEach(it
 
 async function undoLastSurvey(){const applied=state.survey?.lastApplied;if(!applied?.changes?.length)return;if(!await askConfirm("실사 반영 취소",`${applied.changes.length}개 품목을 실사 전 수량으로 되돌릴까요?`,"되돌리기",true))return;applied.changes.forEach(change=>{if(state.stock[change.warehouse])state.stock[change.warehouse][change.name]=Number(change.before||0);});state.survey.lastApplied=null;save();showFeedback("success","직전 실사 반영을 취소했습니다");renderHome();}
 
+function warehouseKind(place){return state.warehouseKinds?.[place]||(place==="방제지휘차량"?"차량":place==="소형방제정"?"함정":"기타");}
+function isVehiclePlace(place){return warehouseKind(place)==="차량";}
+function isVesselPlace(place){return warehouseKind(place)==="함정";}
+
 function opTotal(place,field){
   const op = state.assetOps?.[place] || {};
-  if(place === "방제지휘차량" && field === "distance") return Number(op.distanceBase || 0);
-  if(place === "소형방제정" && field === "hours") return Number(op.hoursBase || 0);
+  if(isVehiclePlace(place) && field === "distance") return Number(op.distanceBase || 0);
+  if(isVesselPlace(place) && field === "hours") return Number(op.hoursBase || 0);
   return 0;
 }
 
 function renderOps(place){
-  if(!["방제지휘차량","소형방제정"].includes(place)) return "";
-  if(place === "방제지휘차량"){
+  if(!isVehiclePlace(place)&&!isVesselPlace(place)) return "";
+  if(isVehiclePlace(place)){
     return `<div class="card"><div class="section-title">차량 관리</div>
       <div class="metric" style="height:82px"><div><div class="metric-label">누적 주행거리</div><div class="metric-value">${opTotal(place,"distance")}km</div></div></div>
       <div class="btn-row" style="display:grid;grid-template-columns:1fr 1fr;margin-top:12px">
-        <button class="btn secondary" id="editOpBase" type="button">현재 거리 수정</button>
+        <button class="btn secondary" id="editOpBase" type="button">초기거리설정</button>
         <button class="btn primary" id="addOpLog" type="button">주행 기록</button>
       </div>
       <div class="section-title" style="margin-top:16px">최근 이력</div>${recentOpRows(place)}
     </div>`;
   }
-  return `<div class="card"><div class="section-title">소형방제정 관리</div>
+  return `<div class="card"><div class="section-title">${esc(place)} 관리</div>
     <div class="grid2">
       <div class="metric" style="height:82px"><div><div class="metric-label">누적 구동시간</div><div class="metric-value">${opTotal(place,"hours")}h</div></div></div>
       <div class="metric" style="height:82px"><div><div class="metric-label">운항 기록</div><div class="metric-value">${(state.assetOps?.[place]?.logs || []).length}건</div></div></div>
@@ -1500,8 +1532,8 @@ function renderOps(place){
 }
 
 function editOpBase(place){
-  const vehicle=place==="방제지휘차량";
-  openEntryModal(`${entryHeader(vehicle?"현재 누적거리 수정":"현재 누적 구동시간 수정",place)}<div class="form">${vehicle?`<label>계기판 누적거리(km)<input id="opBaseDistance" type="number" inputmode="decimal" min="0" value="${opTotal(place,"distance")}"></label>`:`<label>계기판 누적 구동시간(h)<input id="opBaseHours" type="number" inputmode="decimal" min="0" value="${opTotal(place,"hours")}"></label>`}<button class="btn primary" id="saveOpBase" type="button">덮어쓰기 저장</button></div>`);
+  const vehicle=isVehiclePlace(place);
+  openEntryModal(`${entryHeader(vehicle?"초기거리 설정":"초기 구동시간 설정",place)}<div class="form">${vehicle?`<label>계기판 누적거리(km)<input id="opBaseDistance" type="number" inputmode="decimal" min="0" value="${opTotal(place,"distance")}"></label>`:`<label>계기판 누적 구동시간(h)<input id="opBaseHours" type="number" inputmode="decimal" min="0" value="${opTotal(place,"hours")}"></label>`}<button class="btn primary" id="saveOpBase" type="button">덮어쓰기 저장</button></div>`);
   document.getElementById("saveOpBase")?.addEventListener("click",()=>{
     if(vehicle){ const value=Number(document.getElementById("opBaseDistance").value); if(!Number.isFinite(value)||value<0){showFeedback("error","올바른 숫자를 입력해주세요");return;} state.assetOps[place].distanceBase=value; }
     else{ const hours=Number(document.getElementById("opBaseHours").value); if(!Number.isFinite(hours)||hours<0){showFeedback("error","올바른 숫자를 입력해주세요");return;} state.assetOps[place].hoursBase=hours; }
@@ -1510,7 +1542,7 @@ function editOpBase(place){
 }
 
 function addOpLog(place){
-  const vehicle=place==="방제지휘차량";
+  const vehicle=isVehiclePlace(place);
   openEntryModal(`${entryHeader(vehicle?"주행 기록":"운항 기록",place)}<div class="form"><label>날짜<input id="opLogDate" type="date" value="${todayISO()}"></label>${vehicle?`<label>현재 계기판 누적거리(km)<input id="opLogDistance" type="number" inputmode="decimal" min="0" value="${opTotal(place,"distance")}"></label>`:`<label>현재 계기판 누적시간(h)<input id="opLogHours" type="number" inputmode="decimal" min="0" value="${opTotal(place,"hours")}"></label><label>이번 연료소모량(L)<input id="opLogFuel" type="number" inputmode="decimal" min="0" value="0"></label>`}<label>메모<textarea id="opLogMemo"></textarea></label><button class="btn primary" id="saveOpLog" type="button">저장</button></div>`);
   document.getElementById("saveOpLog")?.addEventListener("click",()=>{
     const common={id:uid(),date:document.getElementById("opLogDate").value || todayISO(),memo:document.getElementById("opLogMemo").value.trim(),createdAt:new Date().toISOString()};
@@ -1524,16 +1556,16 @@ function recentOpRows(place){
   const logs = [...((state.assetOps?.[place]?.logs) || [])].slice(-5).reverse();
   if(!logs.length) return `<div class="emptybox">아직 일일 이력이 없습니다.</div>`;
   const allLogs=state.assetOps?.[place]?.logs||[],latestId=allLogs.length?allLogs[allLogs.length-1].id:null;
-  return logs.map(l => `<div class="list-row"><div><div class="row-title">${esc(l.date || "")}</div><div class="row-sub">${l.after!==undefined?`${Number(l.before||0)} → ${Number(l.after)} · +${Number(l.diff||0)}${place==="방제지휘차량"?"km":"h"}`:(place==="방제지휘차량"?`기존 이력 +${Number(l.distance||0)}km`:`기존 이력 +${Number(l.hours||0)}h`)}${place==="소형방제정"&&Number(l.fuel||0)>0?` · 연료 ${Number(l.fuel)}L`:""}${l.memo ? ` · ${esc(l.memo)}` : ""}</div>${l.id===latestId&&l.after!==undefined?`<div class="btn-row" style="margin-top:7px"><button class="btn gray compact" data-op-edit="${l.id}" type="button">수정</button><button class="btn danger compact" data-op-delete="${l.id}" type="button">삭제</button></div>`:""}</div></div>`).join("");
+  return logs.map(l => `<div class="list-row"><div><div class="row-title">${esc(l.date || "")}</div><div class="row-sub">${l.after!==undefined?`${Number(l.before||0)} → ${Number(l.after)} · +${Number(l.diff||0)}${isVehiclePlace(place)?"km":"h"}`:(isVehiclePlace(place)?`기존 이력 +${Number(l.distance||0)}km`:`기존 이력 +${Number(l.hours||0)}h`)}${isVesselPlace(place)&&Number(l.fuel||0)>0?` · 연료 ${Number(l.fuel)}L`:""}${l.memo ? ` · ${esc(l.memo)}` : ""}</div>${l.id===latestId&&l.after!==undefined?`<div class="btn-row" style="margin-top:7px"><button class="btn gray compact" data-op-edit="${l.id}" type="button">수정</button><button class="btn danger compact" data-op-delete="${l.id}" type="button">삭제</button></div>`:""}</div></div>`).join("");
 }
 
 function bindOpLogActions(place){
   view.querySelector("[data-op-edit]")?.addEventListener("click",event=>editLatestOpLog(place,event.currentTarget.dataset.opEdit));
-  view.querySelector("[data-op-delete]")?.addEventListener("click",async event=>{const op=state.assetOps?.[place],log=op?.logs?.length?op.logs[op.logs.length-1]:null;if(!log||log.id!==event.currentTarget.dataset.opDelete)return;if(!await askConfirm("최근 이력 삭제","최근 기록을 삭제하고 누적값을 이전 값으로 되돌릴까요?","삭제",true))return;if(place==="방제지휘차량")op.distanceBase=Number(log.before||0);else op.hoursBase=Number(log.before||0);op.logs.pop();save();showFeedback("success","최근 이력 삭제 완료");renderWarehouse();});
+  view.querySelector("[data-op-delete]")?.addEventListener("click",async event=>{const op=state.assetOps?.[place],log=op?.logs?.length?op.logs[op.logs.length-1]:null;if(!log||log.id!==event.currentTarget.dataset.opDelete)return;if(!await askConfirm("최근 이력 삭제","최근 기록을 삭제하고 누적값을 이전 값으로 되돌릴까요?","삭제",true))return;if(isVehiclePlace(place))op.distanceBase=Number(log.before||0);else op.hoursBase=Number(log.before||0);op.logs.pop();save();showFeedback("success","최근 이력 삭제 완료");renderWarehouse();});
 }
 
 function editLatestOpLog(place,logId){
-  const op=state.assetOps?.[place],log=op?.logs?.length?op.logs[op.logs.length-1]:null;if(!log||log.id!==logId)return;const vehicle=place==="방제지휘차량";
+  const op=state.assetOps?.[place],log=op?.logs?.length?op.logs[op.logs.length-1]:null;if(!log||log.id!==logId)return;const vehicle=isVehiclePlace(place);
   openEntryModal(`${entryHeader(vehicle?"최근 주행기록 수정":"최근 운항기록 수정",place)}<div class="form"><label>날짜<input id="editOpDate" type="date" value="${esc(log.date||todayISO())}"></label><div class="callout">이전 누적값 ${Number(log.before||0)}${vehicle?"km":"h"}</div><label>현재 누적${vehicle?"거리(km)":"시간(h)"}<input id="editOpAfter" type="number" inputmode="decimal" min="${Number(log.before||0)}" value="${Number(log.after||0)}"></label>${vehicle?"":`<label>연료소모량(L)<input id="editOpFuel" type="number" inputmode="decimal" min="0" value="${Number(log.fuel||0)}"></label>`}<label>메모<textarea id="editOpMemo">${esc(log.memo||"")}</textarea></label><button class="btn primary" id="saveOpEdit" type="button">수정 저장</button></div>`);
   document.getElementById("saveOpEdit")?.addEventListener("click",()=>{const after=Number(document.getElementById("editOpAfter").value),before=Number(log.before||0),fuel=vehicle?0:Number(document.getElementById("editOpFuel").value);if(!Number.isFinite(after)||after<before||!Number.isFinite(fuel)||fuel<0){showFeedback("error","누적값과 연료량을 확인해주세요");return;}log.date=document.getElementById("editOpDate").value||todayISO();log.after=after;log.diff=after-before;log.memo=document.getElementById("editOpMemo").value.trim();if(!vehicle)log.fuel=fuel;if(vehicle)op.distanceBase=after;else op.hoursBase=after;save();closeEntryModal();showFeedback("success","최근 이력 수정 완료");renderWarehouse();});
 }
@@ -1566,7 +1598,7 @@ function openEquipment(id, options={}){
       ${item.memo || item.etc ? `<div class="callout" style="margin-top:12px">${esc(item.memo || item.etc)}</div>` : ""}
       ${legacy.length ? `<div class="row-sub" style="margin-top:10px">기존 정보 · ${esc(legacy.join(" · "))}</div>` : ""}
       ${(item.photos || (item.photo?[item.photo]:[])).length ? `<div class="equipment-gallery">${(item.photos || [item.photo]).map(photo=>`<img class="resource-photo-large" src="${photo}" alt="${esc(item.name)} 사진">`).join("")}</div>` : `<div class="photo-preview" style="margin-top:14px"><span>등록된 사진 없음</span></div>`}
-      <button class="btn primary" id="editSimpleEquipment" type="button" style="width:100%;margin-top:14px">정보 수정</button><button class="btn danger" id="deleteEquipment" type="button" style="width:100%;margin-top:8px">장비를 임시 보관함으로 이동</button>
+      <button class="btn primary" id="editSimpleEquipment" type="button" style="width:100%;margin-top:14px">정보 수정</button>
     </div>
     <div class="card"><div class="section-head" style="margin:0 0 10px"><div class="section-title">현재 부속품</div><button class="btn secondary compact" id="addAccessory" type="button">+ 부속품</button></div>
       ${accessories.length ? accessories.map(part=>`<div class="stock-line"><div><div class="stock-name">${esc(part.name)}</div><div class="stock-spec"><span class="badge blue">${esc(part.status||"예비 보유")}</span> · ${esc(part.memo || "메모 없음")}</div></div><div><div class="stock-qty">${Number(part.qty)}개</div><div class="btn-row" style="margin-top:6px"><button class="btn gray compact" data-accessory-edit="${part.id}" type="button">수정</button><button class="btn danger compact" data-accessory-delete="${part.id}" type="button">삭제</button></div></div></div>`).join("") : `<div class="emptybox">현재 등록된 부속품이 없습니다.</div>`}
@@ -1578,7 +1610,6 @@ function openEquipment(id, options={}){
     <div class="card"><div class="section-title">이동이력</div>${moves.length ? moves.map(move=>`<div class="stock-line"><div><div class="stock-name">${esc(move.from)} → ${esc(move.to)}</div><div class="stock-spec">${fmtDate(move.date)}${move.memo?` · ${esc(move.memo)}`:""}</div></div></div>`).join("") : `<div class="emptybox">등록된 이동이력이 없습니다.</div>`}</div>`;
   document.getElementById("backEquip")?.addEventListener("click", () => window.history.back());
   document.getElementById("editSimpleEquipment")?.addEventListener("click", () => simpleResourceForm("equipment",item));
-  document.getElementById("deleteEquipment")?.addEventListener("click",async()=>{if(!await askConfirm("장비 삭제",`${item.name}을 임시 보관함으로 이동할까요? 기존 사용이력은 유지됩니다.`,"이동",true))return;state.trash=state.trash||[];state.trash.push({id:uid(),kind:"equipment",data:JSON.parse(JSON.stringify(item)),deletedAt:new Date().toISOString()});state.equipment=state.equipment.filter(row=>row.id!==item.id);save();showFeedback("success","장비를 임시 보관함으로 이동했습니다");setPage("warehouse");});
   document.getElementById("addMaintenance")?.addEventListener("click",()=>openMaintenanceForm(item.id));
   document.getElementById("addAccessory")?.addEventListener("click",()=>openAccessoryForm(item.id));
   view.querySelectorAll("[data-accessory-edit]").forEach(button=>button.addEventListener("click",()=>openAccessoryForm(item.id,button.dataset.accessoryEdit)));
@@ -1637,12 +1668,14 @@ function saveMaintenance(equipmentId,logId=null){
 }
 
 function addWarehouse(){
-  openEntryModal(`${entryHeader("신규 창고 추가","보관 장소를 추가합니다")}<div class="form"><label>창고명<input id="newWarehouseName" placeholder="창고명을 입력하세요"></label><button class="btn primary" id="saveNewWarehouse" type="button">추가</button></div>`);
+  openEntryModal(`${entryHeader("신규 보관장소 추가","유형과 이름을 선택합니다")}<div class="form"><label>유형<select id="newWarehouseKind">${["창고","차량","함정","파출소","기타"].map(kind=>`<option>${kind}</option>`).join("")}</select></label><label><span id="newWarehouseLabel">창고명</span><input id="newWarehouseName" placeholder="이름을 입력하세요"></label><button class="btn primary" id="saveNewWarehouse" type="button">추가</button></div>`);
+  document.getElementById("newWarehouseKind")?.addEventListener("change",event=>{document.getElementById("newWarehouseLabel").textContent=`${event.target.value}명`;});
   document.getElementById("saveNewWarehouse")?.addEventListener("click", () => {
     const name=document.getElementById("newWarehouseName").value.trim();
-    if(!name){ showFeedback("error","창고명을 입력해주세요"); return; }
+    const kind=document.getElementById("newWarehouseKind").value;
+    if(!name){ showFeedback("error",`${kind}명을 입력해주세요`); return; }
     if(state.warehouses.includes(name)){ showFeedback("error","이미 있는 창고입니다"); return; }
-    ensureWarehouse(name); closeEntryModal(); showFeedback("success","창고 추가 완료"); if(page==="warehouse") renderWarehouse();
+    ensureWarehouse(name);state.warehouseKinds=state.warehouseKinds||{};state.warehouseKinds[name]=kind;if(kind==="차량")state.assetOps[name]={distanceBase:0,logs:[],counterMode:"absolute"};if(kind==="함정")state.assetOps[name]={hoursBase:0,fuelBase:0,logs:[],counterMode:"absolute"};save();closeEntryModal();showFeedback("success",`${kind} 추가 완료`);if(page==="warehouse") renderWarehouse();
   });
 }
 
@@ -1748,8 +1781,9 @@ function simpleResourceForm(kind,existing=null){
     ${entryHeader(existing ? `${isEquipment ? "장비" : "자재"} 수정` : `${isEquipment ? "장비" : "자재"} 빠른 등록`,currentWarehouse)}
     <div class="form entry-form simple-resource-form">
       <label>품목명<input id="resourceName" value="${esc(existing?.name || "")}" placeholder="품목명을 입력하세요"></label>
+      ${isEquipment?`<label>장비 분류<select id="resourceCategory">${equipmentCategories.map(cat=>`<option ${cat===(existing?.cat||"기타장비")?"selected":""}>${esc(cat)}</option>`).join("")}</select></label>`:""}
       <label>규격<input id="resourceSpec" value="${esc(existing?.spec || existing?.detail || "")}" placeholder="규격·모델명을 입력하세요"></label>
-      <label>수량<input id="resourceQty" type="number" inputmode="decimal" min="0" step="0.1" value="${Number(existing?.qty || (isEquipment ? 1 : 0))}"></label>
+      <label>수량<input id="resourceQty" type="number" inputmode="decimal" min="0" step="0.1" value="${Number(existing?.qty || (isEquipment ? 1 : 0))||""}"></label>
       <label>보관창고<select id="resourceWarehouse">${warehouses.map(name => `<option value="${esc(name)}" ${name === currentWarehouse ? "selected" : ""}>${esc(name)}</option>`).join("")}</select></label>
       <label>메모<textarea id="resourceMemo" placeholder="필요한 내용만 간단히 입력하세요">${esc(existing?.memo || existing?.etc || "")}</textarea></label>
       <div class="photo-choice"><label class="btn secondary">사진 촬영<input id="resourceCamera" type="file" accept="image/*" capture="environment" hidden></label><label class="btn secondary">사진 선택<input id="resourceFile" type="file" accept="image/*" hidden></label></div>
@@ -1770,11 +1804,12 @@ function saveSimpleResource(kind,id=null){
   const qty = Number(document.getElementById("resourceQty")?.value || 0);
   const place = document.getElementById("resourceWarehouse")?.value || warehouses[0];
   const memo = document.getElementById("resourceMemo")?.value.trim() || "";
+  const category=document.getElementById("resourceCategory")?.value||"기타장비";
   if(!name){ showFeedback("error","품목명을 입력해주세요"); return; }
   if(!Number.isFinite(qty) || qty < 0){ showFeedback("error","수량을 확인해주세요"); return; }
   if(kind === "material"){
     if(state.catalog.some(item => item.name === name)){ showFeedback("error","이미 등록된 자재명입니다"); return; }
-    const item = {cat:"기타",name,unit:"개",spec,kind:"consume",memo,photo:resourceDraftPhoto};
+    const item = {cat:"기타",name,unit:"개",spec,kind:"consume",memo,photo:resourceDraftPhoto,updatedAt:new Date().toISOString()};
     ensureCatalogItem(item);
     if(!state.stock[place]) state.stock[place] = {};
     state.stock[place][name] = qty;
@@ -1784,12 +1819,12 @@ function saveSimpleResource(kind,id=null){
     if(!equipment && state.equipment.some(item => item.name === name && item.place === place)){ showFeedback("error","이 창고에 같은 장비명이 있습니다"); return; }
     if(equipment){
       const previousPlace=equipment.place;
-      Object.assign(equipment,{name,spec,detail:spec,model:equipment.model || spec,qty,place,memo,etc:memo,photo:resourceDraftPhotos[0] || "",photos:resourceDraftPhotos.slice(0,5)});
+      Object.assign(equipment,{cat:category,name,spec,detail:spec,model:equipment.model || spec,qty,place,memo,etc:memo,photo:resourceDraftPhotos[0] || "",photos:resourceDraftPhotos.slice(0,5),updatedAt:new Date().toISOString()});
       equipment.maintenance=equipment.maintenance || [];
       equipment.moves=equipment.moves || [];
       if(previousPlace && previousPlace!==place) equipment.moves.push({id:uid(),date:todayISO(),from:previousPlace,to:place,memo:"장비 정보 수정에서 보관창고 변경",createdAt:new Date().toISOString()});
     }else{
-      state.equipment.push({id:uid(),cat:"기타장비",name,spec,detail:spec,model:spec,qty,place,memo,etc:memo,photo:resourceDraftPhotos[0] || "",photos:resourceDraftPhotos.slice(0,5),battery:"",fuel:"",status:"정상",maintenance:[],moves:[]});
+      state.equipment.push({id:uid(),cat:category,name,spec,detail:spec,model:spec,qty,place,memo,etc:memo,photo:resourceDraftPhotos[0] || "",photos:resourceDraftPhotos.slice(0,5),battery:"",fuel:"",status:"정상",maintenance:[],moves:[],updatedAt:new Date().toISOString()});
     }
   }
   save();
@@ -1877,6 +1912,7 @@ function renderSharedSnapshot(){
 }
 
 function bindGlobal(){
+  document.addEventListener("focusin",event=>{const input=event.target;if(input?.matches?.('input[type="number"]')&&Number(input.value)===0)input.value="";});
   document.querySelectorAll(".nav").forEach(b => b.addEventListener("click", () => setPage(b.dataset.page)));
 
   document.getElementById("moreBtn")?.addEventListener("click", () => {
@@ -1896,6 +1932,7 @@ function bindGlobal(){
   document.getElementById("shareFile")?.addEventListener("change", event => { if(event.target.files?.[0]) loadSharedResourceFile(event.target.files[0]); event.target.value=""; });
   document.getElementById("resetBtn")?.addEventListener("click", () => { closeMenu(); resetAll(); });
   document.getElementById("trashBtn")?.addEventListener("click",openTrash);
+  document.getElementById("bulkUndoBtn")?.addEventListener("click",restoreBulkSafetyPoint);
   document.getElementById("settingsBtn")?.addEventListener("click", () => {
     closeMenu();
     const toggle = document.getElementById("hapticsToggle");
@@ -2038,7 +2075,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190k")
+      navigator.serviceWorker.register("./sw.js?v=0190l")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
