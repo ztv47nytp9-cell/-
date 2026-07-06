@@ -389,7 +389,6 @@ function defaultState(){
     },
     equipment: defaultEquipment.map(x => ({...x})),
     equipmentCategories: [...defaultEquipmentCategories],
-    settings: {haptics:true},
     ui: {lastVisit:null},
     survey: null,
     trash: [],
@@ -627,9 +626,6 @@ function normalize(raw){
     })) : []
   }));
 
-  state.settings = state.settings && typeof state.settings === "object" && !Array.isArray(state.settings)
-    ? {haptics: state.settings.haptics !== false}
-    : {haptics:true};
   state.ui = state.ui && typeof state.ui === "object" && !Array.isArray(state.ui) ? {...state.ui} : {lastVisit:null};
   if(!state.ui.lastVisit || typeof state.ui.lastVisit !== "object") state.ui.lastVisit = null;
 
