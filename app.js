@@ -32,6 +32,7 @@ let resourceSelectionMode = false;
 let selectedResources = new Set();
 let modalConfirmResolver = null;
 const REGISTER_DRAFT_KEY = "victor_register_draft_0_19_0j";
+const CLOUD_SHARE_CONFIG_KEY = "victor_cloud_share_config_0_19_0m";
 let registerDraftTimer = null;
 let registerFormDraft = null;
 const stockEditReasons = ["재고조사","오기입 수정","폐기","파손","전산 수정","기타"];
@@ -1972,6 +1973,96 @@ function loadSharedResourceFile(file){
   reader.readAsText(file);
 }
 
+function readCloudShareConfig(){
+  try{return JSON.parse(localStorage.getItem(CLOUD_SHARE_CONFIG_KEY)||"{}")||{};}catch(_){return {};}
+}
+
+function normalizeCloudUrl(url){return String(url||"").trim().replace(/\/+$/,"");}
+
+function cloudShareConfig(){
+  const config=readCloudShareConfig();
+  return {
+    url:normalizeCloudUrl(config.url),
+    key:String(config.key||"").trim(),
+    siteId:String(config.siteId||"victor-main").trim()||"victor-main",
+    title:String(config.title||"Victor 자원현황").trim()||"Victor 자원현황"
+  };
+}
+
+function cloudShareReady(config=cloudShareConfig()){return Boolean(config.url&&config.key&&config.siteId);}
+
+function openCloudShareSettings(){
+  const config=cloudShareConfig();
+  openEntryModal(`${entryHeader("클라우드 공유 설정","Supabase 읽기 전용 공유판")}
+    <div class="form">
+      <div class="callout">Supabase Project URL, Publishable key, 공유 ID를 저장합니다. Secret key는 절대 넣지 마세요.</div>
+      <label>Supabase URL<input id="cloudShareUrl" inputmode="url" placeholder="https://xxxx.supabase.co" value="${esc(config.url)}"></label>
+      <label>Publishable key<textarea id="cloudShareKey" placeholder="sb_publishable_...">${esc(config.key)}</textarea></label>
+      <label>공유 ID(site_id)<input id="cloudShareSiteId" placeholder="victor-main" value="${esc(config.siteId)}"></label>
+      <label>공유 제목<input id="cloudShareTitle" placeholder="Victor 자원현황" value="${esc(config.title)}"></label>
+      <div class="entry-actions"><button class="btn gray" id="testCloudShare" type="button">연결 테스트</button><button class="btn primary" id="saveCloudShareSettings" type="button">설정 저장</button></div>
+    </div>`);
+  document.getElementById("saveCloudShareSettings")?.addEventListener("click",()=>saveCloudShareSettings(true));
+  document.getElementById("testCloudShare")?.addEventListener("click",async()=>{if(saveCloudShareSettings(false))await testCloudShareConnection();});
+}
+
+function saveCloudShareSettings(close=false){
+  const config={
+    url:normalizeCloudUrl(document.getElementById("cloudShareUrl")?.value),
+    key:String(document.getElementById("cloudShareKey")?.value||"").trim(),
+    siteId:String(document.getElementById("cloudShareSiteId")?.value||"victor-main").trim()||"victor-main",
+    title:String(document.getElementById("cloudShareTitle")?.value||"Victor 자원현황").trim()||"Victor 자원현황"
+  };
+  if(!config.url||!config.key){showFeedback("error","URL과 Publishable key를 입력해주세요");return false;}
+  if(!/^https:\/\/.+\.supabase\.co$/i.test(config.url)){showFeedback("warning","Supabase URL 형식을 확인해주세요");return false;}
+  try{localStorage.setItem(CLOUD_SHARE_CONFIG_KEY,JSON.stringify(config));}catch(error){showFeedback("error","설정을 저장하지 못했습니다");return false;}
+  showFeedback("success","클라우드 공유 설정 저장 완료");
+  if(close)closeEntryModal();
+  return true;
+}
+
+async function supabaseRest(path,options={}){
+  const config=cloudShareConfig();
+  if(!cloudShareReady(config))throw new Error("클라우드 공유 설정이 필요합니다");
+  const response=await fetch(`${config.url}/rest/v1/${path}`,{
+    ...options,
+    headers:{apikey:config.key,Authorization:`Bearer ${config.key}`,...(options.headers||{})}
+  });
+  if(!response.ok){const text=await response.text().catch(()=>"");throw new Error(text||`Supabase 요청 실패 (${response.status})`);}
+  if(response.status===204)return null;
+  return response.json();
+}
+
+async function testCloudShareConnection(){
+  try{await supabaseRest("resource_snapshots?select=id&limit=1");showFeedback("success","Supabase 연결 성공");}
+  catch(error){console.warn("[Victor] Supabase 연결 실패",error);showFeedback("error","연결 실패: URL·키·RLS 정책을 확인해주세요");}
+}
+
+async function uploadCloudShareSnapshot(){
+  closeMenu();
+  if(!cloudShareReady()){openCloudShareSettings();showFeedback("info","먼저 클라우드 공유 설정을 저장해주세요");return;}
+  try{
+    const config=cloudShareConfig(),snapshot=buildResourceSnapshot();
+    snapshot.cloudSharedAt=new Date().toISOString();
+    await supabaseRest("resource_snapshots",{method:"POST",headers:{"Content-Type":"application/json","Prefer":"return=minimal"},body:JSON.stringify({site_id:config.siteId,title:config.title,snapshot,updated_at:new Date().toISOString()})});
+    showFeedback("success","클라우드 공유 현황을 올렸습니다");
+  }catch(error){console.warn("[Victor] 클라우드 공유 업로드 실패",error);showFeedback("error","클라우드 올리기 실패");}
+}
+
+async function loadCloudShareSnapshot(){
+  closeMenu();
+  if(!cloudShareReady()){openCloudShareSettings();showFeedback("info","먼저 클라우드 공유 설정을 저장해주세요");return;}
+  try{
+    const config=cloudShareConfig();
+    const rows=await supabaseRest(`resource_snapshots?select=site_id,title,snapshot,updated_at&site_id=eq.${encodeURIComponent(config.siteId)}&order=updated_at.desc&limit=1`);
+    if(!rows?.length){showFeedback("info","아직 클라우드 공유자료가 없습니다");return;}
+    const row=rows[0];
+    if(row?.snapshot?.kind!=="victor-resource-share")throw new Error("공유자료 형식 오류");
+    sharedSnapshot={...row.snapshot,title:row.title||row.snapshot.title,createdAt:row.snapshot.createdAt||row.updated_at,cloudUpdatedAt:row.updated_at};
+    renderSharedSnapshot();
+  }catch(error){console.warn("[Victor] 클라우드 공유 조회 실패",error);showFeedback("error","클라우드 보기 실패");}
+}
+
 function renderSharedSnapshot(){
   if(!sharedSnapshot) return;
   page="shared"; updateBottomNav(); scrollToTop();
@@ -2003,6 +2094,9 @@ function bindGlobal(){
   document.getElementById("restoreFile")?.addEventListener("change", e => { if(e.target.files[0]) restoreFile(e.target.files[0]); });
   document.getElementById("shareResourcesBtn")?.addEventListener("click",()=>{closeMenu();shareResourceSnapshot();});
   document.getElementById("openSharedResourcesBtn")?.addEventListener("click",()=>{closeMenu();const input=document.getElementById("sharedResourceFile");input.value="";input.click();});
+  document.getElementById("cloudShareSettingsBtn")?.addEventListener("click",()=>{closeMenu();openCloudShareSettings();});
+  document.getElementById("uploadCloudShareBtn")?.addEventListener("click",uploadCloudShareSnapshot);
+  document.getElementById("viewCloudShareBtn")?.addEventListener("click",loadCloudShareSnapshot);
   document.getElementById("sharedResourceFile")?.addEventListener("change",event=>{const file=event.target.files?.[0];if(file)loadSharedResourceFile(file);});
   document.getElementById("resetBtn")?.addEventListener("click", () => { closeMenu(); resetAll(); });
   document.getElementById("trashBtn")?.addEventListener("click",openTrash);
@@ -2137,7 +2231,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m15")
+      navigator.serviceWorker.register("./sw.js?v=0190m16")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
