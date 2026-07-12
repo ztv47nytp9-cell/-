@@ -31,6 +31,7 @@ let equipmentSortMode = "name";
 let resourceSelectionMode = false;
 let selectedResources = new Set();
 let modalConfirmResolver = null;
+let menuHistoryOpen = false;
 const REGISTER_DRAFT_KEY = "victor_register_draft_0_19_0j";
 const CLOUD_SHARE_CONFIG_KEY = "victor_cloud_share_config_0_19_0m";
 let registerDraftTimer = null;
@@ -88,6 +89,17 @@ function groupedSection(scope,name,count,content,forceOpen=false){const collapse
 function bindGroupedSections(rerender){view.querySelectorAll("[data-group-toggle]").forEach(button=>button.addEventListener("click",()=>{const key=button.dataset.groupToggle;collapsedGroups()[key]=!collapsedGroups()[key];save();rerender();}));view.querySelectorAll("[data-groups-all]").forEach(button=>button.addEventListener("click",event=>{const keys=[...view.querySelectorAll("[data-group-toggle]")].map(toggle=>toggle.dataset.groupToggle),collapse=event.currentTarget.dataset.groupsAll==="collapse";keys.forEach(key=>collapsedGroups()[key]=collapse);save();rerender();}));}
 function groupToolbar(sortMode,scope){return `<div class="group-toolbar"><label>정렬<select data-group-sort="${scope}"><option value="name" ${sortMode==="name"?"selected":""}>이름순</option><option value="qty" ${sortMode==="qty"?"selected":""}>수량순</option><option value="recent" ${sortMode==="recent"?"selected":""}>최근 수정순</option></select></label><button class="btn gray compact" data-groups-all="expand" type="button">전체 펼치기</button><button class="btn gray compact" data-groups-all="collapse" type="button">전체 접기</button></div>`;}
 function isTodayChanged(item){return String(item.updatedAt||item.updated||"").slice(0,10)===todayISO();}
+
+function currentNavigationState(extra={}){
+  const nav={page};
+  if(page==="warehouse"){
+    nav.view=warehouseViewMode;
+    if(selectedWarehouse){nav.warehouse=selectedWarehouse;nav.tab=warehouseTab;}
+  }
+  if(page==="register"){nav.mode=registerMode;nav.flow=registerFlow;}
+  if(page==="memo"&&editingMemoId)nav.memoId=editingMemoId;
+  return {...nav,...extra};
+}
 
 function showSnack(msg,type="info"){
   const s = document.getElementById("snackbar");
@@ -2094,11 +2106,34 @@ async function loadCloudShareSnapshot(){
 function renderSharedSnapshot(){
   if(!sharedSnapshot) return;
   page="shared"; updateBottomNav(); scrollToTop();
-  document.getElementById("headTitle").innerHTML=`<div class="page-title">공유자료</div><div class="date">읽기 전용 · ${esc(sharedSnapshot.scope || "전체")}</div>`;
+  const materials=Array.isArray(sharedSnapshot.materials)?sharedSnapshot.materials:[];
+  const equipment=Array.isArray(sharedSnapshot.equipment)?sharedSnapshot.equipment:[];
+  const warehouses=[...new Set([...(sharedSnapshot.warehouses||[]),...materials.map(item=>item.warehouse),...equipment.map(item=>item.warehouse)].filter(Boolean))];
   const created=new Date(sharedSnapshot.createdAt);
-  view.innerHTML=`<button class="back" id="closeSharedSnapshot" type="button">‹ 보관</button><div class="callout">읽기 전용 공유자료입니다. 내 데이터에는 반영되지 않습니다.<br>작성 ${esc(Number.isNaN(created.getTime())?"미상":created.toLocaleString("ko-KR"))} · ${esc(sharedSnapshot.appVersion || "버전 미상")}</div>
-    <div class="card"><div class="section-title">자재현황</div><div class="shared-table">${sharedSnapshot.materials.map(item=>`<div class="stock-line"><div><div class="stock-name">${esc(item.name)}</div><div class="stock-spec">${esc(item.warehouse)} · ${esc(item.spec || item.cat || "")}</div></div><div class="stock-qty">${materialQtyText(item.qty,item.unit,item)}</div></div>`).join("") || `<div class="emptybox">자재가 없습니다.</div>`}</div></div>
-    <div class="card"><div class="section-title">장비현황</div>${sharedSnapshot.equipment.map(item=>`<div class="stock-line"><div><div class="stock-name">${esc(item.name)}</div><div class="stock-spec">${esc(item.warehouse)} · ${esc(item.spec || item.model || "규격 없음")}${item.memo?` · ${esc(item.memo)}`:""}</div></div><div class="stock-qty">${Number(item.qty)}대</div></div>`).join("") || `<div class="emptybox">장비가 없습니다.</div>`}</div>`;
+  const createdText=Number.isNaN(created.getTime())?"작성일 미상":created.toLocaleString("ko-KR");
+  const materialTypes=new Set(materials.map(item=>item.name)).size;
+  const equipmentTotal=equipment.reduce((sum,item)=>sum+Number(item.qty||0),0);
+  document.getElementById("headTitle").innerHTML=`<div class="page-title">공유 현황</div><div class="date">읽기 전용 · ${esc(sharedSnapshot.scope || "전체")}</div>`;
+  view.innerHTML=`<button class="back" id="closeSharedSnapshot" type="button">‹ 보관</button>
+    <div class="shared-hero card">
+      <div><div class="section-title">${esc(sharedSnapshot.title || "Victor 자원현황")}</div><div class="row-sub">내 데이터에는 반영되지 않는 읽기 전용 현황판입니다.</div></div>
+      <div class="summary-grid">
+        <div class="summary-pill"><div class="summary-label">자재</div><div class="summary-value">${materialTypes}종</div></div>
+        <div class="summary-pill"><div class="summary-label">장비</div><div class="summary-value">${equipmentTotal}대</div></div>
+        <div class="summary-pill"><div class="summary-label">창고</div><div class="summary-value">${warehouses.length}곳</div></div>
+      </div>
+      <div class="shared-meta">업데이트 ${esc(createdText)} · ${esc(sharedSnapshot.appVersion || "버전 미상")}</div>
+    </div>
+    ${warehouses.length?warehouses.map(warehouse=>{
+      const mats=materials.filter(item=>item.warehouse===warehouse);
+      const eqs=equipment.filter(item=>item.warehouse===warehouse);
+      return `<div class="card shared-warehouse"><div class="shared-warehouse-title"><span>${esc(warehouse)}</span><small>자재 ${mats.length}종 · 장비 ${eqs.length}건</small></div>
+        <div class="shared-subtitle">자재</div>
+        ${mats.length?mats.map(item=>`<div class="stock-line ${Number(item.qty||0)===0?"zero-stock":""}"><div><div class="stock-name">${esc(item.name)}</div><div class="stock-spec">${esc(item.spec || item.cat || "")}</div></div><div class="stock-qty">${materialQtyText(item.qty,item.unit,item)}</div></div>`).join(""):`<div class="emptybox compact-empty">자재 없음</div>`}
+        <div class="shared-subtitle">장비</div>
+        ${eqs.length?eqs.map(item=>`<div class="stock-line ${Number(item.qty||0)===0?"zero-stock":""}"><div><div class="stock-name">${esc(item.name)}</div><div class="stock-spec">${esc(item.spec || item.model || "규격 없음")}${item.memo?` · ${esc(item.memo)}`:""}</div></div><div class="stock-qty">${Number(item.qty||0)}대</div></div>`).join(""):`<div class="emptybox compact-empty">장비 없음</div>`}
+      </div>`;
+    }).join(""):`<div class="emptybox">공유 현황 자료가 없습니다.</div>`}`;
   document.getElementById("closeSharedSnapshot")?.addEventListener("click",()=>{ sharedSnapshot=null; page="warehouse"; warehouseViewMode="warehouses"; selectedWarehouse=null; updateBottomNav(); render(); });
 }
 
@@ -2106,14 +2141,13 @@ function bindGlobal(){
   document.addEventListener("focusin",event=>{const input=event.target;if(input?.matches?.('input[type="number"]')&&Number(input.value)===0)input.value="";});
   document.querySelectorAll(".nav").forEach(b => b.addEventListener("click", () => setPage(b.dataset.page)));
 
-  document.getElementById("moreBtn")?.addEventListener("click", () => {
-    document.getElementById("moreMenu").classList.toggle("show");
-  });
+  document.getElementById("moreBtn")?.addEventListener("click", () => openMenu());
+  document.getElementById("closeMoreMenu")?.addEventListener("click", () => closeMenu());
 
   document.addEventListener("click", e => {
     const menu = document.getElementById("moreMenu");
     const btn = document.getElementById("moreBtn");
-    if(e.target === menu || (!menu.contains(e.target) && !btn.contains(e.target))) menu.classList.remove("show");
+    if(e.target === menu || (!menu.contains(e.target) && !btn.contains(e.target))) closeMenu();
   });
 
   document.getElementById("backupBtn")?.addEventListener("click", () => { closeMenu(); backup(); });
@@ -2151,13 +2185,31 @@ function bindGlobal(){
   }, {passive:false});
 }
 
-function closeMenu(){
-  document.getElementById("moreMenu").classList.remove("show");
+function openMenu(push=true){
+  const menu=document.getElementById("moreMenu");
+  if(!menu || menu.classList.contains("show")) return;
+  menu.classList.add("show");
+  if(push && !restoringNavigation){
+    menuHistoryOpen=true;
+    pushNavigationState(currentNavigationState({menu:true}));
+  }
+}
+
+function closeMenu(fromPop=false){
+  const menu=document.getElementById("moreMenu");
+  if(menu) menu.classList.remove("show");
+  menuHistoryOpen=false;
 }
 
 function restoreNavigation(nav){
   restoringNavigation = true;
   try{
+    if(nav?.menu){
+      openMenu(false);
+      menuHistoryOpen=true;
+      return;
+    }
+    closeMenu(true);
     document.getElementById("entryModal")?.classList.remove("show");
     document.getElementById("appInfoModal")?.classList.remove("show");
     if(nav?.recordId && state.records.some(record => record.id === nav.recordId)){
@@ -2259,7 +2311,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m22")
+      navigator.serviceWorker.register("./sw.js?v=0190m23")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });

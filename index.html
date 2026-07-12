@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="manifest" href="./manifest.json">
   <link rel="apple-touch-icon" href="./icons/icon-180.png">
-  <link rel="stylesheet" href="./style.css?v=0190m22">
+  <link rel="stylesheet" href="./style.css?v=0190m23">
   <title>Victor</title>
 </head>
 <body>
@@ -32,14 +32,14 @@
     <div class="menu" id="moreMenu">
       <div class="menu-sheet" role="dialog" aria-label="앱 관리 메뉴">
         <div class="menu-handle"></div>
-        <div class="menu-title">앱 관리</div>
+        <div class="menu-head"><div class="menu-title">앱 관리</div><button class="menu-close" id="closeMoreMenu" type="button" aria-label="메뉴 닫기">×</button></div>
         <div class="menu-group"><div class="menu-label">데이터 관리</div><div class="menu-grid">
           <button type="button" id="backupBtn">백업</button><button type="button" id="restoreBtn">복원</button>
         </div></div>
         <div class="menu-group"><div class="menu-label">자원현황 공유</div><div class="menu-grid">
           <button type="button" id="shareResourcesBtn">현황 보내기</button><button type="button" id="openSharedResourcesBtn">받은 자료 열기</button>
           <button type="button" id="cloudShareSettingsBtn">클라우드 설정</button><button type="button" id="uploadCloudShareBtn">클라우드 올리기</button>
-          <button type="button" id="viewCloudShareBtn">클라우드 보기</button>
+          <button type="button" id="viewCloudShareBtn">공유 현황 보기</button>
         </div></div>
         <div class="menu-group"><div class="menu-label">복구</div><div class="menu-grid">
           <button type="button" id="trashBtn">임시 보관함</button><button type="button" id="bulkUndoBtn">대량변경 되돌리기</button>
@@ -98,7 +98,7 @@
 
   <div class="snackbar" id="snackbar"></div>
 
-  <script src="./storage.js?v=0190m22"></script>
-  <script src="./app.js?v=0190m22"></script>
+  <script src="./storage.js?v=0190m23"></script>
+  <script src="./app.js?v=0190m23"></script>
 </body>
 </html>
