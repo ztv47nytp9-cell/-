@@ -2040,7 +2040,7 @@ async function supabaseRest(path,options={}){
   if(!cloudShareReady(config))throw new Error("클라우드 공유 설정이 필요합니다");
   const response=await fetch(`${config.url}/rest/v1/${path}`,{
     ...options,
-    headers:{apikey:config.key,Authorization:`Bearer ${config.key}`,...(options.headers||{})}
+    headers:{apikey:config.key,...(options.headers||{})}
   });
   if(!response.ok){const text=await response.text().catch(()=>"");throw new Error(`Supabase ${response.status}: ${text||response.statusText}`);}
   if(response.status===204)return null;
@@ -2245,7 +2245,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m17")
+      navigator.serviceWorker.register("./sw.js?v=0190m18")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
