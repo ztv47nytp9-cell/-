@@ -1977,7 +1977,21 @@ function readCloudShareConfig(){
   try{return JSON.parse(localStorage.getItem(CLOUD_SHARE_CONFIG_KEY)||"{}")||{};}catch(_){return {};}
 }
 
-function normalizeCloudUrl(url){return String(url||"").trim().replace(/\/+$/,"");}
+function normalizeCloudUrl(url){
+  return String(url||"")
+    .trim()
+    .replace(/\/rest\/v1\/?$/i,"")
+    .replace(/\/+$/,"");
+}
+
+function cloudErrorMessage(error){
+  const message=String(error?.message||error||"").toLowerCase();
+  if(message.includes("401")||message.includes("invalid api key")||message.includes("jwt"))return "키가 맞지 않습니다. Publishable key 전체를 다시 복사해주세요";
+  if(message.includes("404")||message.includes("resource_snapshots"))return "테이블 이름(resource_snapshots) 또는 Supabase URL을 확인해주세요";
+  if(message.includes("403")||message.includes("permission")||message.includes("row-level")||message.includes("rls"))return "RLS 정책을 확인해주세요";
+  if(message.includes("failed to fetch")||message.includes("network")||message.includes("cors"))return "네트워크 또는 Supabase URL을 확인해주세요";
+  return "연결 실패: URL·키·RLS 정책을 확인해주세요";
+}
 
 function cloudShareConfig(){
   const config=readCloudShareConfig();
@@ -1995,7 +2009,7 @@ function openCloudShareSettings(){
   const config=cloudShareConfig();
   openEntryModal(`${entryHeader("클라우드 공유 설정","Supabase 읽기 전용 공유판")}
     <div class="form">
-      <div class="callout">Supabase Project URL, Publishable key, 공유 ID를 저장합니다. Secret key는 절대 넣지 마세요.</div>
+      <div class="callout">Supabase Project URL, Publishable key, 공유 ID를 저장합니다. /rest/v1 주소를 붙여넣어도 자동 정리됩니다. Secret key는 절대 넣지 마세요.</div>
       <label>Supabase URL<input id="cloudShareUrl" inputmode="url" placeholder="https://xxxx.supabase.co" value="${esc(config.url)}"></label>
       <label>Publishable key<textarea id="cloudShareKey" placeholder="sb_publishable_...">${esc(config.key)}</textarea></label>
       <label>공유 ID(site_id)<input id="cloudShareSiteId" placeholder="victor-main" value="${esc(config.siteId)}"></label>
@@ -2028,14 +2042,14 @@ async function supabaseRest(path,options={}){
     ...options,
     headers:{apikey:config.key,Authorization:`Bearer ${config.key}`,...(options.headers||{})}
   });
-  if(!response.ok){const text=await response.text().catch(()=>"");throw new Error(text||`Supabase 요청 실패 (${response.status})`);}
+  if(!response.ok){const text=await response.text().catch(()=>"");throw new Error(`Supabase ${response.status}: ${text||response.statusText}`);}
   if(response.status===204)return null;
   return response.json();
 }
 
 async function testCloudShareConnection(){
   try{await supabaseRest("resource_snapshots?select=id&limit=1");showFeedback("success","Supabase 연결 성공");}
-  catch(error){console.warn("[Victor] Supabase 연결 실패",error);showFeedback("error","연결 실패: URL·키·RLS 정책을 확인해주세요");}
+  catch(error){console.warn("[Victor] Supabase 연결 실패",error);showFeedback("error",cloudErrorMessage(error));}
 }
 
 async function uploadCloudShareSnapshot(){
@@ -2046,7 +2060,7 @@ async function uploadCloudShareSnapshot(){
     snapshot.cloudSharedAt=new Date().toISOString();
     await supabaseRest("resource_snapshots",{method:"POST",headers:{"Content-Type":"application/json","Prefer":"return=minimal"},body:JSON.stringify({site_id:config.siteId,title:config.title,snapshot,updated_at:new Date().toISOString()})});
     showFeedback("success","클라우드 공유 현황을 올렸습니다");
-  }catch(error){console.warn("[Victor] 클라우드 공유 업로드 실패",error);showFeedback("error","클라우드 올리기 실패");}
+  }catch(error){console.warn("[Victor] 클라우드 공유 업로드 실패",error);showFeedback("error",cloudErrorMessage(error));}
 }
 
 async function loadCloudShareSnapshot(){
@@ -2060,7 +2074,7 @@ async function loadCloudShareSnapshot(){
     if(row?.snapshot?.kind!=="victor-resource-share")throw new Error("공유자료 형식 오류");
     sharedSnapshot={...row.snapshot,title:row.title||row.snapshot.title,createdAt:row.snapshot.createdAt||row.updated_at,cloudUpdatedAt:row.updated_at};
     renderSharedSnapshot();
-  }catch(error){console.warn("[Victor] 클라우드 공유 조회 실패",error);showFeedback("error","클라우드 보기 실패");}
+  }catch(error){console.warn("[Victor] 클라우드 공유 조회 실패",error);showFeedback("error",cloudErrorMessage(error));}
 }
 
 function renderSharedSnapshot(){
@@ -2231,7 +2245,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m16")
+      navigator.serviceWorker.register("./sw.js?v=0190m17")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
