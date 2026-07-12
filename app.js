@@ -2044,9 +2044,10 @@ async function supabaseRest(path,options={}){
     ...options,
     headers:{apikey:config.key,...(options.headers||{})}
   });
-  if(!response.ok){const text=await response.text().catch(()=>"");throw new Error(`Supabase ${response.status}: ${text||response.statusText}`);}
-  if(response.status===204)return null;
-  return response.json();
+  const text=await response.text().catch(()=>"");
+  if(!response.ok)throw new Error(`Supabase ${response.status}: ${text||response.statusText}`);
+  if(response.status===204 || !text.trim())return null;
+  try{return JSON.parse(text);}catch(error){throw new Error(`Supabase 응답 해석 실패: ${error.message}`);}
 }
 
 async function testCloudShareConnection(){
@@ -2258,7 +2259,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m21")
+      navigator.serviceWorker.register("./sw.js?v=0190m22")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
