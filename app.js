@@ -1986,6 +1986,7 @@ function normalizeCloudUrl(url){
 
 function cloudErrorMessage(error){
   const message=String(error?.message||error||"").toLowerCase();
+  if(message.includes("공유자료 형식"))return "클라우드 자료 형식이 맞지 않습니다. 다시 클라우드 올리기를 해주세요";
   if(message.includes("401")||message.includes("invalid api key")||message.includes("jwt"))return "키가 맞지 않습니다. Publishable key 전체를 다시 복사해주세요";
   if(message.includes("404")||message.includes("resource_snapshots"))return "테이블 이름(resource_snapshots) 또는 Supabase URL을 확인해주세요";
   if(message.includes("403")||message.includes("permission")||message.includes("row-level")||message.includes("rls"))return "RLS 정책을 확인해주세요";
@@ -2068,11 +2069,11 @@ async function loadCloudShareSnapshot(){
   if(!cloudShareReady()){openCloudShareSettings();showFeedback("info","먼저 클라우드 공유 설정을 저장해주세요");return;}
   try{
     const config=cloudShareConfig();
-    const rows=await supabaseRest(`resource_snapshots?select=site_id,title,snapshot,updated_at&site_id=eq.${encodeURIComponent(config.siteId)}&order=updated_at.desc&limit=1`);
+    const rows=await supabaseRest(`resource_snapshots?select=site_id,title,snapshot,created_at,updated_at&site_id=eq.${encodeURIComponent(config.siteId)}&snapshot=not.is.null&order=updated_at.desc.nullslast&limit=10`);
     if(!rows?.length){showFeedback("info","아직 클라우드 공유자료가 없습니다");return;}
-    const row=rows[0];
-    if(row?.snapshot?.kind!=="victor-resource-share")throw new Error("공유자료 형식 오류");
-    sharedSnapshot={...row.snapshot,title:row.title||row.snapshot.title,createdAt:row.snapshot.createdAt||row.updated_at,cloudUpdatedAt:row.updated_at};
+    const row=rows.find(item=>item?.snapshot?.kind==="victor-resource-share");
+    if(!row)throw new Error("공유자료 형식 오류");
+    sharedSnapshot={...row.snapshot,title:row.title||row.snapshot.title,createdAt:row.snapshot.createdAt||row.updated_at||row.created_at,cloudUpdatedAt:row.updated_at||row.created_at};
     renderSharedSnapshot();
   }catch(error){console.warn("[Victor] 클라우드 공유 조회 실패",error);showFeedback("error",cloudErrorMessage(error));}
 }
@@ -2245,7 +2246,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m18")
+      navigator.serviceWorker.register("./sw.js?v=0190m19")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
