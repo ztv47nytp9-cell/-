@@ -2069,7 +2069,7 @@ async function loadCloudShareSnapshot(){
   if(!cloudShareReady()){openCloudShareSettings();showFeedback("info","먼저 클라우드 공유 설정을 저장해주세요");return;}
   try{
     const config=cloudShareConfig();
-    const rows=await supabaseRest(`resource_snapshots?select=site_id,title,snapshot,created_at,updated_at&site_id=eq.${encodeURIComponent(config.siteId)}&snapshot=not.is.null&order=updated_at.desc.nullslast&limit=10`);
+    const rows=await supabaseRest(`resource_snapshots?select=site_id,title,snapshot,created_at,updated_at&site_id=eq.${encodeURIComponent(config.siteId)}&order=updated_at.desc&limit=20`);
     if(!rows?.length){showFeedback("info","아직 클라우드 공유자료가 없습니다");return;}
     const row=rows.find(item=>item?.snapshot?.kind==="victor-resource-share");
     if(!row)throw new Error("공유자료 형식 오류");
@@ -2246,7 +2246,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m19")
+      navigator.serviceWorker.register("./sw.js?v=0190m20")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
