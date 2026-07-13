@@ -2331,7 +2331,7 @@ async function shareResourceSnapshot(place=""){
   try{
     if(navigator.share && (!navigator.canShare || navigator.canShare({files:[file]}))){
       await navigator.share({title:`Victor 자원현황 · ${snapshot.scope}`,text:`${snapshot.scope} 자재·장비 현황 (${todayISO()})`,files:[file]});
-      showFeedback("success","자원현황 공유 완료"); return;
+      showFeedback("success","공유파일 생성 완료"); return;
     }
   }catch(error){ if(error?.name==="AbortError") return; }
   downloadBlob(file,filename); showFeedback("info","공유파일을 저장했습니다");
@@ -2490,7 +2490,6 @@ function cloudDashboardHtml(latest=null,{loading=false,error=""}={}){
       <button class="btn secondary" id="cloudUploadNow" type="button">클라우드 올리기</button>
       ${safety?`<button class="btn danger" id="cloudUndoNow" type="button">방금 적용 되돌리기</button>`:""}
       <button class="btn gray" id="cloudRefreshNow" type="button">최신자료 확인</button>
-      <button class="btn gray" id="cloudPinSettingsNow" type="button">올리기 PIN 설정</button>
     </div>`;
 }
 
@@ -2499,7 +2498,6 @@ function bindCloudDashboard(){
   document.getElementById("cloudUploadNow")?.addEventListener("click",()=>{closeEntryModal();uploadCloudShareSnapshot();});
   document.getElementById("cloudUndoNow")?.addEventListener("click",()=>{closeEntryModal();restoreCloudApplySafetyPoint();});
   document.getElementById("cloudRefreshNow")?.addEventListener("click",()=>refreshCloudShareWithPopup());
-  document.getElementById("cloudPinSettingsNow")?.addEventListener("click",()=>{closeEntryModal();openUploadPinSettings();});
 }
 
 function openCloudShareActions(force=false){
@@ -2528,9 +2526,7 @@ async function refreshCloudShareWithPopup(){
       cloudShareNotice=null;
       openEntryModal(cloudDashboardHtml(null));
       bindCloudDashboard();
-      await askConfirm("최신자료 확인","아직 클라우드에 공유자료가 없습니다.","확인");
-      openEntryModal(cloudDashboardHtml(null));
-      bindCloudDashboard();
+      showFeedback("info","아직 클라우드에 공유자료가 없습니다");
       return;
     }
     const kind=isCloudSnapshotNewer(snapshot)?"new":"same";
@@ -2538,22 +2534,12 @@ async function refreshCloudShareWithPopup(){
     openEntryModal(cloudDashboardHtml(snapshot));
     bindCloudDashboard();
     const summary=snapshotSummary(snapshot);
-    await askConfirm(kind==="new"?"새 공유자료 있음":"최신자료 확인 완료",[
-      `상태: ${kind==="new"?"새로 적용할 자료가 있습니다":"이미 최신 상태입니다"}`,
-      `기준시각: ${fmtDateTime(summary.date)}`,
-      `보관장소: ${summary.warehouses}곳`,
-      `자재: ${summary.materials}종`,
-      `장비: ${summary.equipment}개`
-    ].join("\n"),"확인");
-    openEntryModal(cloudDashboardHtml(snapshot));
-    bindCloudDashboard();
+    showFeedback(kind==="new"?"info":"success",kind==="new"?`새 공유자료 있음 · ${fmtDateTime(summary.date)}`:`이미 최신자료입니다 · ${fmtDateTime(summary.date)}`);
   }catch(error){
     console.warn("[Victor] 최신자료 확인 실패",error);
     openEntryModal(cloudDashboardHtml(cloudShareNotice?.snapshot||null,{error:cloudErrorMessage(error)}));
     bindCloudDashboard();
-    await askConfirm("최신자료 확인 실패",`${cloudErrorMessage(error)}\n\n기존 앱 자료는 변경되지 않았습니다.`,"확인");
-    openEntryModal(cloudDashboardHtml(cloudShareNotice?.snapshot||null,{error:cloudErrorMessage(error)}));
-    bindCloudDashboard();
+    showFeedback("error",`${cloudErrorMessage(error)} · 기존 자료는 유지됩니다`);
   }
 }
 
@@ -2725,6 +2711,7 @@ function bindGlobal(){
   document.getElementById("shareResourcesBtn")?.addEventListener("click",()=>{closeMenu();shareResourceSnapshot();});
   document.getElementById("openSharedResourcesBtn")?.addEventListener("click",()=>{closeMenu();const input=document.getElementById("sharedResourceFile");input.value="";input.click();});
   document.getElementById("cloudShareSettingsBtn")?.addEventListener("click",()=>{closeMenu();openCloudShareSettings();});
+  document.getElementById("cloudPinSettingsBtn")?.addEventListener("click",()=>{closeMenu();openUploadPinSettings();});
   document.getElementById("uploadCloudShareBtn")?.addEventListener("click",()=>{closeMenu();uploadCloudShareSnapshot();});
   document.getElementById("viewCloudShareBtn")?.addEventListener("click",()=>{closeMenu();loadCloudShareSnapshot();});
   document.getElementById("sharedResourceFile")?.addEventListener("change",event=>{const file=event.target.files?.[0];if(file)loadSharedResourceFile(file);});
@@ -2751,6 +2738,7 @@ function bindGlobal(){
     if(now - lastTouchEnd <= 300) e.preventDefault();
     lastTouchEnd = now;
   }, {passive:false});
+  document.addEventListener("dragstart", event => event.preventDefault());
 }
 
 function openMenu(push=true){
@@ -2919,7 +2907,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m41")
+      navigator.serviceWorker.register("./sw.js?v=0190m43")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
