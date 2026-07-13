@@ -426,7 +426,7 @@ function readCloudApplySafetyPoint(){
 function createCloudApplySafetyPoint(snapshot){
   try{
     localStorage.setItem(CLOUD_APPLY_SAFETY_KEY,JSON.stringify({
-      label:"공유자료 적용 전",
+      label:"공유자료 가져오기 전",
       createdAt:new Date().toISOString(),
       cloudAt:snapshot?.cloudUpdatedAt || snapshot?.cloudSharedAt || snapshot?.createdAt || "",
       state:stripStoredPhotos(JSON.parse(JSON.stringify(state)))
@@ -453,7 +453,7 @@ async function restoreCloudApplySafetyPoint(){
   updateBottomNav();
   render();
   scrollToTop();
-  showFeedback("success","공유자료 적용을 되돌렸습니다");
+  showFeedback("success","공유자료 가져오기를 되돌렸습니다");
 }
 
 function fmtDateTime(value){
@@ -882,7 +882,7 @@ function renderRegister(){
   if(!registerFormDraft&&!pendingRegisterDraft) pendingRegisterDraft=readRegisterDraft();
   draftItems = draftItems.length ? draftItems : [];
   view.innerHTML = `
-    ${pendingRegisterDraft&&!registerFormDraft ? `<div class="callout">작성 중이던 등록 내용이 있습니다. 필요한 경우에만 불러오세요. <div class="btn-row" style="margin-top:8px"><button class="btn secondary compact" id="loadRegisterDraft" type="button">불러오기</button><button class="btn gray compact" id="discardRegisterDraft" type="button">새로 시작</button></div></div>` : ""}
+    ${pendingRegisterDraft&&!registerFormDraft ? `<div class="callout">작성 중 기록 있음 <div class="btn-row" style="margin-top:8px"><button class="btn secondary compact" id="loadRegisterDraft" type="button">불러오기</button><button class="btn gray compact" id="discardRegisterDraft" type="button">새로 시작</button></div></div>` : ""}
     ${registerFormDraft ? `<div class="callout">작성 중이던 내용을 불러왔습니다. <button class="btn gray compact" id="discardRegisterDraft" type="button">새로 작성</button></div>` : ""}
     <div class="choice-grid">
       <button class="choice-card ${registerMode === "normal" ? "active" : ""}" id="modeNormal" type="button">
@@ -912,7 +912,7 @@ function renderRegister(){
       <div>
         <div class="section-head" style="margin:5px 0 8px">
           <div class="section-title" style="font-size:16px">${registerMode === "quick" ? "사용 내역" : registerFlow}</div>
-          <div class="btn-row"><button class="btn secondary compact" id="addItem" type="button">+ 자재 추가</button><button class="btn secondary compact" id="addEquipmentItem" type="button">+ 장비 추가</button></div>
+          <div class="btn-row"><button class="btn secondary compact" id="addItem" type="button">자재 선택</button><button class="btn secondary compact" id="addEquipmentItem" type="button">장비 선택</button></div>
         </div>
         <div id="itemArea"></div>
         <div id="equipmentItemArea"></div>
@@ -1942,7 +1942,7 @@ function askConfirm(title,message,confirmText="확인",danger=false){
   });
 }
 
-function requestUploadPin(title="올리기 PIN 확인",subtitle="클라우드 올리기 권한 확인"){
+function requestUploadPin(title="올리기 PIN 확인",subtitle="내 자료 올리기 권한 확인"){
   return new Promise(resolve=>{
     modalConfirmResolver=value=>resolve(value===false?null:value);
     openEntryModal(`${entryHeader(title,subtitle)}
@@ -2365,7 +2365,7 @@ function normalizeCloudUrl(url){
 function cloudErrorMessage(error){
   const raw=String(error?.message||error||"");
   const message=raw.toLowerCase();
-  if(message.includes("공유자료 형식"))return "클라우드 자료 형식이 맞지 않습니다. 다시 클라우드 올리기를 해주세요";
+  if(message.includes("공유자료 형식"))return "클라우드 자료 형식이 맞지 않습니다. 다시 내 자료 올리기를 해주세요";
   if(message.includes("401")||message.includes("invalid api key")||message.includes("jwt"))return "키가 맞지 않습니다. Publishable key 전체를 다시 복사해주세요";
   if(message.includes("404")||message.includes("resource_snapshots"))return "테이블 이름(resource_snapshots) 또는 Supabase URL을 확인해주세요";
   if(message.includes("403")||message.includes("permission")||message.includes("row-level")||message.includes("rls"))return "RLS 정책을 확인해주세요";
@@ -2396,9 +2396,9 @@ function cloudShareReady(config=cloudShareConfig()){return Boolean(config.url&&c
 
 function openCloudShareSettings(){
   const config=cloudShareConfig();
-  openEntryModal(`${entryHeader("클라우드 공유 설정","Supabase 읽기 전용 공유판")}
+  openEntryModal(`${entryHeader("공유 연결 설정","Supabase 읽기 전용 공유판")}
     <div class="form">
-      <div class="callout">기본 공유 설정은 앱에 들어 있어 바로 올리기·적용을 사용할 수 있습니다. 값이 바뀌었을 때만 수정하세요. Secret key는 절대 넣지 마세요.</div>
+      <div class="callout">기본 공유 연결값은 앱에 들어 있어 바로 올리기·가져오기를 사용할 수 있습니다. 값이 바뀌었을 때만 수정하세요. Secret key는 절대 넣지 마세요.</div>
       <label>Supabase URL<input id="cloudShareUrl" inputmode="url" placeholder="https://xxxx.supabase.co" value="${esc(config.url)}"></label>
       <label>Publishable key<textarea id="cloudShareKey" placeholder="sb_publishable_...">${esc(config.key)}</textarea></label>
       <label>공유 ID(site_id)<input id="cloudShareSiteId" placeholder="victor-main" value="${esc(config.siteId)}"></label>
@@ -2419,7 +2419,7 @@ function saveCloudShareSettings(close=false){
   if(!config.url||!config.key){showFeedback("error","URL과 Publishable key를 입력해주세요");return false;}
   if(!/^https:\/\/.+\.supabase\.co$/i.test(config.url)){showFeedback("warning","Supabase URL 형식을 확인해주세요");return false;}
   try{localStorage.setItem(CLOUD_SHARE_CONFIG_KEY,JSON.stringify(config));}catch(error){showFeedback("error","설정을 저장하지 못했습니다");return false;}
-  showFeedback("success","클라우드 공유 설정 저장 완료");
+  showFeedback("success","공유 연결 설정 저장 완료");
   if(close)closeEntryModal();
   return true;
 }
@@ -2428,7 +2428,7 @@ function openUploadPinSettings(){
   const hasPin=Boolean(currentCloudUploadPinHash());
   openEntryModal(`${entryHeader("올리기 PIN 설정",hasPin?"기존 PIN 확인 후 변경합니다":"최초 1회 PIN을 등록합니다")}
     <div class="form">
-      <div class="callout">PIN은 클라우드 올리기 실수 방지용입니다. 공유자료 적용은 PIN 없이 가능하고, PIN 설정은 다음 클라우드 올리기 때 다른 기기에도 공유됩니다.</div>
+      <div class="callout">PIN은 내 자료 올리기 실수 방지용입니다. 공유자료 가져오기는 PIN 없이 가능하고, PIN 설정은 다음 내 자료 올리기 때 다른 기기에도 공유됩니다.</div>
       ${hasPin?`<label>현재 PIN<input id="currentUploadPin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" placeholder="현재 PIN 4자리"></label>`:""}
       <label>새 PIN<input id="newUploadPin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" placeholder="숫자 4자리"></label>
       <label>새 PIN 확인<input id="newUploadPin2" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" placeholder="한 번 더 입력"></label>
@@ -2470,11 +2470,13 @@ function cloudDashboardHtml(latest=null,{loading=false,error=""}={}){
   const cloudSummary=latest?snapshotSummary(latest):null;
   const safety=readCloudApplySafetyPoint();
   const status=loading?"클라우드 확인 중":error?"확인 실패":cloudStatusLabel(latest);
+  const statusHint=loading?"최신자료 확인 중입니다":error?"설정과 네트워크를 확인한 뒤 다시 눌러주세요":status==="클라우드 자료가 최신"?"공유자료 가져오기를 누르면 반영됩니다":status==="내 자료가 최신"?"내 자료 올리기를 누르면 공유됩니다":status==="이미 최신"?"현재 자료와 공유자료가 같은 상태입니다":"최신자료 확인을 누르면 상태를 다시 확인합니다";
   return `${entryHeader("자원 공유","공유 현황을 확인하고 적용·올리기 합니다")}
     <div class="form">
       <div class="share-status-card ${latest?"ready":""}">
         <div class="share-status-label">상태</div>
         <div class="share-status-title">${esc(status)}</div>
+        <div class="row-sub">${esc(statusHint)}</div>
         <div class="row-sub">${esc(config.title)}</div>
       </div>
       ${error?`<div class="callout">클라우드 확인 실패: ${esc(error)}</div>`:""}
@@ -2486,8 +2488,8 @@ function cloudDashboardHtml(latest=null,{loading=false,error=""}={}){
         <span><strong>PIN</strong><br>${currentCloudUploadPinHash()?"설정됨":"미설정"}</span>
         <span><strong>되돌리기</strong><br>${safety?`${esc(fmtDateTime(safety.createdAt))} 가능`:"없음"}</span>
       </div>
-      <button class="btn primary" id="cloudApplyNow" type="button">공유자료 적용</button>
-      <button class="btn secondary" id="cloudUploadNow" type="button">클라우드 올리기</button>
+      <button class="btn primary" id="cloudApplyNow" type="button">공유자료 가져오기</button>
+      <button class="btn secondary" id="cloudUploadNow" type="button">내 자료 올리기</button>
       ${safety?`<button class="btn danger" id="cloudUndoNow" type="button">방금 적용 되돌리기</button>`:""}
       <button class="btn gray" id="cloudRefreshNow" type="button">최신자료 확인</button>
     </div>`;
@@ -2546,7 +2548,7 @@ async function refreshCloudShareWithPopup(){
 async function supabaseRest(path,options={}){
   const {cloudConfig,...fetchOptions}=options;
   const config=cloudConfig || cloudShareConfig();
-  if(!cloudShareReady(config))throw new Error("클라우드 공유 설정이 필요합니다");
+  if(!cloudShareReady(config))throw new Error("공유 연결 설정이 필요합니다");
   const response=await fetch(`${config.url}/rest/v1/${path}`,{
     ...fetchOptions,
     headers:{apikey:config.key,...(fetchOptions.headers||{})}
@@ -2630,13 +2632,13 @@ async function uploadCloudShareSnapshot(){
     const snapshot=buildResourceSnapshot();
     snapshot.cloudSharedAt=new Date().toISOString();
     if(snapshotTotalQuantity(snapshot)===0){
-      showFeedback("error","총 보관량이 0이라 클라우드 올리기를 막았습니다");
+      showFeedback("error","총 보관량이 0이라 내 자료 올리기를 막았습니다");
       return;
     }
     let latest=null;
     try{latest=await fetchLatestCloudShareSnapshot();}catch(error){console.warn("[Victor] 기존 클라우드 자료 확인 실패",error);}
     const warnings=uploadWarningLines(snapshot,latest);
-    if(!await askConfirm("클라우드 올리기 확인",`${uploadPreviewText(snapshot,latest)}\n\n현재 내 보관 현황을 클라우드 공유자료로 올릴까요?`,"다음"))return;
+    if(!await askConfirm("내 자료 올리기 확인",`${uploadPreviewText(snapshot,latest)}\n\n현재 내 보관 현황을 클라우드 공유자료로 올릴까요?`,"다음"))return;
     if(warnings.length && !await askConfirm("주의사항 재확인",`${warnings.join("\n")}\n\n그래도 계속 올릴까요?`,"계속"))return;
     const pin=await requestUploadPin();
     if(pin===null)return;
@@ -2907,7 +2909,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m43")
+      navigator.serviceWorker.register("./sw.js?v=0190m44")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
