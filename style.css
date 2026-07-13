@@ -2,6 +2,7 @@
 *{box-sizing:border-box}
 html{touch-action:manipulation;-webkit-text-size-adjust:100%}
 html,body{margin:0;padding:0;background:var(--light);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif}
+body.menu-open{position:fixed;left:0;right:0;width:100%;overflow:hidden}
 button,input,select,textarea{font:inherit}
 button{cursor:pointer;-webkit-tap-highlight-color:transparent}
 .app{min-height:100vh;padding-bottom:76px}
