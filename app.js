@@ -11,9 +11,6 @@ let warehouseViewMode = "warehouses";
 let allResourceQuery = "";
 let allResourceCategory = "all";
 let allResourceWarehouse = "all";
-let resourceDraftPhoto = "";
-let resourceDraftPhotos = [];
-let resourcePhotoLimit = 1;
 let historyFilter = "all";
 let historyDateFilter = "all";
 let historyFlowFilter = "all";
@@ -24,7 +21,6 @@ let editingMemoId = null;
 let restoringNavigation = false;
 let globalSearchQuery = "";
 let maintenanceDraftParts = [];
-let maintenanceDraftPhoto = "";
 let sharedSnapshot = null;
 let materialSortMode = "name";
 let equipmentSortMode = "name";
@@ -34,6 +30,7 @@ let modalConfirmResolver = null;
 let menuHistoryOpen = false;
 const REGISTER_DRAFT_KEY = "victor_register_draft_0_19_0j";
 const CLOUD_SHARE_CONFIG_KEY = "victor_cloud_share_config_0_19_0m";
+const CLOUD_SHARE_META_KEY = "victor_cloud_share_meta_0_19_0m";
 const DEFAULT_CLOUD_SHARE_CONFIG = {
   url:"https://vzwzkeqxkqlrctylspxz.supabase.co",
   key:"sb_publishable_8X3VXnF63hNSUzYf14lDfg_IBj-PD72",
@@ -345,6 +342,31 @@ function homeActivityHtml(){
   return recent.length ? recent.map(recordRow).join("") : `<div class="emptybox">아직 기록이 없습니다.</div>`;
 }
 
+function readCloudShareMeta(){
+  try{return JSON.parse(localStorage.getItem(CLOUD_SHARE_META_KEY)||"{}")||{};}catch(_){return {};}
+}
+
+function saveCloudShareMeta(patch){
+  try{localStorage.setItem(CLOUD_SHARE_META_KEY,JSON.stringify({...readCloudShareMeta(),...patch}));}catch(error){console.warn("[Victor] 클라우드 메타 저장 실패",error);}
+}
+
+function fmtDateTime(value){
+  if(!value) return "없음";
+  const date=new Date(value);
+  if(Number.isNaN(date.getTime())) return "없음";
+  const today=new Date();
+  const sameDay=date.toDateString()===today.toDateString();
+  const hh=String(date.getHours()).padStart(2,"0"), mm=String(date.getMinutes()).padStart(2,"0");
+  return `${sameDay?"오늘":fmtDate(value)} ${hh}:${mm}`;
+}
+
+function cloudShareStatusHtml(){
+  const meta=readCloudShareMeta();
+  const upload=fmtDateTime(meta.lastUploadedAt);
+  const applied=fmtDateTime(meta.lastAppliedAt);
+  return `<div class="cloud-share-status"><span>마지막 올림 ${esc(upload)}</span><span>마지막 적용 ${esc(applied)}</span></div>`;
+}
+
 function renderHome(){
   const pending = pendingRecords().length;
   view.innerHTML = `
@@ -367,11 +389,12 @@ function renderHome(){
     <div class="card">
       <div class="section-title">자주 쓰는 기능</div>
       <div class="home-tool-grid">
-        <button id="homeAllMaterials" type="button"><span>📦</span><strong>전체 자재</strong></button>
-        <button id="homeAllEquipment" type="button"><span>🧰</span><strong>전체 장비</strong></button>
+        <button id="homeAllResources" type="button"><span>📦</span><strong>자재·장비</strong></button>
+        <button id="homeShareResources" type="button"><span>☁️</span><strong>자원 공유</strong></button>
         <button id="homePending" type="button"><span>🚨</span><strong>미반영 ${pending}건</strong></button>
         <button id="homeMemoShortcut" type="button"><span>📝</span><strong>새 메모</strong></button>
       </div>
+      ${cloudShareStatusHtml()}
     </div>
     <div class="section-head"><div class="section-title">최근 활동</div><button class="link-btn" id="goActivityAll">전체보기 ›</button></div>
     <div class="activity-tabs"><button class="${homeActivityTab === "history" ? "active" : ""}" id="homeActivityHistory" type="button">이력</button><button class="${homeActivityTab === "memo" ? "active" : ""}" id="homeActivityMemo" type="button">메모</button></div>
@@ -387,8 +410,8 @@ function renderHome(){
   document.getElementById("homeFastSurvey")?.addEventListener("click",()=>state.survey?.active?renderFastSurvey():openFastSurveySetup());
   document.getElementById("restartFastSurvey")?.addEventListener("click",restartFastSurvey);
   document.getElementById("undoLastSurvey")?.addEventListener("click",undoLastSurvey);
-  document.getElementById("homeAllMaterials")?.addEventListener("click", () => openStorageView("materials"));
-  document.getElementById("homeAllEquipment")?.addEventListener("click", () => openStorageView("equipment"));
+  document.getElementById("homeAllResources")?.addEventListener("click", () => openStorageView("materials"));
+  document.getElementById("homeShareResources")?.addEventListener("click", uploadCloudShareSnapshot);
   document.getElementById("homePending")?.addEventListener("click", () => { historyFilter = "pending"; historyDateFilter = "all"; historyFlowFilter = "all"; setPage("history"); });
   document.getElementById("homeMemoShortcut")?.addEventListener("click", () => { editingMemoId=null; setPage("memo"); });
   document.getElementById("homeActivityHistory")?.addEventListener("click", () => { homeActivityTab="history"; renderHome(); });
@@ -556,7 +579,7 @@ function openAllMaterialDetail(name){
   const timeline=[...state.records].filter(record=>(record.items||[]).some(entry=>entry.name===name)).sort((a,b)=>(b.date+b.createdAt).localeCompare(a.date+a.createdAt)).slice(0,20);
   openEntryModal(`
     ${entryHeader(item.name,"전체 자재 상세")}
-    <div class="card compact-card"><div class="row-sub">카테고리</div><div class="row-title">${esc(item.cat)}</div><div class="row-sub">규격 ${esc(item.spec || "없음")} · 단위 ${esc(item.unit)}</div>${item.memo ? `<div class="callout" style="margin-top:10px">${esc(item.memo)}</div>` : ""}${item.photo ? `<img class="resource-photo-large" src="${item.photo}" alt="${esc(item.name)} 사진">` : ""}</div>
+    <div class="card compact-card"><div class="row-sub">카테고리</div><div class="row-title">${esc(item.cat)}</div><div class="row-sub">규격 ${esc(item.spec || "없음")} · 단위 ${esc(item.unit)}</div>${item.memo ? `<div class="callout" style="margin-top:10px">${esc(item.memo)}</div>` : ""}</div>
     <div class="list-card">${warehouses.map(name => `<button class="list-row" data-material-warehouse="${esc(name)}" type="button"><div><div class="row-title">${esc(name)}</div></div><div class="stock-qty">${materialQtyText(state.stock[name]?.[item.name] || 0,item.unit,item)}</div></button>`).join("")}</div>
     <button class="btn secondary" id="editMaterialInfo" type="button" style="width:100%;margin-top:10px">자재 정보·분류 수정</button><div class="card"><div class="section-title">재고 변동 타임라인</div>${timeline.map(record=>{const entry=record.items.find(row=>row.name===name),sign=record.flow==="입고"?"+":record.flow==="출고"||record.flow==="긴급"?"-":"";return `<div class="stock-line"><div><div class="stock-name">${fmtDate(record.date)} · ${esc(record.title)}</div><div class="stock-spec">${esc(record.warehouse||"창고 미지정")} · ${esc(record.flow)}</div></div><div class="stock-qty">${entry.before!==undefined?`${materialQtyText(entry.before,entry.unit,entry)} → ${materialQtyText(entry.after,entry.unit,entry)}`:`${sign}${materialQtyText(entry.qty,entry.unit,entry)}`}</div></div>`;}).join("")||`<div class="emptybox">변동 이력이 없습니다.</div>`}</div><button class="btn danger" id="deleteMaterial" type="button" style="width:100%">자재를 임시 보관함으로 이동</button>`);
   document.querySelectorAll("[data-material-warehouse]").forEach(button => button.addEventListener("click", () => { closeEntryModal(); warehouseViewMode="warehouses"; selectedWarehouse=button.dataset.materialWarehouse; warehouseTab="material"; renderWarehouse(); pushNavigationState({page:"warehouse",warehouse:selectedWarehouse,tab:"material"}); }));
@@ -1363,7 +1386,7 @@ function saveMemo(){
 }
 
 function backup(){
-  const payload = {...state, backupVersion: VERSION, backupDate: new Date().toISOString()};
+  const payload = {...stripStoredPhotos(JSON.parse(JSON.stringify(state))), backupVersion: VERSION, backupDate: new Date().toISOString()};
   const blob = new Blob([JSON.stringify(payload,null,2)], {type:"application/json"});
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
@@ -1688,14 +1711,13 @@ function openEquipment(id, options={}){
       </div>
       ${item.memo || item.etc ? `<div class="callout" style="margin-top:12px">${esc(item.memo || item.etc)}</div>` : ""}
       ${legacy.length ? `<div class="row-sub" style="margin-top:10px">기존 정보 · ${esc(legacy.join(" · "))}</div>` : ""}
-      ${(item.photos || (item.photo?[item.photo]:[])).length ? `<div class="equipment-gallery">${(item.photos || [item.photo]).map(photo=>`<img class="resource-photo-large" src="${photo}" alt="${esc(item.name)} 사진">`).join("")}</div>` : `<div class="photo-preview" style="margin-top:14px"><span>등록된 사진 없음</span></div>`}
       <button class="btn primary" id="editSimpleEquipment" type="button" style="width:100%;margin-top:14px">정보 수정</button>
     </div>
     <div class="card"><div class="section-head" style="margin:0 0 10px"><div class="section-title">현재 부속품</div><button class="btn secondary compact" id="addAccessory" type="button">+ 부속품</button></div>
       ${accessories.length ? accessories.map(part=>`<div class="stock-line"><div><div class="stock-name">${esc(part.name)}</div><div class="stock-spec"><span class="badge blue">${esc(part.status||"예비 보유")}</span> · ${esc(part.memo || "메모 없음")}</div></div><div><div class="stock-qty">${Number(part.qty)}개</div><div class="btn-row" style="margin-top:6px"><button class="btn gray compact" data-accessory-edit="${part.id}" type="button">수정</button><button class="btn danger compact" data-accessory-delete="${part.id}" type="button">삭제</button></div></div></div>`).join("") : `<div class="emptybox">현재 등록된 부속품이 없습니다.</div>`}
     </div>
     <div class="card"><div class="section-head" style="margin:0 0 10px"><div class="section-title">관리이력</div><button class="btn secondary compact" id="addMaintenance" type="button">+ 이력 추가</button></div>
-      ${maintenance.length ? maintenance.map(log=>`<div class="history-box"><div><span class="badge orange">${esc(log.type)}</span></div><div class="row-title" style="margin-top:7px">${esc(log.content || "관리 기록")}</div><div class="row-sub">${fmtDate(log.date)}${log.parts.length ? ` · ${esc(log.parts.map(part=>`${part.name} ${part.qty}개`).join(", "))}` : ""}</div>${log.memo?`<div class="row-sub">${esc(log.memo)}</div>`:""}${log.photo?`<img class="resource-photo-small" src="${log.photo}" alt="관리이력 사진">`:""}<div class="btn-row" style="margin-top:9px"><button class="btn gray compact" data-maint-edit="${log.id}" type="button">수정</button><button class="btn danger compact" data-maint-delete="${log.id}" type="button">삭제</button></div></div>`).join("") : `<div class="emptybox">등록된 관리이력이 없습니다.</div>`}
+      ${maintenance.length ? maintenance.map(log=>`<div class="history-box"><div><span class="badge orange">${esc(log.type)}</span></div><div class="row-title" style="margin-top:7px">${esc(log.content || "관리 기록")}</div><div class="row-sub">${fmtDate(log.date)}${log.parts.length ? ` · ${esc(log.parts.map(part=>`${part.name} ${part.qty}개`).join(", "))}` : ""}</div>${log.memo?`<div class="row-sub">${esc(log.memo)}</div>`:""}<div class="btn-row" style="margin-top:9px"><button class="btn gray compact" data-maint-edit="${log.id}" type="button">수정</button><button class="btn danger compact" data-maint-delete="${log.id}" type="button">삭제</button></div></div>`).join("") : `<div class="emptybox">등록된 관리이력이 없습니다.</div>`}
     </div>
     <div class="card"><div class="section-title">사용이력</div>${usage.length ? usage.map(record=>{const entry=record.equipmentItems.find(e=>e.id===item.id);return `<button class="stock-line" data-usage-record="${record.id}" type="button"><div><div class="stock-name">${esc(record.title)}</div><div class="stock-spec">${fmtDate(record.date)} · ${esc(record.type)}</div></div><div class="stock-qty">${Number(entry.qty)}대</div></button>`;}).join("") : `<div class="emptybox">등록된 사용이력이 없습니다.</div>`}</div>
     <div class="card"><div class="section-title">이동이력</div>${moves.length ? moves.map(move=>`<div class="stock-line"><div><div class="stock-name">${esc(move.from)} → ${esc(move.to)}</div><div class="stock-spec">${fmtDate(move.date)}${move.memo?` · ${esc(move.memo)}`:""}</div></div></div>`).join("") : `<div class="emptybox">등록된 이동이력이 없습니다.</div>`}</div>`;
@@ -1721,21 +1743,15 @@ function openMaintenanceForm(equipmentId,logId=null){
   const equipment=state.equipment.find(item=>item.id===equipmentId); if(!equipment) return;
   const existing=(equipment.maintenance || []).find(log=>log.id===logId);
   maintenanceDraftParts=existing?.parts?.map(part=>({...part})) || [];
-  maintenanceDraftPhoto=existing?.photo || "";
   openEntryModal(`${entryHeader(existing?"관리이력 수정":"관리이력 추가",equipment.name)}<div class="form">
     <label>구분<select id="maintenanceType">${["수리","정비","부속품 추가","부속품 교체","기타"].map(type=>`<option value="${type}" ${existing?.type===type?"selected":""}>${type}</option>`).join("")}</select></label>
     <label>날짜<input id="maintenanceDate" type="date" value="${esc(existing?.date || todayISO())}"></label>
     <label>작업 내용<textarea id="maintenanceContent" placeholder="작업 내용을 입력하세요">${esc(existing?.content || "")}</textarea></label>
     <div><div class="section-head" style="margin:4px 0"><div class="section-title" style="font-size:16px">부속품</div><button class="btn secondary compact" id="addMaintenancePart" type="button">+ 부속품 추가</button></div><div id="maintenanceParts"></div></div>
     <label>메모<textarea id="maintenanceMemo" placeholder="특이사항을 입력하세요">${esc(existing?.memo || "")}</textarea></label>
-    <div class="photo-choice"><label class="btn secondary">사진 촬영<input id="maintenanceCamera" type="file" accept="image/*" capture="environment" hidden></label><label class="btn secondary">사진 선택<input id="maintenanceFile" type="file" accept="image/*" hidden></label></div>
-    <div class="photo-preview ${maintenanceDraftPhoto?"has-photo":""}" id="maintenancePhotoPreview">${maintenanceDraftPhoto?`<img src="${maintenanceDraftPhoto}" alt="관리이력 사진">`:`<span>사진 없음</span>`}</div>
-    <button class="btn gray" id="removeMaintenancePhoto" type="button">사진 제거</button>
     <button class="btn primary sticky-save" id="saveMaintenance" type="button">저장</button></div>`);
   renderMaintenanceParts();
   document.getElementById("addMaintenancePart")?.addEventListener("click",()=>{ maintenanceDraftParts.push({name:"",qty:1}); renderMaintenanceParts(); });
-  ["maintenanceCamera","maintenanceFile"].forEach(id=>document.getElementById(id)?.addEventListener("change",async event=>{ try{ maintenanceDraftPhoto=await compressPhoto(event.target.files?.[0]); const preview=document.getElementById("maintenancePhotoPreview"); preview.classList.add("has-photo"); preview.innerHTML=`<img src="${maintenanceDraftPhoto}" alt="관리이력 사진">`; }catch(error){ showFeedback("error",error.message || "사진 처리 실패"); } }));
-  document.getElementById("removeMaintenancePhoto")?.addEventListener("click",()=>{ maintenanceDraftPhoto=""; const preview=document.getElementById("maintenancePhotoPreview"); preview.classList.remove("has-photo"); preview.innerHTML="<span>사진 없음</span>"; });
   document.getElementById("saveMaintenance")?.addEventListener("click",()=>saveMaintenance(equipmentId,logId));
 }
 
@@ -1751,7 +1767,7 @@ function saveMaintenance(equipmentId,logId=null){
   const equipment=state.equipment.find(item=>item.id===equipmentId); if(!equipment) return;
   const content=document.getElementById("maintenanceContent").value.trim();
   if(!content){ showFeedback("error","작업 내용을 입력해주세요"); return; }
-  const log={id:logId || uid(),type:document.getElementById("maintenanceType").value,date:document.getElementById("maintenanceDate").value || todayISO(),content,memo:document.getElementById("maintenanceMemo").value.trim(),photo:maintenanceDraftPhoto,parts:maintenanceDraftParts.map(part=>({name:part.name.trim(),qty:Math.max(1,Math.round(Number(part.qty || 1)))})).filter(part=>part.name),createdAt:new Date().toISOString()};
+  const log={id:logId || uid(),type:document.getElementById("maintenanceType").value,date:document.getElementById("maintenanceDate").value || todayISO(),content,memo:document.getElementById("maintenanceMemo").value.trim(),photo:"",parts:maintenanceDraftParts.map(part=>({name:part.name.trim(),qty:Math.max(1,Math.round(Number(part.qty || 1)))})).filter(part=>part.name),createdAt:new Date().toISOString()};
   equipment.maintenance=equipment.maintenance || [];
   const index=equipment.maintenance.findIndex(item=>item.id===logId);
   if(index>=0) equipment.maintenance[index]={...equipment.maintenance[index],...log}; else equipment.maintenance.push(log);
@@ -1796,78 +1812,9 @@ function entryHeader(title,subtitle){
   return `<div class="entry-modal-head"><div><div class="dialog-title" style="text-align:left;margin:0">${esc(title)}</div><div class="row-sub">${esc(subtitle)}</div></div><button class="entry-close" id="closeEntryModal" type="button" aria-label="닫기">×</button></div>`;
 }
 
-function photoPreviewHtml(photo){
-  return `<div class="photo-preview ${photo ? "has-photo" : ""}" id="resourcePhotoPreview">${photo ? `<img src="${photo}" alt="등록 사진">` : `<span>사진 없음</span>`}</div>`;
-}
-
-async function compressPhoto(file){
-  if(!file) return "";
-  if(!String(file.type || "").startsWith("image/")) throw new Error("이미지 파일만 등록할 수 있습니다");
-  const source = await new Promise((resolve,reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(new Error("사진을 읽지 못했습니다"));
-    reader.readAsDataURL(file);
-  });
-  const image = await new Promise((resolve,reject) => {
-    const target = new Image();
-    target.onload = () => resolve(target);
-    target.onerror = () => reject(new Error("지원하지 않는 사진 형식입니다"));
-    target.src = source;
-  });
-  const maxSize = 720;
-  const scale = Math.min(1,maxSize / Math.max(image.width,image.height));
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1,Math.round(image.width * scale));
-  canvas.height = Math.max(1,Math.round(image.height * scale));
-  canvas.getContext("2d").drawImage(image,0,0,canvas.width,canvas.height);
-  let output = canvas.toDataURL("image/jpeg",.68);
-  if(output.length > 300000) output = canvas.toDataURL("image/jpeg",.52);
-  if(output.length > 300000) output = canvas.toDataURL("image/jpeg",.4);
-  const estimated=JSON.stringify(state).length+output.length;
-  if(estimated>4500000) throw new Error("사진 저장공간이 부족합니다. 데이터 백업 후 기존 사진을 정리해주세요.");
-  return output;
-}
-
-function bindResourcePhotoInput(){
-  ["resourceCamera","resourceFile"].forEach(inputId=>document.getElementById(inputId)?.addEventListener("change", async event => {
-    try{
-      const photo = await compressPhoto(event.target.files?.[0]);
-      if(resourceDraftPhotos.length>=resourcePhotoLimit){showFeedback("warning",`사진은 최대 ${resourcePhotoLimit}장까지 등록할 수 있습니다`);return;}
-      resourceDraftPhotos.push(photo); resourceDraftPhoto=resourceDraftPhotos[0] || "";
-      renderResourcePhotoManager();
-      showFeedback("success","사진을 준비했습니다");
-    }catch(error){
-      resourceDraftPhoto = "";
-      showFeedback("error",error.message || "사진 처리 실패");
-    }
-  }));
-  document.getElementById("removeResourcePhoto")?.addEventListener("click", () => {
-    resourceDraftPhoto = "";
-    resourceDraftPhotos = [];
-    ["resourceCamera","resourceFile"].forEach(id=>{ const input=document.getElementById(id); if(input) input.value=""; });
-    const preview = document.getElementById("resourcePhotoPreview"); if(preview){ preview.classList.remove("has-photo"); preview.innerHTML="<span>사진 없음</span>"; }
-    showFeedback("info","사진을 제거했습니다");
-  });
-  renderResourcePhotoManager();
-}
-
-function renderResourcePhotoManager(){
-  const preview=document.getElementById("resourcePhotoPreview");if(!preview)return;preview.classList.toggle("has-photo",Boolean(resourceDraftPhotos.length));
-  preview.innerHTML=resourceDraftPhotos.length?resourceDraftPhotos.map((photo,index)=>`<div class="photo-thumb"><img src="${photo}" alt="장비 사진"><div class="photo-tools"><button type="button" data-photo-main="${index}">${index===0?"대표":"대표로"}</button><button type="button" data-photo-up="${index}" ${index===0?"disabled":""}>↑</button><button type="button" data-photo-down="${index}" ${index===resourceDraftPhotos.length-1?"disabled":""}>↓</button><button type="button" data-photo-remove="${index}">×</button></div></div>`).join(""):`<span>사진 없음</span>`;
-  preview.querySelectorAll("[data-photo-main]").forEach(button=>button.onclick=()=>{const index=Number(button.dataset.photoMain),[photo]=resourceDraftPhotos.splice(index,1);resourceDraftPhotos.unshift(photo);resourceDraftPhoto=resourceDraftPhotos[0]||"";renderResourcePhotoManager();});
-  preview.querySelectorAll("[data-photo-up]").forEach(button=>button.onclick=()=>{const index=Number(button.dataset.photoUp);[resourceDraftPhotos[index-1],resourceDraftPhotos[index]]=[resourceDraftPhotos[index],resourceDraftPhotos[index-1]];resourceDraftPhoto=resourceDraftPhotos[0]||"";renderResourcePhotoManager();});
-  preview.querySelectorAll("[data-photo-down]").forEach(button=>button.onclick=()=>{const index=Number(button.dataset.photoDown);[resourceDraftPhotos[index+1],resourceDraftPhotos[index]]=[resourceDraftPhotos[index],resourceDraftPhotos[index+1]];resourceDraftPhoto=resourceDraftPhotos[0]||"";renderResourcePhotoManager();});
-  preview.querySelectorAll("[data-photo-remove]").forEach(button=>button.onclick=()=>{resourceDraftPhotos.splice(Number(button.dataset.photoRemove),1);resourceDraftPhoto=resourceDraftPhotos[0]||"";renderResourcePhotoManager();});
-}
-
 function simpleResourceForm(kind,existing=null){
   const isEquipment = kind === "equipment";
   const currentWarehouse = existing?.place || selectedWarehouse || warehouses[0];
-  const currentPhoto = existing?.photo || "";
-  resourcePhotoLimit = isEquipment ? 5 : 1;
-  resourceDraftPhotos = isEquipment ? [...(existing?.photos || (currentPhoto?[currentPhoto]:[]))] : (currentPhoto?[currentPhoto]:[]);
-  resourceDraftPhoto = resourceDraftPhotos[0] || "";
   openEntryModal(`
     ${entryHeader(existing ? `${isEquipment ? "장비" : "자재"} 수정` : `${isEquipment ? "장비" : "자재"} 빠른 등록`,currentWarehouse)}
     <div class="form entry-form simple-resource-form">
@@ -1877,12 +1824,8 @@ function simpleResourceForm(kind,existing=null){
       <label>수량<input id="resourceQty" type="number" inputmode="decimal" min="0" step="0.1" value="${Number(existing?.qty || (isEquipment ? 1 : 0))||""}"></label>
       <label>보관창고<select id="resourceWarehouse">${warehouses.map(name => `<option value="${esc(name)}" ${name === currentWarehouse ? "selected" : ""}>${esc(name)}</option>`).join("")}</select></label>
       <label>메모<textarea id="resourceMemo" placeholder="필요한 내용만 간단히 입력하세요">${esc(existing?.memo || existing?.etc || "")}</textarea></label>
-      <div class="photo-choice"><label class="btn secondary">사진 촬영<input id="resourceCamera" type="file" accept="image/*" capture="environment" hidden></label><label class="btn secondary">사진 선택<input id="resourceFile" type="file" accept="image/*" hidden></label></div>
-      <div class="photo-preview ${resourceDraftPhotos.length?"has-photo":""}" id="resourcePhotoPreview"></div>
-      <button class="btn gray" id="removeResourcePhoto" type="button">사진 제거</button>
       <button class="btn primary" id="saveSimpleResource" type="button">저장</button>
     </div>`);
-  bindResourcePhotoInput();
   document.getElementById("saveSimpleResource")?.addEventListener("click", () => saveSimpleResource(kind,existing?.id || null));
 }
 
@@ -1900,7 +1843,7 @@ function saveSimpleResource(kind,id=null){
   if(!Number.isFinite(qty) || qty < 0){ showFeedback("error","수량을 확인해주세요"); return; }
   if(kind === "material"){
     if(state.catalog.some(item => item.name === name)){ showFeedback("error","이미 등록된 자재명입니다"); return; }
-    const item = {cat:"기타",name,unit:"개",spec,kind:"consume",memo,photo:resourceDraftPhoto,updatedAt:new Date().toISOString()};
+    const item = {cat:"기타",name,unit:"개",spec,kind:"consume",memo,photo:"",updatedAt:new Date().toISOString()};
     ensureCatalogItem(item);
     if(!state.stock[place]) state.stock[place] = {};
     state.stock[place][name] = qty;
@@ -1910,12 +1853,12 @@ function saveSimpleResource(kind,id=null){
     if(!equipment && state.equipment.some(item => item.name === name && item.place === place)){ showFeedback("error","이 창고에 같은 장비명이 있습니다"); return; }
     if(equipment){
       const previousPlace=equipment.place;
-      Object.assign(equipment,{cat:category,name,spec,detail:spec,model:equipment.model || spec,qty,place,memo,etc:memo,photo:resourceDraftPhotos[0] || "",photos:resourceDraftPhotos.slice(0,5),updatedAt:new Date().toISOString()});
+      Object.assign(equipment,{cat:category,name,spec,detail:spec,model:equipment.model || spec,qty,place,memo,etc:memo,photo:"",photos:[],updatedAt:new Date().toISOString()});
       equipment.maintenance=equipment.maintenance || [];
       equipment.moves=equipment.moves || [];
       if(previousPlace && previousPlace!==place) equipment.moves.push({id:uid(),date:todayISO(),from:previousPlace,to:place,memo:"장비 정보 수정에서 보관창고 변경",createdAt:new Date().toISOString()});
     }else{
-      state.equipment.push({id:uid(),cat:category,name,spec,detail:spec,model:spec,qty,place,memo,etc:memo,photo:resourceDraftPhotos[0] || "",photos:resourceDraftPhotos.slice(0,5),battery:"",fuel:"",status:"정상",maintenance:[],moves:[],updatedAt:new Date().toISOString()});
+      state.equipment.push({id:uid(),cat:category,name,spec,detail:spec,model:spec,qty,place,memo,etc:memo,photo:"",photos:[],battery:"",fuel:"",status:"정상",maintenance:[],moves:[],updatedAt:new Date().toISOString()});
     }
   }
   save();
@@ -1950,14 +1893,138 @@ function saveMaterialTransfer(){
   save(); closeEntryModal(); showFeedback("success",`${from} → ${to} 이동 완료`); renderWarehouse();
 }
 
+function buildCloudResourceState(){
+  return stripStoredPhotos(JSON.parse(JSON.stringify({
+    warehouses:state.warehouses || [],
+    catalog:state.catalog || [],
+    stock:state.stock || {},
+    warehouseInfos:state.warehouseInfos || {},
+    warehouseKinds:state.warehouseKinds || {},
+    equipment:state.equipment || [],
+    equipmentCategories:state.equipmentCategories || [],
+    assetOps:state.assetOps || {},
+    logs:state.logs || []
+  })));
+}
+
 function buildResourceSnapshot(place=""){
   const selectedWarehouses=place?[place]:[...warehouses];
   return {
     kind:"victor-resource-share",formatVersion:1,appVersion:VERSION,createdAt:new Date().toISOString(),scope:place || "전체",
+    resourceState:place?"":buildCloudResourceState(),
     warehouses:selectedWarehouses,
     materials:selectedWarehouses.flatMap(warehouse=>catalog.map(item=>({warehouse,name:item.name,cat:item.cat,spec:item.spec || "",qty:Number(state.stock[warehouse]?.[item.name] || 0),unit:item.unit,memo:item.memo || ""}))),
     equipment:(state.equipment || []).filter(item=>!place || item.place===place).map(item=>({id:item.id,name:item.name,cat:item.cat || "기타장비",spec:item.spec || item.detail || "",model:item.model || "",qty:Number(item.qty || 0),warehouse:item.place || "",memo:item.memo || item.etc || "",maintenanceCount:(item.maintenance || []).length}))
   };
+}
+
+function snapshotSummary(snapshot){
+  const resource=resourceStateFromSnapshot(snapshot);
+  const materials=Array.isArray(snapshot?.materials)?snapshot.materials:[];
+  const equipment=Array.isArray(snapshot?.equipment)?snapshot.equipment:[];
+  const materialNames=new Set(materials.map(item=>item.name).filter(Boolean));
+  const warehouseNames=new Set([...(resource?.warehouses || []),...(snapshot?.warehouses || [])].filter(Boolean));
+  return {
+    date:snapshot?.cloudUpdatedAt || snapshot?.cloudSharedAt || snapshot?.createdAt || "",
+    warehouses:warehouseNames.size,
+    materials:materialNames.size || (resource?.catalog || []).length,
+    equipment:equipment.length || (resource?.equipment || []).length,
+    title:snapshot?.title || "Victor 자원현황"
+  };
+}
+
+function snapshotCautionText(snapshot){
+  const meta=readCloudShareMeta();
+  const incoming=snapshot?.cloudUpdatedAt || snapshot?.cloudSharedAt || snapshot?.createdAt || "";
+  const previous=meta.lastAppliedCloudAt || "";
+  if(incoming && previous && new Date(incoming).getTime() < new Date(previous).getTime()){
+    return "\n주의: 이전에 적용한 공유자료보다 오래된 자료일 수 있습니다.";
+  }
+  return "";
+}
+
+function snapshotSummaryText(snapshot,{includeCaution=false}={}){
+  const summary=snapshotSummary(snapshot);
+  return [
+    `자료: ${summary.title}`,
+    `기준시각: ${fmtDateTime(summary.date)}`,
+    `보관장소: ${summary.warehouses}곳`,
+    `자재: ${summary.materials}종`,
+    `장비: ${summary.equipment}개`,
+    "기존 이력과 메모는 유지됩니다."
+  ].join("\n") + (includeCaution ? snapshotCautionText(snapshot) : "");
+}
+
+function resourceStateFromSnapshot(snapshot){
+  if(snapshot?.resourceState && typeof snapshot.resourceState==="object") return snapshot.resourceState;
+  const sourceWarehouses=[...(snapshot?.warehouses || []),...(snapshot?.materials || []).map(item=>item.warehouse),...(snapshot?.equipment || []).map(item=>item.warehouse)].filter(Boolean);
+  const nextWarehouses=[...new Set(sourceWarehouses)];
+  const materialMap=new Map();
+  (snapshot?.materials || []).forEach(item=>{
+    if(!item?.name) return;
+    if(!materialMap.has(item.name)) materialMap.set(item.name,{cat:item.cat || "기타",name:item.name,unit:item.unit || "개",spec:item.spec || "",kind:item.kind || "consume",memo:item.memo || ""});
+  });
+  const nextCatalog=[...materialMap.values()];
+  const nextStock={};
+  nextWarehouses.forEach(warehouse=>{nextStock[warehouse]={};nextCatalog.forEach(item=>nextStock[warehouse][item.name]=0);});
+  (snapshot?.materials || []).forEach(item=>{if(item?.warehouse&&item?.name){nextStock[item.warehouse]=nextStock[item.warehouse]||{};nextStock[item.warehouse][item.name]=Number(item.qty||0);}});
+  const nextEquipment=(snapshot?.equipment || []).map(item=>({
+    id:item.id || uid(),
+    cat:item.cat || "기타장비",
+    name:item.name || "장비",
+    spec:item.spec || item.model || "",
+    detail:item.spec || item.model || "",
+    model:item.model || item.spec || "",
+    qty:Number(item.qty || 0),
+    place:item.warehouse || "",
+    memo:item.memo || "",
+    etc:item.memo || "",
+    status:"정상",
+    maintenance:[],
+    moves:[]
+  }));
+  return {
+    warehouses:nextWarehouses,
+    catalog:nextCatalog,
+    stock:nextStock,
+    warehouseInfos:Object.fromEntries(nextWarehouses.map(name=>[name,{memo:"",updated:""}])),
+    warehouseKinds:Object.fromEntries(nextWarehouses.map(name=>[name,name==="방제지휘차량"?"차량":name==="소형방제정"?"함정":"창고"])),
+    equipment:nextEquipment,
+    equipmentCategories:[...new Set(nextEquipment.map(item=>item.cat || "기타장비"))],
+    assetOps:{},
+    logs:[]
+  };
+}
+
+async function applySharedSnapshot(snapshot,source="공유자료"){
+  if(snapshot?.kind!=="victor-resource-share")throw new Error("공유자료 형식 오류");
+  const next=resourceStateFromSnapshot(snapshot);
+  if(!next?.warehouses?.length)throw new Error("적용할 보관 자료가 없습니다");
+  if(!await askConfirm(`${source} 적용 미리보기`,`${snapshotSummaryText(snapshot,{includeCaution:true})}\n\n현재 앱의 보관·자재·장비 내용이 이 자료로 바뀝니다.\n계속할까요?`,"적용"))return false;
+  state=normalize({
+    ...state,
+    warehouses:next.warehouses,
+    catalog:next.catalog,
+    stock:next.stock,
+    warehouseInfos:next.warehouseInfos || {},
+    warehouseKinds:next.warehouseKinds || {},
+    equipment:next.equipment || [],
+    equipmentCategories:next.equipmentCategories || [],
+    assetOps:next.assetOps || {},
+    logs:next.logs || []
+  });
+  save();
+  refreshGlobals(state);
+  sharedSnapshot=null;
+  page="warehouse";
+  warehouseViewMode="warehouses";
+  selectedWarehouse=null;
+  updateBottomNav();
+  render();
+  scrollToTop();
+  saveCloudShareMeta({lastAppliedAt:new Date().toISOString(),lastAppliedSource:source,lastAppliedCloudAt:snapshot?.cloudUpdatedAt || snapshot?.cloudSharedAt || snapshot?.createdAt || ""});
+  showFeedback("success","공유자료를 현재 앱에 적용했습니다");
+  return true;
 }
 
 function downloadBlob(blob,filename){
@@ -1980,11 +2047,11 @@ async function shareResourceSnapshot(place=""){
 function loadSharedResourceFile(file){
   if(!file) return;
   const reader=new FileReader();
-  reader.onload=()=>{
+  reader.onload=async()=>{
     try{
       const data=JSON.parse(reader.result);
       if(data?.kind!=="victor-resource-share" || !Array.isArray(data.materials) || !Array.isArray(data.equipment)) throw new Error("형식 오류");
-      sharedSnapshot=data; renderSharedSnapshot();
+      await applySharedSnapshot(data,"받은 자료");
     }catch(error){ showFeedback("error","올바른 Victor 공유자료가 아닙니다"); }
   };
   reader.onerror=()=>showFeedback("error","공유자료를 읽지 못했습니다");
@@ -2038,7 +2105,7 @@ function openCloudShareSettings(){
   const config=cloudShareConfig();
   openEntryModal(`${entryHeader("클라우드 공유 설정","Supabase 읽기 전용 공유판")}
     <div class="form">
-      <div class="callout">공유 현황 보기는 기본 설정으로 바로 사용할 수 있습니다. 클라우드 올리기를 담당하는 기기만 아래 설정을 저장하세요. Secret key는 절대 넣지 마세요.</div>
+      <div class="callout">기본 공유 설정은 앱에 들어 있어 바로 올리기·적용을 사용할 수 있습니다. 값이 바뀌었을 때만 수정하세요. Secret key는 절대 넣지 마세요.</div>
       <label>Supabase URL<input id="cloudShareUrl" inputmode="url" placeholder="https://xxxx.supabase.co" value="${esc(config.url)}"></label>
       <label>Publishable key<textarea id="cloudShareKey" placeholder="sb_publishable_...">${esc(config.key)}</textarea></label>
       <label>공유 ID(site_id)<input id="cloudShareSiteId" placeholder="victor-main" value="${esc(config.siteId)}"></label>
@@ -2085,12 +2152,22 @@ async function testCloudShareConnection(){
 
 async function uploadCloudShareSnapshot(){
   closeMenu();
-  if(!cloudWriteReady()){openCloudShareSettings();showFeedback("info","올리는 기기에서 먼저 클라우드 설정을 저장해주세요");return;}
+  const config=cloudReadConfig();
+  if(!cloudShareReady(config)){openCloudShareSettings();showFeedback("info","클라우드 설정을 확인해주세요");return;}
   try{
-    const config=cloudShareConfig(),snapshot=buildResourceSnapshot();
+    const snapshot=buildResourceSnapshot();
     snapshot.cloudSharedAt=new Date().toISOString();
-    await supabaseRest("resource_snapshots",{cloudConfig:config,method:"POST",headers:{"Content-Type":"application/json","Prefer":"return=minimal"},body:JSON.stringify({site_id:config.siteId,title:config.title,snapshot,updated_at:new Date().toISOString()})});
-    showFeedback("success","클라우드 공유 현황을 올렸습니다");
+    if(!await askConfirm("클라우드 올리기 확인",`${snapshotSummaryText(snapshot)}\n\n현재 내 보관 현황을 클라우드 공유자료로 올릴까요?\n다른 기기에서는 이 자료가 최신으로 적용됩니다.`,"올리기"))return;
+    const payload={site_id:config.siteId,title:config.title,snapshot,updated_at:new Date().toISOString()};
+    const existing=await supabaseRest(`resource_snapshots?select=id&site_id=eq.${encodeURIComponent(config.siteId)}&order=updated_at.desc&limit=1`,{cloudConfig:config});
+    if(existing?.[0]?.id){
+      await supabaseRest(`resource_snapshots?id=eq.${encodeURIComponent(existing[0].id)}`,{cloudConfig:config,method:"PATCH",headers:{"Content-Type":"application/json","Prefer":"return=minimal"},body:JSON.stringify(payload)});
+    }else{
+      await supabaseRest("resource_snapshots",{cloudConfig:config,method:"POST",headers:{"Content-Type":"application/json","Prefer":"return=minimal"},body:JSON.stringify(payload)});
+    }
+    saveCloudShareMeta({lastUploadedAt:snapshot.cloudSharedAt,lastUploadedSiteId:config.siteId});
+    showFeedback("success","클라우드에 올렸습니다 · 다른 기기에서 바로 적용 가능");
+    if(page==="home") renderHome();
   }catch(error){console.warn("[Victor] 클라우드 공유 업로드 실패",error);showFeedback("error",cloudErrorMessage(error));}
 }
 
@@ -2114,42 +2191,8 @@ async function loadCloudShareSnapshot(){
       createdAt:snapshot.createdAt||row.updated_at||row.created_at,
       cloudUpdatedAt:row.updated_at||row.created_at
     };
-    renderSharedSnapshot();
+    await applySharedSnapshot(sharedSnapshot,"클라우드 공유자료");
   }catch(error){console.warn("[Victor] 클라우드 공유 조회 실패",error);showFeedback("error",cloudErrorMessage(error));}
-}
-
-function renderSharedSnapshot(){
-  if(!sharedSnapshot) return;
-  page="shared"; updateBottomNav(); scrollToTop();
-  const materials=Array.isArray(sharedSnapshot.materials)?sharedSnapshot.materials:[];
-  const equipment=Array.isArray(sharedSnapshot.equipment)?sharedSnapshot.equipment:[];
-  const warehouses=[...new Set([...(sharedSnapshot.warehouses||[]),...materials.map(item=>item.warehouse),...equipment.map(item=>item.warehouse)].filter(Boolean))];
-  const created=new Date(sharedSnapshot.createdAt);
-  const createdText=Number.isNaN(created.getTime())?"작성일 미상":created.toLocaleString("ko-KR");
-  const materialTypes=new Set(materials.map(item=>item.name)).size;
-  const equipmentTotal=equipment.reduce((sum,item)=>sum+Number(item.qty||0),0);
-  document.getElementById("headTitle").innerHTML=`<div class="page-title">공유 현황</div><div class="date">읽기 전용 · ${esc(sharedSnapshot.scope || "전체")}</div>`;
-  view.innerHTML=`<button class="back" id="closeSharedSnapshot" type="button">‹ 보관</button>
-    <div class="shared-hero card">
-      <div><div class="section-title">${esc(sharedSnapshot.title || "Victor 자원현황")}</div><div class="row-sub">내 데이터에는 반영되지 않는 읽기 전용 현황판입니다.</div></div>
-      <div class="summary-grid">
-        <div class="summary-pill"><div class="summary-label">자재</div><div class="summary-value">${materialTypes}종</div></div>
-        <div class="summary-pill"><div class="summary-label">장비</div><div class="summary-value">${equipmentTotal}대</div></div>
-        <div class="summary-pill"><div class="summary-label">창고</div><div class="summary-value">${warehouses.length}곳</div></div>
-      </div>
-      <div class="shared-meta">업데이트 ${esc(createdText)} · ${esc(sharedSnapshot.appVersion || "버전 미상")}</div>
-    </div>
-    ${warehouses.length?warehouses.map(warehouse=>{
-      const mats=materials.filter(item=>item.warehouse===warehouse);
-      const eqs=equipment.filter(item=>item.warehouse===warehouse);
-      return `<div class="card shared-warehouse"><div class="shared-warehouse-title"><span>${esc(warehouse)}</span><small>자재 ${mats.length}종 · 장비 ${eqs.length}건</small></div>
-        <div class="shared-subtitle">자재</div>
-        ${mats.length?mats.map(item=>`<div class="stock-line ${Number(item.qty||0)===0?"zero-stock":""}"><div><div class="stock-name">${esc(item.name)}</div><div class="stock-spec">${esc(item.spec || item.cat || "")}</div></div><div class="stock-qty">${materialQtyText(item.qty,item.unit,item)}</div></div>`).join(""):`<div class="emptybox compact-empty">자재 없음</div>`}
-        <div class="shared-subtitle">장비</div>
-        ${eqs.length?eqs.map(item=>`<div class="stock-line ${Number(item.qty||0)===0?"zero-stock":""}"><div><div class="stock-name">${esc(item.name)}</div><div class="stock-spec">${esc(item.spec || item.model || "규격 없음")}${item.memo?` · ${esc(item.memo)}`:""}</div></div><div class="stock-qty">${Number(item.qty||0)}대</div></div>`).join(""):`<div class="emptybox compact-empty">장비 없음</div>`}
-      </div>`;
-    }).join(""):`<div class="emptybox">공유 현황 자료가 없습니다.</div>`}`;
-  document.getElementById("closeSharedSnapshot")?.addEventListener("click",()=>{ sharedSnapshot=null; page="warehouse"; warehouseViewMode="warehouses"; selectedWarehouse=null; updateBottomNav(); render(); });
 }
 
 function bindGlobal(){
@@ -2157,13 +2200,40 @@ function bindGlobal(){
   document.querySelectorAll(".nav").forEach(b => b.addEventListener("click", () => setPage(b.dataset.page)));
 
   document.getElementById("moreBtn")?.addEventListener("click", () => openMenu());
-  document.getElementById("closeMoreMenu")?.addEventListener("click", () => closeMenu());
 
   document.addEventListener("click", e => {
     const menu = document.getElementById("moreMenu");
     const btn = document.getElementById("moreBtn");
     if(e.target === menu || (!menu.contains(e.target) && !btn.contains(e.target))) closeMenu();
   });
+
+  const menu = document.getElementById("moreMenu");
+  const menuSheet = menu?.querySelector(".menu-sheet");
+  let menuDragStartY = 0;
+  let menuDragDistance = 0;
+  let menuDragging = false;
+  menuSheet?.addEventListener("touchstart", event => {
+    if(!menu.classList.contains("show") || menuSheet.scrollTop > 0) return;
+    menuDragging = true;
+    menuDragStartY = event.touches[0].clientY;
+    menuDragDistance = 0;
+    menuSheet.classList.add("dragging");
+  }, {passive:true});
+  menuSheet?.addEventListener("touchmove", event => {
+    if(!menuDragging) return;
+    menuDragDistance = Math.max(0, event.touches[0].clientY - menuDragStartY);
+    if(menuDragDistance > 0){
+      menuSheet.style.transform = `translateY(${menuDragDistance}px)`;
+      menu.style.backgroundColor = `rgba(16,24,40,${Math.max(.12,.35 - menuDragDistance / 700)})`;
+    }
+  }, {passive:true});
+  menuSheet?.addEventListener("touchend", () => {
+    if(!menuDragging) return;
+    menuDragging = false;
+    menuSheet.classList.remove("dragging");
+    if(menuDragDistance > 74) closeMenu();
+    else resetMenuMotion();
+  }, {passive:true});
 
   document.getElementById("backupBtn")?.addEventListener("click", () => { closeMenu(); backup(); });
   updateBackupLabel();
@@ -2172,8 +2242,8 @@ function bindGlobal(){
   document.getElementById("shareResourcesBtn")?.addEventListener("click",()=>{closeMenu();shareResourceSnapshot();});
   document.getElementById("openSharedResourcesBtn")?.addEventListener("click",()=>{closeMenu();const input=document.getElementById("sharedResourceFile");input.value="";input.click();});
   document.getElementById("cloudShareSettingsBtn")?.addEventListener("click",()=>{closeMenu();openCloudShareSettings();});
-  document.getElementById("uploadCloudShareBtn")?.addEventListener("click",uploadCloudShareSnapshot);
-  document.getElementById("viewCloudShareBtn")?.addEventListener("click",loadCloudShareSnapshot);
+  document.getElementById("uploadCloudShareBtn")?.addEventListener("click",()=>{closeMenu();uploadCloudShareSnapshot();});
+  document.getElementById("viewCloudShareBtn")?.addEventListener("click",()=>{closeMenu();loadCloudShareSnapshot();});
   document.getElementById("sharedResourceFile")?.addEventListener("change",event=>{const file=event.target.files?.[0];if(file)loadSharedResourceFile(file);});
   document.getElementById("resetBtn")?.addEventListener("click", () => { closeMenu(); resetAll(); });
   document.getElementById("trashBtn")?.addEventListener("click",openTrash);
@@ -2213,7 +2283,18 @@ function openMenu(push=true){
 function closeMenu(fromPop=false){
   const menu=document.getElementById("moreMenu");
   if(menu) menu.classList.remove("show");
+  resetMenuMotion();
   menuHistoryOpen=false;
+}
+
+function resetMenuMotion(){
+  const menu=document.getElementById("moreMenu");
+  const sheet=menu?.querySelector(".menu-sheet");
+  if(sheet){
+    sheet.classList.remove("dragging");
+    sheet.style.transform="";
+  }
+  if(menu) menu.style.backgroundColor="";
 }
 
 function restoreNavigation(nav){
@@ -2326,7 +2407,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m24")
+      navigator.serviceWorker.register("./sw.js?v=0190m29")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });

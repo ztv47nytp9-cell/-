@@ -28,6 +28,22 @@ const MIGRATE_KEYS = [
   "victor_state"
 ];
 
+function stripStoredPhotos(target, seen = new WeakSet()){
+  if(!target || typeof target !== "object") return target;
+  if(seen.has(target)) return target;
+  seen.add(target);
+  if(Array.isArray(target)){
+    target.forEach(item => stripStoredPhotos(item, seen));
+    return target;
+  }
+  Object.keys(target).forEach(key => {
+    if(key === "photo") target[key] = "";
+    else if(key === "photos") target[key] = [];
+    else stripStoredPhotos(target[key], seen);
+  });
+  return target;
+}
+
 const defaultWarehouses = ["통영해양경찰서","전용부두","VTS","장승포","한국석유공사 거제지사 창고","방제지휘차량","소형방제정"];
 const defaultWarehouseKinds = {"통영해양경찰서":"창고","전용부두":"창고","VTS":"창고","장승포":"창고","한국석유공사 거제지사 창고":"창고","방제지휘차량":"차량","소형방제정":"함정"};
 
@@ -441,7 +457,7 @@ function normalize(raw){
         spec:typeof i.spec === "string" ? i.spec : "",
         kind:i.kind === "returnable" ? "returnable" : "consume",
         memo:typeof i.memo === "string" ? i.memo : "",
-        photo:typeof i.photo === "string" && i.photo.startsWith("data:image/") ? i.photo : "",
+        photo:"",
         updatedAt:typeof i.updatedAt === "string" ? i.updatedAt : ""
       });
     });
@@ -597,8 +613,8 @@ function normalize(raw){
     qty: Number.isFinite(Number(e.qty)) && Number(e.qty) >= 0 ? Number(e.qty) : 1,
     memo: typeof e.memo === "string" ? e.memo : (typeof e.etc === "string" ? e.etc : ""),
     updatedAt: typeof e.updatedAt === "string" ? e.updatedAt : "",
-    photo: typeof e.photo === "string" && e.photo.startsWith("data:image/") ? e.photo : "",
-    photos: [...new Set([...(Array.isArray(e.photos) ? e.photos : []),e.photo].filter(photo => typeof photo === "string" && photo.startsWith("data:image/")))].slice(0,5),
+    photo:"",
+    photos:[],
     accessories: Array.isArray(e.accessories) ? e.accessories.filter(part => part && typeof part === "object").map(part => ({
       id: typeof part.id === "string" && part.id ? part.id : uid(),
       name: String(part.name || "").trim(),
@@ -613,7 +629,7 @@ function normalize(raw){
       date: typeof log.date === "string" && log.date ? log.date : todayISO(),
       content: typeof log.content === "string" ? log.content : "",
       memo: typeof log.memo === "string" ? log.memo : "",
-      photo: typeof log.photo === "string" && log.photo.startsWith("data:image/") ? log.photo : "",
+      photo:"",
       parts: Array.isArray(log.parts) ? log.parts.filter(part => part && typeof part === "object").map(part => ({name:String(part.name || ""),qty:Number(part.qty || 0)})).filter(part => part.name) : [],
       createdAt: typeof log.createdAt === "string" ? log.createdAt : new Date().toISOString()
     })) : [],
@@ -633,6 +649,7 @@ function normalize(raw){
   if(!("survey" in state)) state.survey = null;
   if(!Array.isArray(state.trash)) state.trash = [];
   if(!Array.isArray(state.logs)) state.logs = [];
+  stripStoredPhotos(state);
   refreshGlobals(state);
   return state;
 }
@@ -657,6 +674,7 @@ function loadState(){
 }
 
 function save(){
+  stripStoredPhotos(state);
   refreshGlobals(state);
   try{
     localStorage.setItem(KEY, JSON.stringify(state));
