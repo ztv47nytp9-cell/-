@@ -1,9 +1,9 @@
-const CACHE_NAME = "victor-alpha-0-19-0m-cache-v29";
+﻿const CACHE_NAME = "victor-alpha-0-19-0m-cache-v30";
 const CORE_ASSETS = [
   "./index.html",
-  "./style.css?v=0190m29",
-  "./storage.js?v=0190m29",
-  "./app.js?v=0190m29",
+  "./style.css?v=0190m30",
+  "./storage.js?v=0190m30",
+  "./app.js?v=0190m30",
   "./manifest.json",
   "./icons/icon-180.png",
   "./icons/icon-192.png",
@@ -61,3 +61,4 @@ self.addEventListener("fetch", event => {
 
   event.respondWith(networkFirst(request));
 });
+

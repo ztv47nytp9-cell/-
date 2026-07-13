@@ -1,4 +1,4 @@
-let state = loadState();
+﻿let state = loadState();
 let page = "home";
 let selectedWarehouse = null;
 let draftItems = [];
@@ -411,7 +411,7 @@ function renderHome(){
   document.getElementById("restartFastSurvey")?.addEventListener("click",restartFastSurvey);
   document.getElementById("undoLastSurvey")?.addEventListener("click",undoLastSurvey);
   document.getElementById("homeAllResources")?.addEventListener("click", () => openStorageView("materials"));
-  document.getElementById("homeShareResources")?.addEventListener("click", uploadCloudShareSnapshot);
+  document.getElementById("homeShareResources")?.addEventListener("click", openCloudShareActions);
   document.getElementById("homePending")?.addEventListener("click", () => { historyFilter = "pending"; historyDateFilter = "all"; historyFlowFilter = "all"; setPage("history"); });
   document.getElementById("homeMemoShortcut")?.addEventListener("click", () => { editingMemoId=null; setPage("memo"); });
   document.getElementById("homeActivityHistory")?.addEventListener("click", () => { homeActivityTab="history"; renderHome(); });
@@ -1933,6 +1933,12 @@ function snapshotSummary(snapshot){
   };
 }
 
+function snapshotTotalQuantity(snapshot){
+  const materialQty=(Array.isArray(snapshot?.materials)?snapshot.materials:[]).reduce((sum,item)=>sum+Math.max(0,Number(item.qty||0)),0);
+  const equipmentQty=(Array.isArray(snapshot?.equipment)?snapshot.equipment:[]).reduce((sum,item)=>sum+Math.max(0,Number(item.qty||0)),0);
+  return materialQty + equipmentQty;
+}
+
 function snapshotCautionText(snapshot){
   const meta=readCloudShareMeta();
   const incoming=snapshot?.cloudUpdatedAt || snapshot?.cloudSharedAt || snapshot?.createdAt || "";
@@ -2131,6 +2137,24 @@ function saveCloudShareSettings(close=false){
   return true;
 }
 
+function openCloudShareActions(){
+  const meta=readCloudShareMeta();
+  openEntryModal(`${entryHeader("자원 공유","클라우드 공유자료를 적용하거나 올립니다")}
+    <div class="form">
+      <div class="callout">PC나 새 기기에서 자료를 받아오려면 먼저 <strong>공유자료 적용</strong>을 누르세요. <strong>클라우드 올리기</strong>는 현재 이 기기의 보관 현황을 공유자료로 덮어씁니다.</div>
+      <div class="cloud-action-summary">
+        <span>마지막 올림 ${esc(fmtDateTime(meta.lastUploadedAt))}</span>
+        <span>마지막 적용 ${esc(fmtDateTime(meta.lastAppliedAt))}</span>
+      </div>
+      <button class="btn primary" id="cloudApplyNow" type="button">공유자료 적용</button>
+      <button class="btn secondary" id="cloudUploadNow" type="button">클라우드 올리기</button>
+      <button class="btn gray" id="cloudSettingsNow" type="button">공유 설정</button>
+    </div>`);
+  document.getElementById("cloudApplyNow")?.addEventListener("click",()=>{closeEntryModal();loadCloudShareSnapshot();});
+  document.getElementById("cloudUploadNow")?.addEventListener("click",()=>{closeEntryModal();uploadCloudShareSnapshot();});
+  document.getElementById("cloudSettingsNow")?.addEventListener("click",()=>{closeEntryModal();openCloudShareSettings();});
+}
+
 async function supabaseRest(path,options={}){
   const {cloudConfig,...fetchOptions}=options;
   const config=cloudConfig || cloudShareConfig();
@@ -2157,7 +2181,8 @@ async function uploadCloudShareSnapshot(){
   try{
     const snapshot=buildResourceSnapshot();
     snapshot.cloudSharedAt=new Date().toISOString();
-    if(!await askConfirm("클라우드 올리기 확인",`${snapshotSummaryText(snapshot)}\n\n현재 내 보관 현황을 클라우드 공유자료로 올릴까요?\n다른 기기에서는 이 자료가 최신으로 적용됩니다.`,"올리기"))return;
+    const emptyWarning=snapshotTotalQuantity(snapshot)===0 ? "\n\n주의: 현재 이 기기의 총 보관량이 0입니다. 빈 자료로 클라우드를 덮어쓸 수 있습니다." : "";
+    if(!await askConfirm("클라우드 올리기 확인",`${snapshotSummaryText(snapshot)}${emptyWarning}\n\n현재 내 보관 현황을 클라우드 공유자료로 올릴까요?\n다른 기기에서는 이 자료가 최신으로 적용됩니다.`,"올리기"))return;
     const payload={site_id:config.siteId,title:config.title,snapshot,updated_at:new Date().toISOString()};
     const existing=await supabaseRest(`resource_snapshots?select=id&site_id=eq.${encodeURIComponent(config.siteId)}&order=updated_at.desc&limit=1`,{cloudConfig:config});
     if(existing?.[0]?.id){
@@ -2407,7 +2432,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m29")
+      navigator.serviceWorker.register("./sw.js?v=0190m30")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
@@ -2415,3 +2440,4 @@ function init(){
 }
 
 init();
+
