@@ -2,6 +2,8 @@
 *{box-sizing:border-box}
 html{touch-action:manipulation;-webkit-text-size-adjust:100%}
 html,body{margin:0;padding:0;background:var(--light);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif}
+html,body,.content,.dialog,.menu-sheet{scrollbar-width:none;-ms-overflow-style:none}
+html::-webkit-scrollbar,body::-webkit-scrollbar,.content::-webkit-scrollbar,.dialog::-webkit-scrollbar,.menu-sheet::-webkit-scrollbar{display:none;width:0;height:0}
 body.menu-open{position:fixed;left:0;right:0;width:100%;overflow:hidden}
 button,input,select,textarea{font:inherit}
 button{cursor:pointer;-webkit-tap-highlight-color:transparent}
@@ -59,10 +61,12 @@ textarea{min-height:74px;resize:vertical}
 .nav{border:0;background:transparent;color:#344054;font-size:13px;font-weight:750;padding:12px 4px;border-radius:12px}
 .nav.active{color:var(--blue);font-weight:900}
 .nav.active::after{content:"";display:block;width:24px;height:3px;background:var(--blue);border-radius:99px;margin:7px auto 0}
-.menu{display:flex;position:fixed;inset:0;z-index:90;background:rgba(16,24,40,0);align-items:flex-end;justify-content:center;padding:18px 12px 0;opacity:0;pointer-events:none;transition:opacity .18s ease,background-color .18s ease}
-.menu.show{opacity:1;pointer-events:auto;background:rgba(16,24,40,.35)}
-.menu-sheet{width:min(520px,100%);max-height:86dvh;overflow-y:auto;background:#F7F9FC;border-radius:24px 24px 0 0;padding:10px 14px calc(18px + env(safe-area-inset-bottom));box-shadow:0 -14px 36px rgba(16,24,40,.2);transform:translateY(22px);transition:transform .22s cubic-bezier(.2,.8,.2,1)}
+.menu{display:flex;position:fixed;inset:0;z-index:90;background:rgba(16,24,40,0);align-items:flex-end;justify-content:center;padding:18px 12px 0;opacity:0;pointer-events:none;transition:opacity .28s ease,background-color .28s ease}
+.menu.show{opacity:1;pointer-events:auto;background:rgba(16,24,40,.32)}
+.menu.closing{opacity:0;pointer-events:none;background:rgba(16,24,40,0)}
+.menu-sheet{width:min(520px,100%);max-height:86dvh;overflow-y:auto;-webkit-overflow-scrolling:touch;background:#F7F9FC;border-radius:24px 24px 0 0;padding:10px 14px calc(18px + env(safe-area-inset-bottom));box-shadow:0 -18px 44px rgba(16,24,40,.22);transform:translateY(105%);will-change:transform;transition:transform .34s cubic-bezier(.22,1,.36,1)}
 .menu.show .menu-sheet{transform:translateY(0)}
+.menu.closing .menu-sheet{transform:translateY(105%)}
 .menu-sheet.dragging{transition:none}
 .menu-handle{width:42px;height:5px;border-radius:99px;background:#C8D2DC;margin:0 auto 10px}.menu-title{font-size:19px;font-weight:900;color:#183B56;padding:3px 4px 13px}.menu-group{background:#fff;border:1px solid var(--border);border-radius:16px;padding:8px;margin-bottom:10px}.menu-label{font-size:11px;font-weight:900;color:#70879A;padding:3px 6px 7px;letter-spacing:.02em}.menu-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}.menu-grid.compact-share{grid-template-columns:1fr}.menu button{display:block;width:100%;border:0;border-radius:11px;background:#EDF4FA;color:#234B68;text-align:left;padding:13px 12px;font-weight:800}.menu-group>button{background:#F4F7FA}.menu .danger-group{border-color:#F2C7C3}.menu .menu-danger{background:#FFF1F0;color:#B42318;border:0}
 .modal{display:none;position:fixed;inset:0;z-index:110;background:rgba(16,24,40,.42);align-items:center;justify-content:center;padding:18px}
@@ -194,7 +198,7 @@ input[type="date"]{height:46px;line-height:20px;-webkit-appearance:none;appearan
 .nav{color:var(--sierra-muted)}
 .nav.active{color:var(--sierra-deep);background:rgba(255,255,255,.58)}
 .nav.active::after{background:var(--sierra-deep)}
-.menu{background:#F4F9FC;border-color:#C7DAE8}
+.menu-sheet{background:#F4F9FC;border:1px solid #C7DAE8;border-bottom:0}
 .menu button{background:#F4F9FC;border-bottom-color:#D9E7F0}
 .menu button:active{background:#E4F0F7}
 .home-quick{background:linear-gradient(145deg,#F4F9FC,#E3EFF7);border-color:#C7DAE8}
@@ -218,7 +222,7 @@ input[type="date"]{height:46px;line-height:20px;-webkit-appearance:none;appearan
 :root{--sierra:#E6F0FA;--sierra-strong:#AFCBE3;--sierra-deep:#0E5A9C;--sierra-muted:#587A96}
 .bottom{background:rgba(230,240,250,.98);border-top-color:#C8DBEC}
 .nav.active{color:#0E5A9C}.nav.active::after{background:#0E5A9C}
-.menu,.menu button{background:#F3F8FD}
+.menu-sheet,.menu button{background:#F3F8FD}
 button{transition:transform .09s ease,filter .12s ease,background-color .15s ease}
 button:active{transform:scale(.975);filter:brightness(.97)}
 

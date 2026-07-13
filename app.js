@@ -32,6 +32,7 @@ let cloudShareNotice = null;
 let cloudShareCheckInFlight = false;
 let lastCloudShareCheckAt = 0;
 let lockedMenuScrollY = 0;
+let menuCloseTimer = null;
 const REGISTER_DRAFT_KEY = "victor_register_draft_0_19_0j";
 const CLOUD_SHARE_CONFIG_KEY = "victor_cloud_share_config_0_19_0m";
 const CLOUD_SHARE_META_KEY = "victor_cloud_share_meta_0_19_0m";
@@ -45,6 +46,7 @@ const DEFAULT_CLOUD_SHARE_CONFIG = {
 };
 let registerDraftTimer = null;
 let registerFormDraft = null;
+let pendingRegisterDraft = null;
 const stockEditReasons = ["재고조사","오기입 수정","폐기","파손","전산 수정","기타"];
 
 const view = document.getElementById("view");
@@ -80,7 +82,7 @@ function materialQtyText(q,u,item){
 }
 
 function readRegisterDraft(){try{return JSON.parse(localStorage.getItem(REGISTER_DRAFT_KEY)||"null");}catch(_){return null;}}
-function clearRegisterDraft(){clearTimeout(registerDraftTimer);registerFormDraft=null;try{localStorage.removeItem(REGISTER_DRAFT_KEY);}catch(_){}}
+function clearRegisterDraft(){clearTimeout(registerDraftTimer);registerFormDraft=null;pendingRegisterDraft=null;try{localStorage.removeItem(REGISTER_DRAFT_KEY);}catch(_){}}
 function captureRegisterDraft(){
   if(page!=="register")return;
   const value=id=>document.getElementById(id)?.value||"";
@@ -323,11 +325,12 @@ function recentMemos(n=3){
 
 function startHomeRegister(mode,flow="출고"){
   const saved=readRegisterDraft();
-  registerFormDraft=saved;
-  draftItems = saved?.items || [];
-  draftEquipmentItems = saved?.equipmentItems || [];
-  registerMode = saved?.mode || mode;
-  registerFlow = saved?.flow || flow;
+  pendingRegisterDraft=saved;
+  registerFormDraft=null;
+  draftItems = [];
+  draftEquipmentItems = [];
+  registerMode = mode;
+  registerFlow = flow;
   page = "register";
   selectedWarehouse = null;
   editingId = null;
@@ -373,6 +376,21 @@ function saveCloudUploadPinHash(hash){
 
 function currentCloudUploadPinHash(){
   return readCloudUploadPinHash() || readCloudShareMeta().uploadPinHash || "";
+}
+
+async function syncCloudUploadPinFromLatest(){
+  if(currentCloudUploadPinHash()) return true;
+  try{
+    const snapshot=await fetchLatestCloudShareSnapshot();
+    const pinHash=typeof snapshot?.uploadPinHash==="string"?snapshot.uploadPinHash:"";
+    if(!pinHash) return false;
+    saveCloudUploadPinHash(pinHash);
+    saveCloudShareMeta({uploadPinHash:pinHash,uploadPinUpdatedAt:snapshot.uploadPinUpdatedAt || ""});
+    return true;
+  }catch(error){
+    console.warn("[Victor] 클라우드 PIN 동기화 실패",error);
+    return false;
+  }
 }
 
 async function hashUploadPin(pin){
@@ -850,12 +868,22 @@ function quickRecordCard(){
   return `<div class="callout">긴급기록은 사고 현장에서 사용한 자재와 장비를 빠르게 남기는 임시 기록입니다. 자재는 나중에 재고에 반영하고 장비는 사용이력으로 보관합니다.</div>`;
 }
 
+function applyRegisterDraft(saved){
+  if(!saved)return;
+  registerFormDraft=saved;
+  pendingRegisterDraft=null;
+  draftItems=saved.items||[];
+  draftEquipmentItems=saved.equipmentItems||[];
+  registerMode=saved.mode||registerMode;
+  registerFlow=saved.flow||registerFlow;
+}
 
 function renderRegister(){
-  if(!registerFormDraft){const saved=readRegisterDraft();if(saved){registerFormDraft=saved;draftItems=saved.items||[];draftEquipmentItems=saved.equipmentItems||[];registerMode=saved.mode||registerMode;registerFlow=saved.flow||registerFlow;}}
+  if(!registerFormDraft&&!pendingRegisterDraft) pendingRegisterDraft=readRegisterDraft();
   draftItems = draftItems.length ? draftItems : [];
   view.innerHTML = `
-    ${registerFormDraft ? `<div class="callout">작성 중이던 내용이 자동 복구되었습니다. <button class="btn gray compact" id="discardRegisterDraft" type="button">새로 작성</button></div>` : ""}
+    ${pendingRegisterDraft&&!registerFormDraft ? `<div class="callout">작성 중이던 등록 내용이 있습니다. 필요한 경우에만 불러오세요. <div class="btn-row" style="margin-top:8px"><button class="btn secondary compact" id="loadRegisterDraft" type="button">불러오기</button><button class="btn gray compact" id="discardRegisterDraft" type="button">새로 시작</button></div></div>` : ""}
+    ${registerFormDraft ? `<div class="callout">작성 중이던 내용을 불러왔습니다. <button class="btn gray compact" id="discardRegisterDraft" type="button">새로 작성</button></div>` : ""}
     <div class="choice-grid">
       <button class="choice-card ${registerMode === "normal" ? "active" : ""}" id="modeNormal" type="button">
         <div><div class="choice-title">일반등록</div><div class="choice-sub">평상시 자재 출고·입고를 기록하고 재고에 즉시 반영합니다.</div></div>
@@ -903,6 +931,7 @@ function renderRegister(){
   document.getElementById("addItem")?.addEventListener("click", addDraftItem);
   document.getElementById("addEquipmentItem")?.addEventListener("click", addDraftEquipmentItem);
   document.getElementById("saveRecord")?.addEventListener("click", saveRecord);
+  document.getElementById("loadRegisterDraft")?.addEventListener("click",()=>{applyRegisterDraft(pendingRegisterDraft||readRegisterDraft());renderRegister();setHead();});
   document.getElementById("discardRegisterDraft")?.addEventListener("click",()=>{clearRegisterDraft();draftItems=[];draftEquipmentItems=[];renderRegister();});
   document.getElementById("dateToday")?.addEventListener("click",()=>{document.getElementById("recDate").value=todayISO();scheduleRegisterDraft();});
   document.getElementById("dateYesterday")?.addEventListener("click",()=>{const d=new Date();d.setDate(d.getDate()-1);document.getElementById("recDate").value=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;scheduleRegisterDraft();});
@@ -2460,7 +2489,7 @@ function cloudDashboardHtml(latest=null,{loading=false,error=""}={}){
       <button class="btn primary" id="cloudApplyNow" type="button">공유자료 적용</button>
       <button class="btn secondary" id="cloudUploadNow" type="button">클라우드 올리기</button>
       ${safety?`<button class="btn danger" id="cloudUndoNow" type="button">방금 적용 되돌리기</button>`:""}
-      <button class="btn gray" id="cloudRefreshNow" type="button">클라우드 다시 확인</button>
+      <button class="btn gray" id="cloudRefreshNow" type="button">최신자료 확인</button>
       <button class="btn gray" id="cloudPinSettingsNow" type="button">올리기 PIN 설정</button>
     </div>`;
 }
@@ -2469,7 +2498,7 @@ function bindCloudDashboard(){
   document.getElementById("cloudApplyNow")?.addEventListener("click",()=>{closeEntryModal();loadCloudShareSnapshot();});
   document.getElementById("cloudUploadNow")?.addEventListener("click",()=>{closeEntryModal();uploadCloudShareSnapshot();});
   document.getElementById("cloudUndoNow")?.addEventListener("click",()=>{closeEntryModal();restoreCloudApplySafetyPoint();});
-  document.getElementById("cloudRefreshNow")?.addEventListener("click",()=>openCloudShareActions(true));
+  document.getElementById("cloudRefreshNow")?.addEventListener("click",()=>refreshCloudShareWithPopup());
   document.getElementById("cloudPinSettingsNow")?.addEventListener("click",()=>{closeEntryModal();openUploadPinSettings();});
 }
 
@@ -2488,6 +2517,44 @@ function openCloudShareActions(force=false){
     openEntryModal(cloudDashboardHtml(known,{error:cloudErrorMessage(error)}));
     bindCloudDashboard();
   });
+}
+
+async function refreshCloudShareWithPopup(){
+  try{
+    openEntryModal(cloudDashboardHtml(cloudShareNotice?.snapshot||null,{loading:true}));
+    bindCloudDashboard();
+    const snapshot=await fetchLatestCloudShareSnapshot();
+    if(!snapshot){
+      cloudShareNotice=null;
+      openEntryModal(cloudDashboardHtml(null));
+      bindCloudDashboard();
+      await askConfirm("최신자료 확인","아직 클라우드에 공유자료가 없습니다.","확인");
+      openEntryModal(cloudDashboardHtml(null));
+      bindCloudDashboard();
+      return;
+    }
+    const kind=isCloudSnapshotNewer(snapshot)?"new":"same";
+    cloudShareNotice={kind,summary:snapshotSummary(snapshot),snapshot};
+    openEntryModal(cloudDashboardHtml(snapshot));
+    bindCloudDashboard();
+    const summary=snapshotSummary(snapshot);
+    await askConfirm(kind==="new"?"새 공유자료 있음":"최신자료 확인 완료",[
+      `상태: ${kind==="new"?"새로 적용할 자료가 있습니다":"이미 최신 상태입니다"}`,
+      `기준시각: ${fmtDateTime(summary.date)}`,
+      `보관장소: ${summary.warehouses}곳`,
+      `자재: ${summary.materials}종`,
+      `장비: ${summary.equipment}개`
+    ].join("\n"),"확인");
+    openEntryModal(cloudDashboardHtml(snapshot));
+    bindCloudDashboard();
+  }catch(error){
+    console.warn("[Victor] 최신자료 확인 실패",error);
+    openEntryModal(cloudDashboardHtml(cloudShareNotice?.snapshot||null,{error:cloudErrorMessage(error)}));
+    bindCloudDashboard();
+    await askConfirm("최신자료 확인 실패",`${cloudErrorMessage(error)}\n\n기존 앱 자료는 변경되지 않았습니다.`,"확인");
+    openEntryModal(cloudDashboardHtml(cloudShareNotice?.snapshot||null,{error:cloudErrorMessage(error)}));
+    bindCloudDashboard();
+  }
 }
 
 async function supabaseRest(path,options={}){
@@ -2565,6 +2632,10 @@ async function uploadCloudShareSnapshot(){
   const config=cloudReadConfig();
   if(!cloudShareReady(config)){openCloudShareSettings();showFeedback("info","클라우드 설정을 확인해주세요");return;}
   try{
+    if(!currentCloudUploadPinHash()){
+      const synced=await syncCloudUploadPinFromLatest();
+      if(synced) showFeedback("info","클라우드 PIN 설정을 불러왔습니다");
+    }
     if(!currentCloudUploadPinHash()){
       openUploadPinSettings();
       showFeedback("info","먼저 올리기 PIN을 설정해주세요");
@@ -2684,9 +2755,12 @@ function bindGlobal(){
 
 function openMenu(push=true){
   const menu=document.getElementById("moreMenu");
-  if(!menu || menu.classList.contains("show")) return;
+  if(!menu) return;
+  clearTimeout(menuCloseTimer);
+  menu.classList.remove("closing");
+  if(menu.classList.contains("show")) return;
   lockMenuBackground();
-  menu.classList.add("show");
+  requestAnimationFrame(()=>menu.classList.add("show"));
   if(push && !restoringNavigation){
     menuHistoryOpen=true;
     pushNavigationState(currentNavigationState({menu:true}));
@@ -2695,9 +2769,18 @@ function openMenu(push=true){
 
 function closeMenu(fromPop=false){
   const menu=document.getElementById("moreMenu");
-  if(menu) menu.classList.remove("show");
   resetMenuMotion();
-  unlockMenuBackground();
+  if(menu && menu.classList.contains("show")){
+    clearTimeout(menuCloseTimer);
+    menu.classList.add("closing");
+    menu.classList.remove("show");
+    menuCloseTimer=setTimeout(()=>{
+      menu.classList.remove("closing");
+      unlockMenuBackground();
+    },340);
+  }else{
+    unlockMenuBackground();
+  }
   menuHistoryOpen=false;
 }
 
@@ -2836,7 +2919,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m37")
+      navigator.serviceWorker.register("./sw.js?v=0190m41")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
