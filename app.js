@@ -28,9 +28,13 @@ let resourceSelectionMode = false;
 let selectedResources = new Set();
 let modalConfirmResolver = null;
 let menuHistoryOpen = false;
+let cloudShareNotice = null;
+let cloudShareCheckInFlight = false;
+let lastCloudShareCheckAt = 0;
 const REGISTER_DRAFT_KEY = "victor_register_draft_0_19_0j";
 const CLOUD_SHARE_CONFIG_KEY = "victor_cloud_share_config_0_19_0m";
 const CLOUD_SHARE_META_KEY = "victor_cloud_share_meta_0_19_0m";
+const CLOUD_APPLY_SAFETY_KEY = "victor_cloud_apply_safety_0_19_0m";
 const DEFAULT_CLOUD_SHARE_CONFIG = {
   url:"https://vzwzkeqxkqlrctylspxz.supabase.co",
   key:"sb_publishable_8X3VXnF63hNSUzYf14lDfg_IBj-PD72",
@@ -350,6 +354,43 @@ function saveCloudShareMeta(patch){
   try{localStorage.setItem(CLOUD_SHARE_META_KEY,JSON.stringify({...readCloudShareMeta(),...patch}));}catch(error){console.warn("[Victor] 클라우드 메타 저장 실패",error);}
 }
 
+function readCloudApplySafetyPoint(){
+  try{return JSON.parse(localStorage.getItem(CLOUD_APPLY_SAFETY_KEY)||"null");}catch(_){return null;}
+}
+
+function createCloudApplySafetyPoint(snapshot){
+  try{
+    localStorage.setItem(CLOUD_APPLY_SAFETY_KEY,JSON.stringify({
+      label:"공유자료 적용 전",
+      createdAt:new Date().toISOString(),
+      cloudAt:snapshot?.cloudUpdatedAt || snapshot?.cloudSharedAt || snapshot?.createdAt || "",
+      state:stripStoredPhotos(JSON.parse(JSON.stringify(state)))
+    }));
+    return true;
+  }catch(error){
+    showFeedback("error","공유 적용 전 안전지점을 만들지 못했습니다");
+    return false;
+  }
+}
+
+async function restoreCloudApplySafetyPoint(){
+  const point=readCloudApplySafetyPoint();
+  if(!point?.state){showFeedback("info","되돌릴 공유 적용 내역이 없습니다");return;}
+  if(!await askConfirm("공유 적용 되돌리기",`${fmtDateTime(point.createdAt)} 적용 전 상태로 되돌릴까요?`,"되돌리기",true))return;
+  state=normalize(point.state);
+  save();
+  localStorage.removeItem(CLOUD_APPLY_SAFETY_KEY);
+  saveCloudShareMeta({lastAppliedAt:null,lastAppliedSource:null,lastAppliedCloudAt:null});
+  refreshGlobals(state);
+  page="warehouse";
+  warehouseViewMode="warehouses";
+  selectedWarehouse=null;
+  updateBottomNav();
+  render();
+  scrollToTop();
+  showFeedback("success","공유자료 적용을 되돌렸습니다");
+}
+
 function fmtDateTime(value){
   if(!value) return "없음";
   const date=new Date(value);
@@ -364,13 +405,26 @@ function cloudShareStatusHtml(){
   const meta=readCloudShareMeta();
   const upload=fmtDateTime(meta.lastUploadedAt);
   const applied=fmtDateTime(meta.lastAppliedAt);
-  return `<div class="cloud-share-status"><span>마지막 올림 ${esc(upload)}</span><span>마지막 적용 ${esc(applied)}</span></div>`;
+  const safety=readCloudApplySafetyPoint();
+  return `<div class="cloud-share-status"><span>마지막 올림 ${esc(upload)}</span><span>마지막 적용 ${esc(applied)}</span></div>${safety?`<button class="cloud-undo-btn" id="undoCloudApply" type="button">방금 적용 되돌리기</button>`:""}`;
+}
+
+function cloudShareNoticeHtml(){
+  if(!cloudShareNotice) return "";
+  const summary=cloudShareNotice.summary || {};
+  const tone=cloudShareNotice.kind==="new" ? "new" : "same";
+  const text=cloudShareNotice.kind==="new" ? "새 공유자료 있음" : "공유자료 최신 상태";
+  return `<div class="cloud-notice ${tone}">
+    <div><strong>${text}</strong><span>${esc(fmtDateTime(summary.date))} · 보관 ${Number(summary.warehouses||0)}곳 · 자재 ${Number(summary.materials||0)}종 · 장비 ${Number(summary.equipment||0)}개</span></div>
+    ${cloudShareNotice.kind==="new"?`<button class="btn primary compact" id="applyCloudNotice" type="button">적용하기</button>`:`<button class="btn gray compact" id="checkCloudNotice" type="button">다시 확인</button>`}
+  </div>`;
 }
 
 function renderHome(){
   const pending = pendingRecords().length;
   view.innerHTML = `
     ${storageSummaryCard(true)}
+    ${cloudShareNoticeHtml()}
     <button class="survey-launch" id="homeFastSurvey" type="button"><span>${state.survey?.active?"진행 중인 재고실사":"초기 재고실사"}</span><strong>${state.survey?.active?"이어하기":"빠르게 시작"} ›</strong></button>
     ${state.survey?.active?`<button class="btn gray" id="restartFastSurvey" type="button" style="width:100%;margin:-4px 0 10px">재고실사 처음부터 다시</button>`:""}
     ${state.survey?.lastApplied?.changes?.length?`<button class="btn secondary" id="undoLastSurvey" type="button" style="width:100%;margin-bottom:10px">직전 실사 반영 취소</button>`:""}
@@ -410,6 +464,9 @@ function renderHome(){
   document.getElementById("homeFastSurvey")?.addEventListener("click",()=>state.survey?.active?renderFastSurvey():openFastSurveySetup());
   document.getElementById("restartFastSurvey")?.addEventListener("click",restartFastSurvey);
   document.getElementById("undoLastSurvey")?.addEventListener("click",undoLastSurvey);
+  document.getElementById("applyCloudNotice")?.addEventListener("click",()=>loadCloudShareSnapshot());
+  document.getElementById("checkCloudNotice")?.addEventListener("click",()=>checkCloudShareNotice({force:true,notify:true}));
+  document.getElementById("undoCloudApply")?.addEventListener("click",restoreCloudApplySafetyPoint);
   document.getElementById("homeAllResources")?.addEventListener("click", () => openStorageView("materials"));
   document.getElementById("homeShareResources")?.addEventListener("click", openCloudShareActions);
   document.getElementById("homePending")?.addEventListener("click", () => { historyFilter = "pending"; historyDateFilter = "all"; historyFlowFilter = "all"; setPage("history"); });
@@ -420,6 +477,7 @@ function renderHome(){
   document.getElementById("homeNewMemo")?.addEventListener("click", () => { editingMemoId=null; setPage("memo"); });
   view.querySelectorAll("[data-detail]").forEach(button => button.addEventListener("click", () => openDetail(button.dataset.detail)));
   view.querySelectorAll("[data-home-memo]").forEach(button => button.addEventListener("click", () => { editingMemoId=button.dataset.homeMemo; page="memo"; updateBottomNav(); render(); pushNavigationState({page:"memo",memoId:editingMemoId}); }));
+  checkCloudShareNotice({silent:true});
 }
 
 function openStorageView(mode){
@@ -2007,6 +2065,7 @@ async function applySharedSnapshot(snapshot,source="공유자료"){
   const next=resourceStateFromSnapshot(snapshot);
   if(!next?.warehouses?.length)throw new Error("적용할 보관 자료가 없습니다");
   if(!await askConfirm(`${source} 적용 미리보기`,`${snapshotSummaryText(snapshot,{includeCaution:true})}\n\n현재 앱의 보관·자재·장비 내용이 이 자료로 바뀝니다.\n계속할까요?`,"적용"))return false;
+  if(!createCloudApplySafetyPoint(snapshot))return false;
   state=normalize({
     ...state,
     warehouses:next.warehouses,
@@ -2029,6 +2088,7 @@ async function applySharedSnapshot(snapshot,source="공유자료"){
   render();
   scrollToTop();
   saveCloudShareMeta({lastAppliedAt:new Date().toISOString(),lastAppliedSource:source,lastAppliedCloudAt:snapshot?.cloudUpdatedAt || snapshot?.cloudSharedAt || snapshot?.createdAt || ""});
+  cloudShareNotice=null;
   showFeedback("success","공유자료를 현재 앱에 적용했습니다");
   return true;
 }
@@ -2174,6 +2234,57 @@ async function testCloudShareConnection(){
   catch(error){console.warn("[Victor] Supabase 연결 실패",error);showFeedback("error",cloudErrorMessage(error));}
 }
 
+async function fetchLatestCloudShareSnapshot(){
+  const config=cloudReadConfig();
+  const rows=await supabaseRest("resource_snapshots?select=*&limit=50",{cloudConfig:config});
+  if(!rows?.length) return null;
+  const candidates=rows
+    .filter(item=>String(item?.site_id||"")===config.siteId && item?.snapshot?.kind==="victor-resource-share")
+    .sort((a,b)=>new Date(b.updated_at||b.created_at||0)-new Date(a.updated_at||a.created_at||0));
+  const row=candidates[0];
+  if(!row)throw new Error(`공유자료 형식 오류 · 받은 자료 ${rows.length}건`);
+  const snapshot=row.snapshot || {};
+  return {
+    ...snapshot,
+    materials:Array.isArray(snapshot.materials)?snapshot.materials:[],
+    equipment:Array.isArray(snapshot.equipment)?snapshot.equipment:[],
+    title:row.title||snapshot.title,
+    createdAt:snapshot.createdAt||row.updated_at||row.created_at,
+    cloudUpdatedAt:row.updated_at||row.created_at
+  };
+}
+
+function isCloudSnapshotNewer(snapshot){
+  const meta=readCloudShareMeta();
+  const incoming=new Date(snapshot?.cloudUpdatedAt || snapshot?.cloudSharedAt || snapshot?.createdAt || 0).getTime();
+  const applied=new Date(meta.lastAppliedCloudAt || 0).getTime();
+  const uploaded=new Date(meta.lastUploadedAt || 0).getTime();
+  const known=Math.max(applied||0,uploaded||0);
+  return Number.isFinite(incoming) && incoming > known + 1000;
+}
+
+async function checkCloudShareNotice({force=false,notify=false,silent=false}={}){
+  const now=Date.now();
+  if(cloudShareCheckInFlight || (!force && now-lastCloudShareCheckAt<120000)) return;
+  cloudShareCheckInFlight=true;
+  lastCloudShareCheckAt=now;
+  try{
+    const snapshot=await fetchLatestCloudShareSnapshot();
+    if(!snapshot){cloudShareNotice=null;if(notify)showFeedback("info","아직 클라우드 공유자료가 없습니다");return;}
+    const summary=snapshotSummary(snapshot);
+    const kind=isCloudSnapshotNewer(snapshot) ? "new" : "same";
+    const previous=JSON.stringify(cloudShareNotice);
+    cloudShareNotice={kind,summary,snapshot};
+    if(notify) showFeedback(kind==="new"?"info":"success",kind==="new"?"새 공유자료가 있습니다":"이미 최신 공유자료입니다");
+    if(page==="home" && previous!==JSON.stringify(cloudShareNotice)) renderHome();
+  }catch(error){
+    console.warn("[Victor] 클라우드 공유 확인 실패",error);
+    if(!silent) showFeedback("error",cloudErrorMessage(error));
+  }finally{
+    cloudShareCheckInFlight=false;
+  }
+}
+
 async function uploadCloudShareSnapshot(){
   closeMenu();
   const config=cloudReadConfig();
@@ -2181,8 +2292,11 @@ async function uploadCloudShareSnapshot(){
   try{
     const snapshot=buildResourceSnapshot();
     snapshot.cloudSharedAt=new Date().toISOString();
-    const emptyWarning=snapshotTotalQuantity(snapshot)===0 ? "\n\n주의: 현재 이 기기의 총 보관량이 0입니다. 빈 자료로 클라우드를 덮어쓸 수 있습니다." : "";
-    if(!await askConfirm("클라우드 올리기 확인",`${snapshotSummaryText(snapshot)}${emptyWarning}\n\n현재 내 보관 현황을 클라우드 공유자료로 올릴까요?\n다른 기기에서는 이 자료가 최신으로 적용됩니다.`,"올리기"))return;
+    if(snapshotTotalQuantity(snapshot)===0){
+      showFeedback("error","총 보관량이 0이라 클라우드 올리기를 막았습니다");
+      return;
+    }
+    if(!await askConfirm("클라우드 올리기 확인",`${snapshotSummaryText(snapshot)}\n\n현재 내 보관 현황을 클라우드 공유자료로 올릴까요?\n다른 기기에서는 이 자료가 최신으로 적용됩니다.`,"올리기"))return;
     const payload={site_id:config.siteId,title:config.title,snapshot,updated_at:new Date().toISOString()};
     const existing=await supabaseRest(`resource_snapshots?select=id&site_id=eq.${encodeURIComponent(config.siteId)}&order=updated_at.desc&limit=1`,{cloudConfig:config});
     if(existing?.[0]?.id){
@@ -2191,6 +2305,7 @@ async function uploadCloudShareSnapshot(){
       await supabaseRest("resource_snapshots",{cloudConfig:config,method:"POST",headers:{"Content-Type":"application/json","Prefer":"return=minimal"},body:JSON.stringify(payload)});
     }
     saveCloudShareMeta({lastUploadedAt:snapshot.cloudSharedAt,lastUploadedSiteId:config.siteId});
+    cloudShareNotice={kind:"same",summary:snapshotSummary(snapshot),snapshot};
     showFeedback("success","클라우드에 올렸습니다 · 다른 기기에서 바로 적용 가능");
     if(page==="home") renderHome();
   }catch(error){console.warn("[Victor] 클라우드 공유 업로드 실패",error);showFeedback("error",cloudErrorMessage(error));}
@@ -2199,23 +2314,8 @@ async function uploadCloudShareSnapshot(){
 async function loadCloudShareSnapshot(){
   closeMenu();
   try{
-    const config=cloudReadConfig();
-    const rows=await supabaseRest("resource_snapshots?select=*&limit=50",{cloudConfig:config});
-    if(!rows?.length){showFeedback("info","아직 클라우드 공유자료가 없습니다");return;}
-    const candidates=rows
-      .filter(item=>String(item?.site_id||"")===config.siteId && item?.snapshot?.kind==="victor-resource-share")
-      .sort((a,b)=>new Date(b.updated_at||b.created_at||0)-new Date(a.updated_at||a.created_at||0));
-    const row=candidates[0];
-    if(!row)throw new Error(`공유자료 형식 오류 · 받은 자료 ${rows.length}건`);
-    const snapshot=row.snapshot || {};
-    sharedSnapshot={
-      ...snapshot,
-      materials:Array.isArray(snapshot.materials)?snapshot.materials:[],
-      equipment:Array.isArray(snapshot.equipment)?snapshot.equipment:[],
-      title:row.title||snapshot.title,
-      createdAt:snapshot.createdAt||row.updated_at||row.created_at,
-      cloudUpdatedAt:row.updated_at||row.created_at
-    };
+    sharedSnapshot=await fetchLatestCloudShareSnapshot();
+    if(!sharedSnapshot){showFeedback("info","아직 클라우드 공유자료가 없습니다");return;}
     await applySharedSnapshot(sharedSnapshot,"클라우드 공유자료");
   }catch(error){console.warn("[Victor] 클라우드 공유 조회 실패",error);showFeedback("error",cloudErrorMessage(error));}
 }
@@ -2432,7 +2532,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m30")
+      navigator.serviceWorker.register("./sw.js?v=0190m31")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
@@ -2440,4 +2540,5 @@ function init(){
 }
 
 init();
+
 

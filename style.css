@@ -237,6 +237,7 @@ button:active{transform:scale(.975);filter:brightness(.97)}
 .home-tool-grid span{font-size:21px}.home-tool-grid strong{font-size:13px}
 .cloud-share-status{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;color:#6D8192;font-size:12px}.cloud-share-status span{background:#F2F7FB;border:1px solid #D8E7F2;border-radius:999px;padding:6px 9px}
 .cloud-action-summary{display:grid;grid-template-columns:1fr 1fr;gap:8px}.cloud-action-summary span{background:#F2F7FB;border:1px solid #D8E7F2;border-radius:12px;padding:10px;color:#49677B;font-size:12px;text-align:center}
+.cloud-notice{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#EAF5FF;border:1px solid #B8DDF8;border-radius:16px;padding:12px 13px;margin-bottom:10px}.cloud-notice strong{display:block;color:#164B73;font-size:14px}.cloud-notice span{display:block;color:#557086;font-size:12px;margin-top:3px}.cloud-notice.same{background:#F4F8FB;border-color:#D8E7F2}.cloud-undo-btn{width:100%;margin-top:8px;border:1px solid #F6C1BA;background:#FFF4F2;color:#B42318;border-radius:12px;padding:10px;font-weight:850}
 .storage-actions{display:grid;grid-template-columns:1fr;gap:7px;margin-bottom:12px}
 .storage-actions .btn{padding:10px 5px;font-size:12px}
 .part-row{display:grid;grid-template-columns:1fr 90px auto;gap:7px;align-items:center;margin-bottom:7px}.part-row input{margin:0}
