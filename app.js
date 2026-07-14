@@ -447,9 +447,7 @@ async function restoreCloudApplySafetyPoint(){
   localStorage.removeItem(CLOUD_APPLY_SAFETY_KEY);
   saveCloudShareMeta({lastAppliedAt:null,lastAppliedSource:null,lastAppliedCloudAt:null});
   refreshGlobals(state);
-  page="warehouse";
-  warehouseViewMode="warehouses";
-  selectedWarehouse=null;
+  page="home";
   updateBottomNav();
   render();
   scrollToTop();
@@ -2301,9 +2299,7 @@ async function applySharedSnapshot(snapshot,source="공유자료"){
   save();
   refreshGlobals(state);
   sharedSnapshot=null;
-  page="warehouse";
-  warehouseViewMode="warehouses";
-  selectedWarehouse=null;
+  page="home";
   updateBottomNav();
   render();
   scrollToTop();
@@ -2470,7 +2466,7 @@ function cloudDashboardHtml(latest=null,{loading=false,error=""}={}){
   const cloudSummary=latest?snapshotSummary(latest):null;
   const safety=readCloudApplySafetyPoint();
   const status=loading?"클라우드 확인 중":error?"확인 실패":cloudStatusLabel(latest);
-  const statusHint=loading?"최신자료 확인 중입니다":error?"설정과 네트워크를 확인한 뒤 다시 눌러주세요":status==="클라우드 자료가 최신"?"공유자료 가져오기를 누르면 반영됩니다":status==="내 자료가 최신"?"내 자료 올리기를 누르면 공유됩니다":status==="이미 최신"?"현재 자료와 공유자료가 같은 상태입니다":"최신자료 확인을 누르면 상태를 다시 확인합니다";
+  const statusHint=loading?"확인 중":error?"확인 실패":status==="클라우드 자료가 최신"?"새 자료 있음":status==="내 자료가 최신"?"올리기 가능":status==="이미 최신"?"최신 상태":"확인 필요";
   return `${entryHeader("자원 공유","공유 현황을 확인하고 적용·올리기 합니다")}
     <div class="form">
       <div class="share-status-card ${latest?"ready":""}">
@@ -2481,10 +2477,10 @@ function cloudDashboardHtml(latest=null,{loading=false,error=""}={}){
       </div>
       ${error?`<div class="callout">클라우드 확인 실패: ${esc(error)}</div>`:""}
       <div class="cloud-action-summary">
-        <span><strong>내 자료</strong><br>${esc(fmtDateTime(latestLocalResourceAt() || localSnapshot.createdAt))}<br>자재 ${localSummary.materials}종 · 장비 ${localSummary.equipment}개</span>
-        <span><strong>클라우드</strong><br>${esc(cloudSummary?fmtDateTime(cloudSummary.date):loading?"확인 중":"자료 없음")}<br>${cloudSummary?`자재 ${cloudSummary.materials}종 · 장비 ${cloudSummary.equipment}개`:"-"}</span>
-        <span><strong>마지막 올림</strong><br>${esc(fmtDateTime(meta.lastUploadedAt))}</span>
-        <span><strong>마지막 적용</strong><br>${esc(fmtDateTime(meta.lastAppliedAt))}</span>
+        <span><strong>내 자료 변경</strong><br>${esc(fmtDateTime(latestLocalResourceAt() || localSnapshot.createdAt))}<br>자재 ${localSummary.materials}종 · 장비 ${localSummary.equipment}개</span>
+        <span><strong>공유자료 갱신</strong><br>${esc(cloudSummary?fmtDateTime(cloudSummary.date):loading?"확인 중":"자료 없음")}<br>${cloudSummary?`자재 ${cloudSummary.materials}종 · 장비 ${cloudSummary.equipment}개`:"-"}</span>
+        <span><strong>올린 시간</strong><br>${esc(fmtDateTime(meta.lastUploadedAt))}</span>
+        <span><strong>가져온 시간</strong><br>${esc(fmtDateTime(meta.lastAppliedAt))}</span>
         <span><strong>PIN</strong><br>${currentCloudUploadPinHash()?"설정됨":"미설정"}</span>
         <span><strong>되돌리기</strong><br>${safety?`${esc(fmtDateTime(safety.createdAt))} 가능`:"없음"}</span>
       </div>
@@ -2909,7 +2905,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m44")
+      navigator.serviceWorker.register("./sw.js?v=0190m46")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
