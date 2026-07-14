@@ -61,6 +61,23 @@ function fmtDate(s){
   return `${y}.${m}.${d}`;
 }
 
+function dateMs(value){
+  if(!value) return 0;
+  const text=String(value);
+  const parsed=/^\d{4}-\d{2}-\d{2}$/.test(text) ? new Date(`${text}T23:59:59+09:00`) : new Date(text);
+  const time=parsed.getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+function koreaDateParts(value){
+  const date=new Date(value);
+  if(Number.isNaN(date.getTime())) return null;
+  const parts=Object.fromEntries(new Intl.DateTimeFormat("ko-KR",{
+    timeZone:"Asia/Seoul",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"
+  }).formatToParts(date).map(part=>[part.type,part.value]));
+  return parts;
+}
+
 function monthStartISO(){
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-01`;
@@ -456,12 +473,13 @@ async function restoreCloudApplySafetyPoint(){
 
 function fmtDateTime(value){
   if(!value) return "없음";
-  const date=new Date(value);
-  if(Number.isNaN(date.getTime())) return "없음";
-  const today=new Date();
-  const sameDay=date.toDateString()===today.toDateString();
-  const hh=String(date.getHours()).padStart(2,"0"), mm=String(date.getMinutes()).padStart(2,"0");
-  return `${sameDay?"오늘":fmtDate(value)} ${hh}:${mm}`;
+  const text=String(value);
+  if(/^\d{4}-\d{2}-\d{2}$/.test(text)) return fmtDate(text);
+  const parts=koreaDateParts(text);
+  if(!parts) return "없음";
+  const today=koreaDateParts(new Date());
+  const sameDay=today && parts.year===today.year && parts.month===today.month && parts.day===today.day;
+  return `${sameDay?"오늘":`${Number(parts.month)}.${Number(parts.day)}`} ${parts.hour}:${parts.minute}`;
 }
 
 function cloudShareStatusHtml(){
@@ -469,7 +487,7 @@ function cloudShareStatusHtml(){
   const upload=fmtDateTime(meta.lastUploadedAt);
   const applied=fmtDateTime(meta.lastAppliedAt);
   const safety=readCloudApplySafetyPoint();
-  return `<div class="cloud-share-status"><span>마지막 올림 ${esc(upload)}</span><span>마지막 적용 ${esc(applied)}</span></div>${safety?`<button class="cloud-undo-btn" id="undoCloudApply" type="button">방금 적용 되돌리기</button>`:""}`;
+  return `<div class="cloud-share-status"><span>올린 시간 ${esc(upload)}</span><span>가져온 시간 ${esc(applied)}</span></div>${safety?`<button class="cloud-undo-btn" id="undoCloudApply" type="button">방금 적용 되돌리기</button>`:""}`;
 }
 
 function cloudShareNoticeHtml(){
@@ -2098,7 +2116,7 @@ function snapshotTotalQuantity(snapshot){
 
 function latestLocalResourceAt(){
   const dates=[];
-  const add=value=>{if(value && !Number.isNaN(new Date(value).getTime()))dates.push(value);};
+  const add=value=>{if(value && dateMs(value))dates.push(value);};
   (state.catalog||[]).forEach(item=>add(item.updatedAt));
   (state.equipment||[]).forEach(item=>{
     add(item.updatedAt);
@@ -2111,7 +2129,7 @@ function latestLocalResourceAt(){
     (asset.maintenance||[]).forEach(log=>add(log.createdAt||log.date));
   });
   (state.records||[]).forEach(record=>add(record.createdAt||record.date));
-  return dates.sort((a,b)=>new Date(b)-new Date(a))[0] || "";
+  return dates.sort((a,b)=>dateMs(b)-dateMs(a))[0] || "";
 }
 
 function cloudSnapshotTime(snapshot){
@@ -2120,8 +2138,8 @@ function cloudSnapshotTime(snapshot){
 
 function cloudStatusLabel(latest){
   if(!latest) return "아직 확인 안 됨";
-  const cloudTime=new Date(cloudSnapshotTime(latest)||0).getTime();
-  const localTime=new Date(latestLocalResourceAt() || readCloudShareMeta().lastUploadedAt || readCloudShareMeta().lastAppliedAt || 0).getTime();
+  const cloudTime=dateMs(cloudSnapshotTime(latest));
+  const localTime=dateMs(latestLocalResourceAt() || readCloudShareMeta().lastUploadedAt || readCloudShareMeta().lastAppliedAt);
   if(!Number.isFinite(cloudTime) || !cloudTime) return "아직 확인 안 됨";
   if(!Number.isFinite(localTime) || !localTime) return "클라우드 자료가 최신";
   if(cloudTime > localTime + 1000) return "클라우드 자료가 최신";
@@ -2173,7 +2191,7 @@ function shareApplyPreviewText(snapshot){
   const changes=compareSharedSnapshot(snapshot);
   return [
     `자료: ${summary.title}`,
-    `기준시각: ${fmtDateTime(summary.date)}`,
+    `공유 기준: ${fmtDateTime(summary.date)}`,
     `새로 생기는 보관장소: ${changes.addedWarehouses.length}곳${changes.addedWarehouses.length?` (${changes.addedWarehouses.slice(0,3).join(", ")}${changes.addedWarehouses.length>3?" 외":""})`:""}`,
     `없어지는 보관장소: ${changes.removedWarehouses.length}곳${changes.removedWarehouses.length?` (${changes.removedWarehouses.slice(0,3).join(", ")}${changes.removedWarehouses.length>3?" 외":""})`:""}`,
     `수량이 바뀌는 자재: ${changes.materialQtyChanges}건`,
@@ -2191,8 +2209,8 @@ function uploadWarningLines(snapshot,latest=null){
     const latestSummary=snapshotSummary(latest);
     if(latestSummary.materials>0 && summary.materials<Math.max(3,Math.floor(latestSummary.materials*0.5)))warnings.push("자재 종류가 기존 클라우드 자료보다 크게 적습니다.");
     if(latestSummary.equipment>0 && summary.equipment<Math.floor(latestSummary.equipment*0.5))warnings.push("장비 수가 기존 클라우드 자료보다 크게 적습니다.");
-    const cloudTime=new Date(cloudSnapshotTime(latest)||0).getTime();
-    const localTime=new Date(latestLocalResourceAt() || 0).getTime();
+    const cloudTime=dateMs(cloudSnapshotTime(latest));
+    const localTime=dateMs(latestLocalResourceAt());
     if(cloudTime && (!localTime || cloudTime>localTime+1000))warnings.push("클라우드 자료가 내 자료보다 최신일 수 있습니다.");
   }
   return warnings;
@@ -2204,7 +2222,7 @@ function uploadPreviewText(snapshot,latest=null){
   const warnings=uploadWarningLines(snapshot,latest);
   return [
     `공유자료: ${cloudReadConfig().title}`,
-    `올릴 기준시각: ${fmtDateTime(snapshot.createdAt)}`,
+    `올릴 기준: ${fmtDateTime(snapshot.createdAt)}`,
     `보관장소: ${summary.warehouses}곳`,
     `자재: ${summary.materials}종`,
     `장비: ${summary.equipment}개`,
@@ -2219,7 +2237,7 @@ function snapshotCautionText(snapshot){
   const meta=readCloudShareMeta();
   const incoming=snapshot?.cloudUpdatedAt || snapshot?.cloudSharedAt || snapshot?.createdAt || "";
   const previous=meta.lastAppliedCloudAt || "";
-  if(incoming && previous && new Date(incoming).getTime() < new Date(previous).getTime()){
+  if(incoming && previous && dateMs(incoming) < dateMs(previous)){
     return "\n주의: 이전에 적용한 공유자료보다 오래된 자료일 수 있습니다.";
   }
   return "";
@@ -2229,7 +2247,7 @@ function snapshotSummaryText(snapshot,{includeCaution=false}={}){
   const summary=snapshotSummary(snapshot);
   return [
     `자료: ${summary.title}`,
-    `기준시각: ${fmtDateTime(summary.date)}`,
+    `공유 기준: ${fmtDateTime(summary.date)}`,
     `보관장소: ${summary.warehouses}곳`,
     `자재: ${summary.materials}종`,
     `장비: ${summary.equipment}개`,
@@ -2566,7 +2584,7 @@ async function fetchLatestCloudShareSnapshot(){
   if(!rows?.length) return null;
   const candidates=rows
     .filter(item=>String(item?.site_id||"")===config.siteId && item?.snapshot?.kind==="victor-resource-share")
-    .sort((a,b)=>new Date(b.updated_at||b.created_at||0)-new Date(a.updated_at||a.created_at||0));
+    .sort((a,b)=>dateMs(b.updated_at||b.created_at)-dateMs(a.updated_at||a.created_at));
   const row=candidates[0];
   if(!row)throw new Error(`공유자료 형식 오류 · 받은 자료 ${rows.length}건`);
   const snapshot=row.snapshot || {};
@@ -2582,9 +2600,9 @@ async function fetchLatestCloudShareSnapshot(){
 
 function isCloudSnapshotNewer(snapshot){
   const meta=readCloudShareMeta();
-  const incoming=new Date(snapshot?.cloudUpdatedAt || snapshot?.cloudSharedAt || snapshot?.createdAt || 0).getTime();
-  const applied=new Date(meta.lastAppliedCloudAt || 0).getTime();
-  const uploaded=new Date(meta.lastUploadedAt || 0).getTime();
+  const incoming=dateMs(snapshot?.cloudUpdatedAt || snapshot?.cloudSharedAt || snapshot?.createdAt);
+  const applied=dateMs(meta.lastAppliedCloudAt);
+  const uploaded=dateMs(meta.lastUploadedAt);
   const known=Math.max(applied||0,uploaded||0);
   return Number.isFinite(incoming) && incoming > known + 1000;
 }
@@ -2905,7 +2923,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m46")
+      navigator.serviceWorker.register("./sw.js?v=0190m47")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
