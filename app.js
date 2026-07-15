@@ -2529,9 +2529,41 @@ function equipmentCompareMap(resource){
   return map;
 }
 
+function resourceStateWithLocalWarehouses(resource){
+  const merged=JSON.parse(JSON.stringify(resource || {}));
+  merged.warehouses=Array.isArray(merged.warehouses)?merged.warehouses:[];
+  merged.catalog=Array.isArray(merged.catalog)?merged.catalog:[];
+  merged.stock=merged.stock && typeof merged.stock==="object" && !Array.isArray(merged.stock) ? merged.stock : {};
+  merged.warehouseInfos=merged.warehouseInfos && typeof merged.warehouseInfos==="object" && !Array.isArray(merged.warehouseInfos) ? merged.warehouseInfos : {};
+  merged.warehouseKinds=merged.warehouseKinds && typeof merged.warehouseKinds==="object" && !Array.isArray(merged.warehouseKinds) ? merged.warehouseKinds : {};
+  merged.assetOps=merged.assetOps && typeof merged.assetOps==="object" && !Array.isArray(merged.assetOps) ? merged.assetOps : {};
+  merged.equipment=Array.isArray(merged.equipment)?merged.equipment:[];
+  const known=new Set(merged.warehouses);
+  const carried=new Set();
+  (state.warehouses||[]).forEach(name=>{
+    if(!name || known.has(name)) return;
+    known.add(name);
+    carried.add(name);
+    merged.warehouses.push(name);
+    merged.stock[name]={};
+    merged.catalog.forEach(item=>{merged.stock[name][item.name]=Number(state.stock?.[name]?.[item.name]||0);});
+    merged.warehouseInfos[name]=state.warehouseInfos?.[name] || {memo:"",updated:""};
+    merged.warehouseKinds[name]=state.warehouseKinds?.[name] || warehouseKind(name);
+    if(state.assetOps?.[name]) merged.assetOps[name]=state.assetOps[name];
+  });
+  if(carried.size){
+    const nextEquipmentIds=new Set(merged.equipment.map(item=>item.id).filter(Boolean));
+    (state.equipment||[]).forEach(item=>{
+      if(!carried.has(item.place) || nextEquipmentIds.has(item.id)) return;
+      merged.equipment.push(JSON.parse(JSON.stringify(item)));
+    });
+  }
+  return merged;
+}
+
 function compareSharedSnapshot(snapshot){
   const current=buildCloudResourceState();
-  const next=resourceStateFromSnapshot(snapshot);
+  const next=resourceStateWithLocalWarehouses(resourceStateFromSnapshot(snapshot));
   const currentWarehouses=new Set(current.warehouses||[]);
   const nextWarehouses=new Set(next.warehouses||[]);
   const addedWarehouses=[...nextWarehouses].filter(name=>!currentWarehouses.has(name));
@@ -2661,7 +2693,7 @@ function resourceStateFromSnapshot(snapshot){
 
 async function applySharedSnapshot(snapshot,source="공유자료"){
   if(snapshot?.kind!=="victor-resource-share")throw new Error("공유자료 형식 오류");
-  const next=resourceStateFromSnapshot(snapshot);
+  const next=resourceStateWithLocalWarehouses(resourceStateFromSnapshot(snapshot));
   if(!next?.warehouses?.length)throw new Error("적용할 보관 자료가 없습니다");
   if(!await askConfirm(`${source} 적용 미리보기`,`${shareApplyPreviewText(snapshot)}\n\n현재 앱의 보관·자재·장비 내용이 이 자료로 바뀝니다.\n계속할까요?`,"적용"))return false;
   if(!createCloudApplySafetyPoint(snapshot))return false;
@@ -3385,7 +3417,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m58")
+      navigator.serviceWorker.register("./sw.js?v=0190m59")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });

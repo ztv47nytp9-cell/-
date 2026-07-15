@@ -436,11 +436,21 @@ function normalize(raw){
   if(!raw || typeof raw !== "object") return d;
 
   const whSet = new Set(defaultWarehouses);
-  if(Array.isArray(raw.warehouses)) raw.warehouses.forEach(w => {
-    const name = oldName(w).trim();
+  const rememberWarehouse = value => {
+    const name = oldName(value || "").trim();
     if(name) whSet.add(name);
+  };
+  if(Array.isArray(raw.warehouses)) raw.warehouses.forEach(rememberWarehouse);
+  if(raw.stock && typeof raw.stock === "object") Object.keys(raw.stock).forEach(rememberWarehouse);
+  if(raw.warehouseInfos && typeof raw.warehouseInfos === "object" && !Array.isArray(raw.warehouseInfos)) Object.keys(raw.warehouseInfos).forEach(rememberWarehouse);
+  if(raw.warehouseKinds && typeof raw.warehouseKinds === "object" && !Array.isArray(raw.warehouseKinds)) Object.keys(raw.warehouseKinds).forEach(rememberWarehouse);
+  if(raw.assetOps && typeof raw.assetOps === "object" && !Array.isArray(raw.assetOps)) Object.keys(raw.assetOps).forEach(rememberWarehouse);
+  if(Array.isArray(raw.equipment)) raw.equipment.forEach(item => rememberWarehouse(item?.place || item?.warehouse));
+  if(Array.isArray(raw.records)) raw.records.forEach(record => {
+    rememberWarehouse(record?.warehouse);
+    rememberWarehouse(record?.targetWarehouse);
+    (record?.equipmentItems || []).forEach(item => rememberWarehouse(item?.place || item?.warehouse));
   });
-  if(raw.stock && typeof raw.stock === "object") Object.keys(raw.stock).forEach(w => whSet.add(oldName(w)));
   const warehouseList = [...whSet];
 
   const deletedMaterialNames=new Set((Array.isArray(raw.trash)?raw.trash:[]).filter(entry=>entry?.kind==="material").map(entry=>entry?.data?.item?.name).filter(Boolean));
