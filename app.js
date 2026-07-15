@@ -33,6 +33,7 @@ let cloudShareCheckInFlight = false;
 let lastCloudShareCheckAt = 0;
 let lockedMenuScrollY = 0;
 let menuCloseTimer = null;
+let appInfoCloseTimer = null;
 const REGISTER_DRAFT_KEY = "victor_register_draft_0_19_0j";
 const CLOUD_SHARE_CONFIG_KEY = "victor_cloud_share_config_0_19_0m";
 const CLOUD_SHARE_META_KEY = "victor_cloud_share_meta_0_19_0m";
@@ -98,12 +99,20 @@ function materialQtyText(q,u,item){
   return u==="L" && isDispersant(item) && n>0 && n%18===0 ? `${n.toLocaleString("ko-KR",{maximumFractionDigits:1})}L · ${n/18}캔` : base;
 }
 
-function readRegisterDraft(){try{return JSON.parse(localStorage.getItem(REGISTER_DRAFT_KEY)||"null");}catch(_){return null;}}
+function isMeaningfulRegisterDraft(draft){
+  if(!draft) return false;
+  if((draft.items || []).length || (draft.equipmentItems || []).length) return true;
+  if(String(draft.memo || "").trim()) return true;
+  if(draft.mode === "normal" && String(draft.title || "").trim()) return true;
+  return false;
+}
+function readRegisterDraft(){try{const draft=JSON.parse(localStorage.getItem(REGISTER_DRAFT_KEY)||"null");return isMeaningfulRegisterDraft(draft)?draft:null;}catch(_){return null;}}
 function clearRegisterDraft(){clearTimeout(registerDraftTimer);registerFormDraft=null;pendingRegisterDraft=null;try{localStorage.removeItem(REGISTER_DRAFT_KEY);}catch(_){}}
 function captureRegisterDraft(){
   if(page!=="register")return;
   const value=id=>document.getElementById(id)?.value||"";
   registerFormDraft={mode:registerMode,flow:registerFlow,type:value("recType"),warehouse:value("recWarehouse"),date:value("recDate"),title:value("recTitle"),memo:value("recMemo"),items:draftItems.map(item=>({...item})),equipmentItems:draftEquipmentItems.map(item=>({...item})),savedAt:new Date().toISOString()};
+  if(!isMeaningfulRegisterDraft(registerFormDraft)){try{localStorage.removeItem(REGISTER_DRAFT_KEY);}catch(_){};registerFormDraft=null;return;}
   try{localStorage.setItem(REGISTER_DRAFT_KEY,JSON.stringify(registerFormDraft));}catch(error){console.warn("[Victor] 작성 중 기록 저장 실패",error);}
 }
 function scheduleRegisterDraft(){clearTimeout(registerDraftTimer);registerDraftTimer=setTimeout(captureRegisterDraft,700);}
@@ -510,10 +519,6 @@ function renderHome(){
   const pending = pendingRecords().length;
   view.innerHTML = `
     ${storageSummaryCard(true)}
-    ${cloudShareNoticeHtml()}
-    <button class="survey-launch" id="homeFastSurvey" type="button"><span>${state.survey?.active?"진행 중인 재고실사":"초기 재고실사"}</span><strong>${state.survey?.active?"이어하기":"빠르게 시작"} ›</strong></button>
-    ${state.survey?.active?`<button class="btn gray" id="restartFastSurvey" type="button" style="width:100%;margin:-4px 0 10px">재고실사 처음부터 다시</button>`:""}
-    ${state.survey?.lastApplied?.changes?.length?`<button class="btn secondary" id="undoLastSurvey" type="button" style="width:100%;margin-bottom:10px">직전 실사 반영 취소</button>`:""}
     <div class="card global-search-card">
       <input class="search" id="globalSearch" value="${esc(globalSearchQuery)}" placeholder="자재·장비·창고 통합 찾기" aria-label="통합 찾기">
       <div id="globalSearchResults"></div>
@@ -534,7 +539,6 @@ function renderHome(){
         <button id="homePending" type="button"><span>🚨</span><strong>미반영 ${pending}건</strong></button>
         <button id="homeMemoShortcut" type="button"><span>📝</span><strong>새 메모</strong></button>
       </div>
-      ${cloudShareStatusHtml()}
     </div>
     <div class="section-head"><div class="section-title">최근 활동</div><button class="link-btn" id="goActivityAll">전체보기 ›</button></div>
     <div class="activity-tabs"><button class="${homeActivityTab === "history" ? "active" : ""}" id="homeActivityHistory" type="button">이력</button><button class="${homeActivityTab === "memo" ? "active" : ""}" id="homeActivityMemo" type="button">메모</button></div>
@@ -547,12 +551,6 @@ function renderHome(){
   document.getElementById("homeQuickOut")?.addEventListener("click", () => startHomeRegister("normal","출고"));
   document.getElementById("homeQuickIn")?.addEventListener("click", () => startHomeRegister("normal","입고"));
   document.getElementById("homeStorageSummary")?.addEventListener("click", () => openStorageView("materials"));
-  document.getElementById("homeFastSurvey")?.addEventListener("click",()=>state.survey?.active?renderFastSurvey():openFastSurveySetup());
-  document.getElementById("restartFastSurvey")?.addEventListener("click",restartFastSurvey);
-  document.getElementById("undoLastSurvey")?.addEventListener("click",undoLastSurvey);
-  document.getElementById("applyCloudNotice")?.addEventListener("click",()=>loadCloudShareSnapshot());
-  document.getElementById("checkCloudNotice")?.addEventListener("click",()=>checkCloudShareNotice({force:true,notify:true}));
-  document.getElementById("undoCloudApply")?.addEventListener("click",restoreCloudApplySafetyPoint);
   document.getElementById("homeAllResources")?.addEventListener("click", () => openStorageView("materials"));
   document.getElementById("homeShareResources")?.addEventListener("click", openCloudShareActions);
   document.getElementById("homePending")?.addEventListener("click", () => { historyFilter = "pending"; historyDateFilter = "all"; historyFlowFilter = "all"; setPage("history"); });
@@ -629,13 +627,12 @@ function warehouseViewSwitcher(){
     <button data-storage-view="warehouses" class="${warehouseViewMode === "warehouses" ? "active" : ""}" type="button">창고별 보기</button>
     <button data-storage-view="materials" class="${warehouseViewMode === "materials" ? "active" : ""}" type="button">전체 자재</button>
     <button data-storage-view="equipment" class="${warehouseViewMode === "equipment" ? "active" : ""}" type="button">전체 장비</button>
+    <button data-storage-view="hns" class="${warehouseViewMode === "hns" ? "active" : ""}" type="button">HNS</button>
   </div></div>`;
 }
 
 function warehouseActions(place=""){
-  return `<div class="storage-actions">
-    <button class="btn secondary" id="transferMaterial" type="button">창고 간 이동</button>
-  </div>`;
+  return "";
 }
 
 function bindWarehouseActions(place=""){
@@ -755,6 +752,13 @@ function renderAllEquipmentList(){
   bindGroupedSections(renderAllEquipmentList);target.querySelectorAll("[data-all-equipment]").forEach(button=>button.addEventListener("click",()=>{if(!resourceSelectionMode)openEquipment(button.dataset.allEquipment);}));target.querySelectorAll("[data-select-equipment]").forEach(input=>input.addEventListener("change",()=>{const key=`equipment:${input.dataset.selectEquipment}`;input.checked?selectedResources.add(key):selectedResources.delete(key);renderBulkResourceActions();}));renderBulkResourceActions();
 }
 
+function renderHnsView(){
+  return `<div class="card">
+    <div class="section-title">HNS</div>
+    <div class="emptybox">HNS 자재·장비 자료를 넣기 전 준비 화면입니다.<br>내일 자료를 받으면 물질별 대응정보와 자원 목록을 이곳에 정리합니다.</div>
+  </div>`;
+}
+
 function renderWarehouseGroupList(){
   const order=["창고","파출소","함정","차량","기타"];
   return `<div class="group-toolbar"><button class="btn gray compact" data-groups-all="expand" type="button">전체 펼치기</button><button class="btn gray compact" data-groups-all="collapse" type="button">전체 접기</button></div>`+order.map(kind=>{const names=warehouses.filter(name=>warehouseKind(name)===kind).sort((a,b)=>a.localeCompare(b,"ko"));if(!names.length)return "";const rows=names.map(name=>{const summary=warehouseSummary(name),info=state.warehouseInfos[name]||{};return `<button class="list-row" data-wh="${esc(name)}" type="button"><div><div class="row-title">${esc(name)}</div><div class="row-sub">자재 ${summary.materialCount}종 · 장비 ${summary.equipmentCount}종${info.memo?" · 메모 있음":""}</div></div><div class="chev">›</div></button>`;}).join("");return groupedSection("warehouses",kind==="차량"?"지휘차량":kind,`${names.length}곳`,`<div class="list-card">${rows}</div>`);}).join("")+`<button class="btn secondary" id="addWarehouseInline" type="button" style="width:100%;margin-top:10px">+ 신규 보관장소 추가</button>`;
@@ -762,7 +766,7 @@ function renderWarehouseGroupList(){
 
 function renderWarehouse(){
   if(!selectedWarehouse){
-    const body = warehouseViewMode === "materials" ? renderAllMaterialsView() : warehouseViewMode === "equipment" ? renderAllEquipmentView() : renderWarehouseGroupList();
+    const body = warehouseViewMode === "materials" ? renderAllMaterialsView() : warehouseViewMode === "equipment" ? renderAllEquipmentView() : warehouseViewMode === "hns" ? renderHnsView() : renderWarehouseGroupList();
     view.innerHTML = warehouseViewSwitcher() + warehouseActions() + body;
     bindWarehouseViewSwitcher();
     bindWarehouseActions();
@@ -774,6 +778,8 @@ function renderWarehouse(){
       bindResourceFilters(renderAllEquipmentList);
       bindResourceGroupControls(renderAllEquipmentList);
       renderAllEquipmentList();
+    }else if(warehouseViewMode === "hns"){
+      // HNS 자료 입력 전 준비 화면입니다.
     }else{
       bindGroupedSections(renderWarehouse);
       view.querySelectorAll("[data-wh]").forEach(button => button.addEventListener("click", () => { selectedWarehouse=button.dataset.wh; warehouseTab="material"; renderWarehouse(); pushNavigationState({page:"warehouse",warehouse:selectedWarehouse,tab:warehouseTab}); }));
@@ -904,7 +910,6 @@ function renderRegister(){
   draftItems = draftItems.length ? draftItems : [];
   view.innerHTML = `
     ${pendingRegisterDraft&&!registerFormDraft ? `<div class="callout">작성 중 기록 있음 <div class="btn-row" style="margin-top:8px"><button class="btn secondary compact" id="loadRegisterDraft" type="button">불러오기</button><button class="btn gray compact" id="discardRegisterDraft" type="button">새로 시작</button></div></div>` : ""}
-    ${registerFormDraft ? `<div class="callout">작성 중이던 내용을 불러왔습니다. <button class="btn gray compact" id="discardRegisterDraft" type="button">새로 작성</button></div>` : ""}
     <div class="choice-grid">
       <button class="choice-card ${registerMode === "normal" ? "active" : ""}" id="modeNormal" type="button">
         <div><div class="choice-title">일반등록</div><div class="choice-sub">평상시 자재 출고·입고를 기록하고 재고에 즉시 반영합니다.</div></div>
@@ -922,7 +927,7 @@ function renderRegister(){
         </div>
         <label>종류<select id="recType">${types.map(t=>`<option value="${t}">${t}</option>`).join("")}</select></label>
         <label>보관<select id="recWarehouse">${warehouses.map(w=>`<option value="${esc(w)}">${esc(w)}</option>`).join("")}</select></label>
-        <label>날짜<input id="recDate" type="date" value="${todayISO()}"></label><div class="qty-quick"><button type="button" id="dateToday">오늘</button><button type="button" id="dateYesterday">어제</button><button type="button" id="dateDirect">직접 선택</button></div>
+        <label>날짜<input id="recDate" type="date" value="${todayISO()}"></label>
         <label>제목<input id="recTitle" placeholder="제목을 입력하세요"></label>
       ` : `
         <input id="recType" type="hidden" value="사고">
@@ -933,10 +938,11 @@ function renderRegister(){
       <div>
         <div class="section-head" style="margin:5px 0 8px">
           <div class="section-title" style="font-size:16px">${registerMode === "quick" ? "사용 내역" : registerFlow}</div>
-          <div class="btn-row"><button class="btn secondary compact" id="addItem" type="button">자재 선택</button><button class="btn secondary compact" id="addEquipmentItem" type="button">장비 선택</button></div>
+          <div class="btn-row"><button class="btn secondary compact" id="addItem" type="button">자재 선택</button><button class="btn secondary compact" id="addEquipmentItem" type="button">장비 선택</button><button class="btn secondary compact" id="addHnsItem" type="button">HNS</button></div>
         </div>
         <div id="itemArea"></div>
         <div id="equipmentItemArea"></div>
+        <div id="hnsItemArea">${registerMode==="normal"?`<div class="hns-register-card"><div><strong>HNS</strong><span>${registerFlow} 자료 연결 준비 중</span></div><button class="btn gray compact" id="openHnsGuide" type="button">안내</button></div>`:""}</div>
         <div id="stockAfterPreview"></div>
       </div>
       <label>메모<textarea id="recMemo" placeholder="${registerMode === "quick" ? "현장 메모를 간단히 입력하세요" : "메모를 입력하세요"}"></textarea></label>
@@ -951,19 +957,21 @@ function renderRegister(){
   if(inBtn) inBtn.addEventListener("click", () => { registerFlow = "입고"; draftEquipmentItems=[]; renderRegister(); });
   document.getElementById("addItem")?.addEventListener("click", addDraftItem);
   document.getElementById("addEquipmentItem")?.addEventListener("click", addDraftEquipmentItem);
+  document.getElementById("addHnsItem")?.addEventListener("click", openHnsRegisterGuide);
+  document.getElementById("openHnsGuide")?.addEventListener("click", openHnsRegisterGuide);
   document.getElementById("saveRecord")?.addEventListener("click", saveRecord);
-  document.getElementById("loadRegisterDraft")?.addEventListener("click",()=>{applyRegisterDraft(pendingRegisterDraft||readRegisterDraft());renderRegister();setHead();});
+  document.getElementById("loadRegisterDraft")?.addEventListener("click",()=>{applyRegisterDraft(pendingRegisterDraft||readRegisterDraft());renderRegister();setHead();showSnack("작성 중 기록을 불러왔습니다");});
   document.getElementById("discardRegisterDraft")?.addEventListener("click",()=>{clearRegisterDraft();draftItems=[];draftEquipmentItems=[];renderRegister();});
-  document.getElementById("dateToday")?.addEventListener("click",()=>{document.getElementById("recDate").value=todayISO();scheduleRegisterDraft();});
-  document.getElementById("dateYesterday")?.addEventListener("click",()=>{const d=new Date();d.setDate(d.getDate()-1);document.getElementById("recDate").value=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;scheduleRegisterDraft();});
-  document.getElementById("dateDirect")?.addEventListener("click",()=>document.getElementById("recDate")?.focus());
   document.getElementById("recWarehouse")?.addEventListener("change",()=>{renderItems();updateStockAfterPreview();});
   renderItems();
   renderEquipmentItems();
   updateStockAfterPreview();
   if(registerFormDraft){[["recType","type"],["recWarehouse","warehouse"],["recDate","date"],["recTitle","title"],["recMemo","memo"]].forEach(([id,key])=>{const input=document.getElementById(id);if(input&&registerFormDraft[key]!==undefined)input.value=registerFormDraft[key];});}
   view.querySelectorAll("input,select,textarea").forEach(input=>input.addEventListener("input",scheduleRegisterDraft));
-  scheduleRegisterDraft();
+}
+
+function openHnsRegisterGuide(){
+  showFeedback("info","HNS 자료는 별도 목록을 받은 뒤 입고·출고에 연결합니다");
 }
 
 function updateStockAfterPreview(){
@@ -2688,7 +2696,14 @@ async function loadCloudShareSnapshot(){
 }
 
 function bindGlobal(){
-  document.addEventListener("focusin",event=>{const input=event.target;if(input?.matches?.('input[type="number"]')&&Number(input.value)===0)input.value="";});
+  document.addEventListener("focusin",event=>{
+    const input=event.target;
+    if(input?.matches?.('input[type="number"]')&&Number(input.value)===0)input.value="";
+    if(input?.matches?.("input, textarea, select"))document.body.classList.add("keyboard-open");
+  });
+  document.addEventListener("focusout",event=>{
+    if(event.target?.matches?.("input, textarea, select"))setTimeout(()=>document.body.classList.remove("keyboard-open"),120);
+  });
   document.querySelectorAll(".nav").forEach(b => b.addEventListener("click", () => setPage(b.dataset.page)));
 
   document.getElementById("moreBtn")?.addEventListener("click", () => openMenu());
@@ -2741,14 +2756,17 @@ function bindGlobal(){
   document.getElementById("resetBtn")?.addEventListener("click", () => { closeMenu(); resetAll(); });
   document.getElementById("trashBtn")?.addEventListener("click",openTrash);
   document.getElementById("bulkUndoBtn")?.addEventListener("click",restoreBulkSafetyPoint);
+  document.getElementById("surveyUndoBtn")?.addEventListener("click",()=>{closeMenu();undoLastSurvey();});
+  document.getElementById("fastSurveyMenuBtn")?.addEventListener("click",()=>{closeMenu();state.survey?.active?renderFastSurvey():openFastSurveySetup();});
   document.getElementById("appInfoBtn")?.addEventListener("click", () => {
     closeMenu();
-    document.getElementById("appInfoModal").classList.add("show");
+    openAppInfoModal();
   });
-  document.getElementById("closeAppInfo")?.addEventListener("click", () => document.getElementById("appInfoModal").classList.remove("show"));
+  document.getElementById("closeAppInfo")?.addEventListener("click", closeAppInfoModal);
   document.getElementById("appInfoModal")?.addEventListener("click", event => {
-    if(event.target.id === "appInfoModal") event.currentTarget.classList.remove("show");
+    if(event.target.id === "appInfoModal") closeAppInfoModal();
   });
+  bindAppInfoDrag();
   document.getElementById("entryModal")?.addEventListener("click", event => {
     if(event.target.id === "entryModal") closeEntryModal();
   });
@@ -2762,6 +2780,66 @@ function bindGlobal(){
     lastTouchEnd = now;
   }, {passive:false});
   document.addEventListener("dragstart", event => event.preventDefault());
+}
+
+function openAppInfoModal(){
+  const modal=document.getElementById("appInfoModal");
+  if(!modal)return;
+  clearTimeout(appInfoCloseTimer);
+  modal.classList.remove("closing");
+  modal.classList.add("show");
+}
+
+function closeAppInfoModal(){
+  const modal=document.getElementById("appInfoModal");
+  if(!modal)return;
+  resetAppInfoMotion();
+  if(modal.classList.contains("show")){
+    clearTimeout(appInfoCloseTimer);
+    modal.classList.add("closing");
+    modal.classList.remove("show");
+    appInfoCloseTimer=setTimeout(()=>modal.classList.remove("closing"),340);
+  }
+}
+
+function bindAppInfoDrag(){
+  const modal=document.getElementById("appInfoModal");
+  const dialog=modal?.querySelector(".dialog");
+  if(!modal||!dialog||dialog.dataset.dragBound==="1")return;
+  dialog.dataset.dragBound="1";
+  let startY=0,distance=0,dragging=false;
+  dialog.addEventListener("touchstart",event=>{
+    if(!modal.classList.contains("show")||dialog.scrollTop>0)return;
+    dragging=true;
+    startY=event.touches[0].clientY;
+    distance=0;
+    dialog.classList.add("dragging");
+  },{passive:true});
+  dialog.addEventListener("touchmove",event=>{
+    if(!dragging)return;
+    distance=Math.max(0,event.touches[0].clientY-startY);
+    if(distance>0){
+      dialog.style.transform=`translateY(${distance}px)`;
+      modal.style.backgroundColor=`rgba(16,24,40,${Math.max(.12,.32-distance/700)})`;
+    }
+  },{passive:true});
+  dialog.addEventListener("touchend",()=>{
+    if(!dragging)return;
+    dragging=false;
+    dialog.classList.remove("dragging");
+    if(distance>74)closeAppInfoModal();
+    else resetAppInfoMotion();
+  },{passive:true});
+}
+
+function resetAppInfoMotion(){
+  const modal=document.getElementById("appInfoModal");
+  const dialog=modal?.querySelector(".dialog");
+  if(dialog){
+    dialog.classList.remove("dragging");
+    dialog.style.transform="";
+  }
+  if(modal)modal.style.backgroundColor="";
 }
 
 function openMenu(push=true){
@@ -2830,7 +2908,7 @@ function restoreNavigation(nav){
     }
     closeMenu(true);
     document.getElementById("entryModal")?.classList.remove("show");
-    document.getElementById("appInfoModal")?.classList.remove("show");
+    closeAppInfoModal();
     if(nav?.recordId && state.records.some(record => record.id === nav.recordId)){
       openDetail(nav.recordId,{push:false,remember:false});
       return;
@@ -2843,7 +2921,7 @@ function restoreNavigation(nav){
     selectedWarehouse = null;
     editingMemoId = nav?.memoId || null;
     if(page === "warehouse"){
-      warehouseViewMode = ["materials","equipment"].includes(nav?.view) ? nav.view : "warehouses";
+      warehouseViewMode = ["materials","equipment","hns"].includes(nav?.view) ? nav.view : "warehouses";
       if(nav?.warehouse && warehouses.includes(nav.warehouse)){
         selectedWarehouse = nav.warehouse;
         warehouseTab = nav.tab === "equipment" ? "equipment" : "material";
@@ -2930,7 +3008,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m51")
+      navigator.serviceWorker.register("./sw.js?v=0190m53")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
