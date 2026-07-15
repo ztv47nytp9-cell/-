@@ -40,6 +40,7 @@ const CLOUD_SHARE_META_KEY = "victor_cloud_share_meta_0_19_0m";
 const CLOUD_APPLY_SAFETY_KEY = "victor_cloud_apply_safety_0_19_0m";
 const CLOUD_UPLOAD_PIN_HASH_KEY = "victor_cloud_upload_pin_hash_0_19_0m";
 const THEME_MODE_KEY = "victor_theme_mode_0_19_0m";
+const DEVICE_ID_KEY = "victor_device_id_0_19_0m";
 const DEFAULT_CLOUD_SHARE_CONFIG = {
   url:"https://vzwzkeqxkqlrctylspxz.supabase.co",
   key:"sb_publishable_8X3VXnF63hNSUzYf14lDfg_IBj-PD72",
@@ -483,6 +484,20 @@ function bindPinNumberInput(id){
   input.addEventListener("input",()=>{input.value=String(input.value||"").replace(/\D/g,"").slice(0,4);});
 }
 
+function victorDeviceId(){
+  try{
+    let id=localStorage.getItem(DEVICE_ID_KEY);
+    if(!id){id=`dev-${Math.random().toString(36).slice(2,8)}-${Date.now().toString(36).slice(-4)}`;localStorage.setItem(DEVICE_ID_KEY,id);}
+    return id;
+  }catch(_){return "dev-local";}
+}
+
+function victorDeviceLabel(){
+  const ua=navigator.userAgent||"";
+  const kind=/iPhone|iPad/i.test(ua)?"iPhone/iPad":/Android/i.test(ua)?"Android":/Windows/i.test(ua)?"Windows PC":/Macintosh/i.test(ua)?"Mac":"기기";
+  return `${kind} · ${victorDeviceId().slice(-4)}`;
+}
+
 function readCloudApplySafetyPoint(){
   try{return JSON.parse(localStorage.getItem(CLOUD_APPLY_SAFETY_KEY)||"null");}catch(_){return null;}
 }
@@ -865,17 +880,26 @@ function renderWarehouseEquipment(place){
 
 function editWarehouseInfo(w){
   const info = state.warehouseInfos[w] || {memo:"",updated:""};
-  openEntryModal(`${entryHeader("보관장소 정보 수정",w)}<div class="form"><label>보관장소명<input id="warehouseNameEdit" value="${esc(w)}" placeholder="보관장소명을 입력하세요"></label><label>유형<select id="warehouseKindEdit">${["창고","차량","함정","파출소","기타"].map(kind=>`<option ${kind===warehouseKind(w)?"selected":""}>${kind}</option>`).join("")}</select></label><label>중요 메모<textarea id="warehouseMemo" placeholder="보관장소 특이사항을 입력하세요">${esc(info.memo || "")}</textarea></label><button class="btn primary" id="saveWarehouseMemo" type="button">저장</button></div>`);
-  document.getElementById("saveWarehouseMemo")?.addEventListener("click", () => {
+  openEntryModal(`${entryHeader("보관장소 정보 수정",w)}<div class="form"><label>보관장소명<input id="warehouseNameEdit" value="${esc(w)}" placeholder="보관장소명을 입력하세요"></label><label>유형<select id="warehouseKindEdit">${["창고","차량","함정","파출소","기타"].map(kind=>`<option ${kind===warehouseKind(w)?"selected":""}>${kind}</option>`).join("")}</select></label><div class="callout">${esc(warehouseImpactText(w))}</div><label>중요 메모<textarea id="warehouseMemo" placeholder="보관장소 특이사항을 입력하세요">${esc(info.memo || "")}</textarea></label><button class="btn primary" id="saveWarehouseMemo" type="button">저장</button></div>`);
+  document.getElementById("saveWarehouseMemo")?.addEventListener("click", async () => {
     const nextName=document.getElementById("warehouseNameEdit").value.trim();
     const kind=document.getElementById("warehouseKindEdit").value;
     const memo=document.getElementById("warehouseMemo").value.trim();
     if(!nextName){showFeedback("error","보관장소명을 입력해주세요");return;}
     if(nextName!==w && warehouses.includes(nextName)){showFeedback("error","이미 있는 보관장소명입니다");return;}
+    if(nextName!==w && !await askConfirm("창고명 변경 영향",`${warehouseImpactText(w)}\n\n${w} → ${nextName}(으)로 변경할까요?`,"변경"))return;
     renameWarehouse(w,nextName,{kind,memo});
     selectedWarehouse=nextName;
     save(); closeEntryModal(); showFeedback("success","보관장소 정보 저장"); renderWarehouse();
   });
+}
+
+function warehouseImpactText(name){
+  const materialCount=catalog.filter(item=>Number(state.stock[name]?.[item.name]||0)>0).length;
+  const equipmentCount=(state.equipment||[]).filter(item=>item.place===name).length;
+  const recordCount=(state.records||[]).filter(record=>record.warehouse===name||record.targetWarehouse===name||(record.equipmentItems||[]).some(item=>item.place===name)).length;
+  const opsCount=state.assetOps?.[name]?.logs?.length||0;
+  return `연결된 자료: 자재 ${materialCount}종 · 장비 ${equipmentCount}개 · 이력 ${recordCount}건${opsCount?` · 운항/운행 ${opsCount}건`:""}`;
 }
 
 function renameWarehouse(oldName,newName,{kind,memo}={}){
@@ -906,8 +930,11 @@ function renameWarehouse(oldName,newName,{kind,memo}={}){
 function renderStockList(){
   const q = (document.getElementById("stockSearch")?.value || "").trim();
   const el = document.getElementById("stockList");
+  state.ui=state.ui||{};
+  const showZero=Boolean(state.ui.showZeroStockInWarehouse);
+  const hiddenZeroCount=catalog.filter(item=>Number(state.stock[selectedWarehouse]?.[item.name]||0)===0).length;
   const html = cats.map(cat => {
-    const items = catalog.filter(i => i.cat === cat && Number(state.stock[selectedWarehouse]?.[i.name]||0)>0 && (!q || i.name.includes(q) || cat.includes(q)));
+    const items = catalog.filter(i => i.cat === cat && (showZero || Number(state.stock[selectedWarehouse]?.[i.name]||0)>0) && (!q || i.name.includes(q) || cat.includes(q)));
     if(!items.length) return "";
     const sorted=items.sort((a,b)=>materialSortMode==="qty"?Number(state.stock[selectedWarehouse]?.[b.name]||0)-Number(state.stock[selectedWarehouse]?.[a.name]||0):materialSortMode==="recent"?String(b.updatedAt||"").localeCompare(String(a.updatedAt||"")):a.name.localeCompare(b.name,"ko"));return groupedSection(`warehouse-material-${selectedWarehouse}`,cat,`${items.length}종`,sorted.map(i => `
       <button class="stock-line ${Number(state.stock[selectedWarehouse]?.[i.name]||0)===0?"zero-stock":""}" data-stock="${esc(i.name)}" type="button">
@@ -918,8 +945,9 @@ function renderStockList(){
         <div class="stock-qty">${materialQtyText(state.stock[selectedWarehouse][i.name], i.unit,i)}</div>
       </button>`).join(""),Boolean(q));
   }).join("");
-  el.innerHTML = html || `<div class="emptybox">검색 결과가 없습니다.</div>`;
+  el.innerHTML = `<button class="btn gray compact" id="toggleZeroStock" type="button" style="margin:0 0 8px">${showZero?"0재고 숨기기":`숨긴 0재고 보기 ${hiddenZeroCount}종`}</button>` + (html || `<div class="emptybox">검색 결과가 없습니다.</div>`);
   bindGroupedSections(renderStockList);
+  document.getElementById("toggleZeroStock")?.addEventListener("click",()=>{state.ui=state.ui||{};state.ui.showZeroStockInWarehouse=!showZero;save();renderStockList();});
   el.querySelectorAll("[data-stock]").forEach(b => b.addEventListener("click", () => editStock(b.dataset.stock)));
 }
 
@@ -2097,19 +2125,37 @@ function openResourceAddChoice(kind){
   document.getElementById("addNewResource")?.addEventListener("click",()=>simpleResourceForm(kind));
 }
 
+function materialRecentScore(name){
+  let score=0;
+  (state.records||[]).forEach((record,index)=>{
+    if((record.items||[]).some(item=>item.name===name))score=Math.max(score,dateMs(record.createdAt||record.date)||index+1);
+  });
+  return score;
+}
+
+function equipmentRecentScore(equipment){
+  let score=dateMs(equipment?.updatedAt)||0;
+  (state.records||[]).forEach((record,index)=>{
+    if((record.equipmentItems||[]).some(item=>item.id===equipment.id||item.name===equipment.name))score=Math.max(score,dateMs(record.createdAt||record.date)||index+1);
+  });
+  return score;
+}
+
 function openExistingMaterialAdd(){
   const place=selectedWarehouse || warehouses[0];
-  const firstCat=cats[0] || "";
+  const sortedCatalog=[...catalog].sort((a,b)=>materialRecentScore(b.name)-materialRecentScore(a.name)||a.name.localeCompare(b.name,"ko"));
+  const sortedCats=[...cats].sort((a,b)=>Math.max(0,...sortedCatalog.filter(item=>item.cat===b).map(item=>materialRecentScore(item.name)))-Math.max(0,...sortedCatalog.filter(item=>item.cat===a).map(item=>materialRecentScore(item.name)))||a.localeCompare(b,"ko"));
+  const firstCat=sortedCats[0] || "";
   openEntryModal(`${entryHeader("기존 자재 추가",place)}
     <div class="form">
-      <label>분류<select id="existingMaterialCat">${cats.map(cat=>`<option>${esc(cat)}</option>`).join("")}</select></label>
+      <label>분류<select id="existingMaterialCat">${sortedCats.map(cat=>`<option>${esc(cat)}</option>`).join("")}</select></label>
       <label>자재<select id="existingMaterialName"></select></label>
       <label>추가 수량<input id="existingMaterialQty" type="number" inputmode="decimal" min="0" step="0.1" placeholder="수량"></label>
       <button class="btn primary" id="saveExistingMaterial" type="button">추가</button>
     </div>`);
   const renderNames=()=>{
     const cat=document.getElementById("existingMaterialCat")?.value || firstCat;
-    const rows=catalog.filter(item=>item.cat===cat);
+    const rows=sortedCatalog.filter(item=>item.cat===cat);
     const select=document.getElementById("existingMaterialName");
     if(select)select.innerHTML=rows.map(item=>`<option value="${esc(item.name)}">${esc(item.name)} · ${esc(item.spec||item.unit||"")}</option>`).join("");
   };
@@ -2131,12 +2177,13 @@ function openExistingMaterialAdd(){
 
 function openExistingEquipmentAdd(){
   const place=selectedWarehouse || warehouses[0];
-  const templates=[...new Map((state.equipment||[]).map(item=>[`${item.cat}|${item.name}|${item.spec||item.detail||""}|${item.model||""}`,item])).values()];
-  const firstCat=equipmentCategories.find(cat=>templates.some(item=>(item.cat||"기타장비")===cat)) || equipmentCategories[0] || "";
+  const templates=[...new Map((state.equipment||[]).map(item=>[`${item.cat}|${item.name}|${item.spec||item.detail||""}|${item.model||""}`,item])).values()].sort((a,b)=>equipmentRecentScore(b)-equipmentRecentScore(a)||equipmentRegisterLabel(a).localeCompare(equipmentRegisterLabel(b),"ko"));
+  const sortedEquipmentCats=[...equipmentCategories].sort((a,b)=>Math.max(0,...templates.filter(item=>(item.cat||"기타장비")===b).map(equipmentRecentScore))-Math.max(0,...templates.filter(item=>(item.cat||"기타장비")===a).map(equipmentRecentScore))||a.localeCompare(b,"ko"));
+  const firstCat=sortedEquipmentCats.find(cat=>templates.some(item=>(item.cat||"기타장비")===cat)) || sortedEquipmentCats[0] || "";
   if(!templates.length){simpleResourceForm("equipment");showFeedback("info","등록된 장비 목록이 없어 새로 등록합니다");return;}
   openEntryModal(`${entryHeader("기존 장비 추가",place)}
     <div class="form">
-      <label>장비 분류<select id="existingEquipmentCat">${equipmentCategories.map(cat=>`<option ${cat===firstCat?"selected":""}>${esc(cat)}</option>`).join("")}</select></label>
+      <label>장비 분류<select id="existingEquipmentCat">${sortedEquipmentCats.map(cat=>`<option ${cat===firstCat?"selected":""}>${esc(cat)}</option>`).join("")}</select></label>
       <label>장비<select id="existingEquipmentName"></select></label>
       <label>수량<input id="existingEquipmentQty" type="number" inputmode="numeric" min="1" step="1" value="1"></label>
       <button class="btn primary" id="saveExistingEquipment" type="button">추가</button>
@@ -2239,6 +2286,8 @@ function buildResourceSnapshot(place=""){
   const cloudMeta=readCloudShareMeta();
   return {
     kind:"victor-resource-share",formatVersion:1,appVersion:VERSION,createdAt:new Date().toISOString(),scope:place || "전체",
+    createdBy:victorDeviceLabel(),
+    createdDeviceId:victorDeviceId(),
     uploadPinHash:currentCloudUploadPinHash(),
     uploadPinUpdatedAt:cloudMeta.uploadPinUpdatedAt || "",
     resourceState:place?"":buildCloudResourceState(),
@@ -2259,7 +2308,8 @@ function snapshotSummary(snapshot){
     warehouses:warehouseNames.size,
     materials:materialNames.size || (resource?.catalog || []).length,
     equipment:equipment.length || (resource?.equipment || []).length,
-    title:snapshot?.title || "Victor 자원현황"
+    title:snapshot?.title || "Victor 자원현황",
+    device:snapshot?.cloudUploadedBy || snapshot?.createdBy || "기록 없음"
   };
 }
 
@@ -2483,7 +2533,7 @@ async function applySharedSnapshot(snapshot,source="공유자료"){
     pinPatch.uploadPinHash=pinHash;
     pinPatch.uploadPinUpdatedAt=snapshot.uploadPinUpdatedAt || "";
   }
-  saveCloudShareMeta({lastAppliedAt:new Date().toISOString(),lastAppliedSource:source,lastAppliedCloudAt:snapshot?.cloudUpdatedAt || snapshot?.cloudSharedAt || snapshot?.createdAt || "",...pinPatch});
+  saveCloudShareMeta({lastAppliedAt:new Date().toISOString(),lastAppliedSource:source,lastAppliedCloudAt:snapshot?.cloudUpdatedAt || snapshot?.cloudSharedAt || snapshot?.createdAt || "",lastAppliedDeviceName:victorDeviceLabel(),lastAppliedFromDevice:snapshot?.cloudUploadedBy || snapshot?.createdBy || "",...pinPatch});
   cloudShareNotice=null;
   showFeedback("success","공유자료를 현재 앱에 적용했습니다");
   return true;
@@ -2655,6 +2705,8 @@ function cloudDashboardHtml(latest=null,{loading=false,error=""}={}){
         <span><strong>공유 자료</strong><br>${esc(cloudSummary?fmtShareTime(cloudSummary.date):loading?"확인 중":"자료 없음")}<br>${cloudSummary?`자재 ${cloudSummary.materials}종 · 장비 ${cloudSummary.equipment}개`:"-"}</span>
         <span><strong>올림 기록</strong><br>${esc(fmtShareTime(meta.lastUploadedAt))}</span>
         <span><strong>가져옴 기록</strong><br>${esc(fmtShareTime(meta.lastAppliedAt))}</span>
+        <span><strong>올린 기기</strong><br>${esc(cloudSummary?.device || meta.lastUploadedDeviceName || "기록 없음")}</span>
+        <span><strong>적용 기기</strong><br>${esc(meta.lastAppliedDeviceName || "기록 없음")}</span>
         <span><strong>PIN</strong><br>${currentCloudUploadPinHash()?"설정됨":"미설정"}</span>
         <span><strong>되돌리기</strong><br>${safety?`${esc(fmtShareTime(safety.createdAt))} 가능`:"없음"}</span>
       </div>
@@ -2663,6 +2715,7 @@ function cloudDashboardHtml(latest=null,{loading=false,error=""}={}){
       <button class="btn secondary" id="cloudUploadNow" type="button">내 자료 올리기</button>
       ${safety?`<button class="btn danger" id="cloudUndoNow" type="button">방금 적용 되돌리기</button>`:""}
       <button class="btn gray" id="cloudRefreshNow" type="button">최신자료 확인</button>
+      <div class="entry-actions"><button class="btn gray" id="cloudPinNow" type="button">PIN 설정</button><button class="btn gray" id="cloudSettingsNow" type="button">공유 연결</button></div>
     </div>`;
 }
 
@@ -2671,6 +2724,8 @@ function bindCloudDashboard(){
   document.getElementById("cloudUploadNow")?.addEventListener("click",()=>{closeEntryModal();uploadCloudShareSnapshot();});
   document.getElementById("cloudUndoNow")?.addEventListener("click",()=>{closeEntryModal();restoreCloudApplySafetyPoint();});
   document.getElementById("cloudRefreshNow")?.addEventListener("click",()=>refreshCloudShareWithPopup());
+  document.getElementById("cloudPinNow")?.addEventListener("click",()=>openUploadPinSettings());
+  document.getElementById("cloudSettingsNow")?.addEventListener("click",()=>openCloudShareSettings());
 }
 
 function openCloudShareActions(force=false){
@@ -2802,6 +2857,8 @@ async function uploadCloudShareSnapshot(){
     }
     const snapshot=buildResourceSnapshot();
     snapshot.cloudSharedAt=new Date().toISOString();
+    snapshot.cloudUploadedBy=victorDeviceLabel();
+    snapshot.cloudUploadedDeviceId=victorDeviceId();
     if(snapshotTotalQuantity(snapshot)===0){
       showFeedback("error","총 보관량이 0이라 내 자료 올리기를 막았습니다");
       return;
@@ -2821,7 +2878,7 @@ async function uploadCloudShareSnapshot(){
     }else{
       await supabaseRest("resource_snapshots",{cloudConfig:config,method:"POST",headers:{"Content-Type":"application/json","Prefer":"return=minimal"},body:JSON.stringify(payload)});
     }
-    saveCloudShareMeta({lastUploadedAt:snapshot.cloudSharedAt,lastUploadedSiteId:config.siteId});
+    saveCloudShareMeta({lastUploadedAt:snapshot.cloudSharedAt,lastUploadedSiteId:config.siteId,lastUploadedDeviceName:victorDeviceLabel()});
     cloudShareNotice={kind:"same",summary:snapshotSummary(snapshot),snapshot};
     showFeedback("success","클라우드에 올렸습니다 · 다른 기기에서 바로 적용 가능");
     if(page==="home") renderHome();
@@ -2890,10 +2947,7 @@ function bindGlobal(){
   document.getElementById("restoreFile")?.addEventListener("change", e => { if(e.target.files[0]) restoreFile(e.target.files[0]); });
   document.getElementById("shareResourcesBtn")?.addEventListener("click",()=>{closeMenu();shareResourceSnapshot();});
   document.getElementById("openSharedResourcesBtn")?.addEventListener("click",()=>{closeMenu();const input=document.getElementById("sharedResourceFile");input.value="";input.click();});
-  document.getElementById("cloudShareSettingsBtn")?.addEventListener("click",()=>{closeMenu();openCloudShareSettings();});
-  document.getElementById("cloudPinSettingsBtn")?.addEventListener("click",()=>{closeMenu();openUploadPinSettings();});
-  document.getElementById("uploadCloudShareBtn")?.addEventListener("click",()=>{closeMenu();uploadCloudShareSnapshot();});
-  document.getElementById("viewCloudShareBtn")?.addEventListener("click",()=>{closeMenu();loadCloudShareSnapshot();});
+  document.getElementById("cloudShareMenuBtn")?.addEventListener("click",()=>{closeMenu();openCloudShareActions();});
   document.getElementById("sharedResourceFile")?.addEventListener("change",event=>{const file=event.target.files?.[0];if(file)loadSharedResourceFile(file);});
   document.getElementById("resetBtn")?.addEventListener("click", () => { closeMenu(); resetAll(); });
   document.getElementById("trashBtn")?.addEventListener("click",openTrash);
@@ -3172,7 +3226,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m54")
+      navigator.serviceWorker.register("./sw.js?v=0190m55")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
