@@ -26,7 +26,7 @@ let materialSortMode = "name";
 let equipmentSortMode = "name";
 let resourceSelectionMode = false;
 let selectedResources = new Set();
-let hnsQuery = "";
+let techniqueQuery = "";
 let modalConfirmResolver = null;
 let menuHistoryOpen = false;
 let cloudShareNotice = null;
@@ -53,15 +53,14 @@ let registerFormDraft = null;
 let pendingRegisterDraft = null;
 let themeRefreshTimer = null;
 const stockEditReasons = ["재고조사","오기입 수정","폐기","파손","전산 수정","기타"];
-const HNS_INFO_ITEMS = [
-  {id:"ammonia",name:"암모니아",aliases:["Ammonia","UN1005","무수암모니아"],un:"1005",category:"독성·부식성 가스",priority:"흡입 위험 우선",risk:"흡입 노출 위험이 큰 가스입니다. 누출 시 풍하 방향 접근을 피하고 현장 통제를 우선합니다.",initial:"현장 접근 통제 → 풍상 대기 → 물질명·UN No. 확인 → 지휘체계 보고 → 공식 SDS/ERG 기준으로 보호구와 대피범위 확인",ppe:"양압식 공기호흡기, 화학보호복 등은 현장 지휘·SDS 기준으로 결정",resources:"가스탐지, 접근통제 장비, 보호구, 흡착·차단 자재 검토",memo:"검수용 기본 자료입니다. 실제 대응 수치는 공식 자료로 확인하세요."},
-  {id:"chlorine",name:"염소",aliases:["Chlorine","UN1017"],un:"1017",category:"독성 가스",priority:"흡입 위험 우선",risk:"독성 흡입 위험이 큰 가스입니다. 낮은 곳에 체류할 수 있어 현장 접근을 신중히 판단해야 합니다.",initial:"풍상·고지대 위치 확보 → 접근 통제 → 누출원 확인 금지/원거리 관찰 → 공식 SDS/ERG 확인 후 전문대응",ppe:"양압식 공기호흡기와 화학보호복은 현장 위험도에 따라 필요",resources:"가스탐지, 경계선 설정 장비, 보호구, 오염수 유입 차단 자재",memo:"세부 대피거리와 방수 여부는 반드시 공식 자료 기준으로 확인"},
-  {id:"sulfuric-acid",name:"황산",aliases:["Sulfuric acid","UN1830"],un:"1830",category:"부식성 액체",priority:"피부·눈 접촉 방지",risk:"강한 부식성이 있어 접촉 피해와 금속 반응 위험이 있습니다.",initial:"접근 통제 → 유출 범위 확인 → 배수로 유입 차단 → 중화·회수는 전문 판단 후 실시",ppe:"내화학 장갑, 보안경/안면보호구, 화학보호복 등",resources:"배수로 차단재, 내화학 흡착재, 회수용기, 오염수 임시저장 자재",memo:"물과 반응 시 열 발생 가능성이 있어 현장 지휘 기준 확인"},
-  {id:"hydrochloric-acid",name:"염산",aliases:["Hydrochloric acid","UN1789"],un:"1789",category:"부식성 액체",priority:"증기·접촉 위험",risk:"부식성 액체이며 증기 흡입과 피부·눈 접촉 위험이 있습니다.",initial:"풍상 위치 확보 → 접촉 방지 → 배수로 유입 차단 → 회수·중화 여부는 SDS 기준 확인",ppe:"내화학 장갑, 안면보호구, 화학보호복, 필요 시 호흡보호구",resources:"차단재, 내화학 흡착재, 회수용기, 세척수 관리 자재",memo:"금속과 반응 가능성이 있어 보관용기·회수용기 재질 확인"},
-  {id:"nitric-acid",name:"질산",aliases:["Nitric acid","UN2031"],un:"2031",category:"산화성·부식성 액체",priority:"산화성 반응 주의",risk:"부식성과 산화성이 있어 유기물·가연물 접촉을 피해야 합니다.",initial:"가연물 격리 → 접근 통제 → 배수로 차단 → 누출물 회수는 전문 판단 후 진행",ppe:"내화학 보호구, 안면보호구, 필요 시 호흡보호구",resources:"비가연성 차단재, 내화학 회수용기, 오염수 관리 자재",memo:"다른 물질과 혼합 위험이 있어 현장 물질 확인이 중요"},
-  {id:"methanol",name:"메탄올",aliases:["Methanol","UN1230","메틸알코올"],un:"1230",category:"인화성·독성 액체",priority:"화재·흡입 위험",risk:"인화성과 독성이 있어 점화원 제거와 흡입·접촉 방지가 중요합니다.",initial:"점화원 제거 → 출입 통제 → 환기·풍상 위치 확보 → 유출 확산 차단",ppe:"보호장갑, 보안경, 필요 시 호흡보호구",resources:"유흡착재, 방폭 장비, 소화기, 차단재, 회수용기",memo:"화재 가능성이 있으면 소화전략은 지휘체계 기준으로 결정"},
-  {id:"benzene",name:"벤젠",aliases:["Benzene","UN1114"],un:"1114",category:"인화성·유해 액체",priority:"화재·증기 흡입 위험",risk:"인화성 증기와 유해 노출 위험이 있어 점화원 통제가 중요합니다.",initial:"점화원 제거 → 풍상 위치 → 증기 노출 최소화 → 유출물 확산 방지",ppe:"화학보호 장갑, 보안경, 필요 시 유기화합물용 호흡보호구",resources:"유흡착재, 방폭 장비, 회수용기, 오일펜스/차단재",memo:"해상 유출 시 확산범위와 점화원 관리가 핵심"},
-  {id:"toluene",name:"톨루엔",aliases:["Toluene","UN1294"],un:"1294",category:"인화성 액체",priority:"화재·증기 관리",risk:"인화성 액체로 증기 체류와 점화원을 주의해야 합니다.",initial:"점화원 제거 → 접근 통제 → 확산 방지 → 회수 가능 여부 검토",ppe:"보호장갑, 보안경, 필요 시 호흡보호구",resources:"유흡착재, 오일펜스, 회수용기, 방폭 조명/장비",memo:"정확한 대응은 SDS와 현장 지휘 기준 확인"}
+const RESPONSE_TECH_ITEMS = [
+  {id:"flooded-vessel",title:"침수선박",tags:["침수","기관실","빌지","선박"],summary:"선박 내부로 해수가 유입되어 연료·윤활유·빌지수가 외부로 나올 가능성이 있는 상황",check:["선명·위치·침수 구역","연료탱크·윤활유·빌지 상태","배수 작업 여부와 배출수 색상","방제자원 접근 가능 여부"],initial:["현장 안전 확보와 관계기관 상황 공유","오염 가능 배출구·배수 방향 확인","필요 시 오일펜스·흡착재 준비","배수 전후 사진과 배출수 상태 기록"],evidence:["선박 외관, 침수부, 배출구, 수면 유막","배수 시작·종료 시각","조치 전후 비교 사진"],resources:["오일펜스","유흡착재","폐흡착재 임시보관 용기","기름채취병"],report:["상황 발생 위치와 시간","배수 여부","오염 발견 여부","사용 자재와 회수량"],memo:"직원 검토용 초안입니다. 실제 문구는 내부 지침 기준으로 다듬어야 합니다."},
+  {id:"sunken-vessel",title:"침몰선박",tags:["침몰","잔존유","인양","장기관리"],summary:"선박이 수면 아래로 침몰해 잔존유 유출 가능성과 장기 감시가 필요한 상황",check:["침몰 위치·수심·선종","잔존 연료 추정량","유출 흔적과 확산 방향","인양·봉쇄 가능성"],initial:["초기 유막 확인과 확산 방향 기록","필요 시 주변 해역 방제자원 배치 검토","잔존유 제거 또는 인양 관련 협의사항 기록","반복 순찰·관찰 지점 설정"],evidence:["위치도, 유막 범위, 항공/해상 사진","주변 양식장·민감해역 여부","일자별 유출 변화"],resources:["오일펜스","유흡착재","방제정","드론/촬영 장비","기름채취병"],report:["침몰선박 기본정보","유출 여부와 확산 범위","관계기관 협의사항","향후 감시 계획"],memo:"장기화될 수 있으므로 시간대별 기록 구조가 중요합니다."},
+  {id:"bilge-discharge",title:"빌지 배출 의심",tags:["빌지","배출","기관실","유성혼합물"],summary:"선박에서 빌지 또는 유성혼합물이 바다로 배출된 것으로 의심되는 상황",check:["배출 위치와 배출구","배출수 색상·냄새·유막","기관실 빌지 상태","선박 작업·운항 이력"],initial:["배출 중이면 즉시 중단 요청","수면 유막과 배출구 사진 확보","필요 시 시료 채취와 흡착 조치","선장·기관장 진술 및 작업내용 기록"],evidence:["배출구 근접 사진","수면 유막 사진","기관실 빌지 상태","시료 채취 위치"],resources:["기름채취병","유흡착재","폐기물 봉투/용기","기록 양식"],report:["배출 추정 시각","배출량 추정 근거","조치내용","시료·사진 확보 여부"],memo:"증거 확보 흐름을 명확히 만드는 게 핵심입니다."},
+  {id:"smoke-soot",title:"매연·검댕",tags:["매연","검댕","대기오염","선박"],summary:"선박에서 과다 매연, 검댕, 그을음 등이 발생해 민원 또는 오염 우려가 있는 상황",check:["발생 선박과 위치","발생 시간·지속시간","연기 색상과 방향","주변 민원·피해 여부"],initial:["사진·영상으로 발생 상태 기록","선박 작업상태와 연료 사용 여부 확인","반복 발생 여부 확인","필요 시 관계부서 공유"],evidence:["동영상, 연기 색상, 시간 표시 사진","민원 내용","선박 작업상황"],resources:["촬영 장비","민원 기록","선박 확인 자료"],report:["발생 시간대","연기 형태","선박 확인 결과","후속 조치 필요 여부"],memo:"해양오염과 대기·기관 점검 영역이 겹칠 수 있어 분류 기준 검토가 필요합니다."},
+  {id:"paint",title:"페인트·도장작업",tags:["페인트","도장","분진","폐도료"],summary:"선박 도장작업 중 페인트, 분진, 폐도료가 해상으로 유입될 우려가 있는 상황",check:["작업 위치와 작업 방식","비산·낙하 방지 조치","폐도료·폐자재 보관상태","해상 유입 흔적"],initial:["작업 중 오염 가능성 확인","방지막·받침 등 예방조치 여부 기록","해상 유입 시 확산 방지와 회수 검토","폐기물 보관·처리 흐름 확인"],evidence:["작업 전경, 방지막, 해상 낙하물","폐도료 보관상태","작업자 진술"],resources:["뜰채/회수도구","폐기물 봉투/용기","흡착재","촬영 장비"],report:["작업 내용","유입 여부","회수량","재발 방지 조치"],memo:"현장 작업 관리 기준을 직원 의견으로 보강하면 좋습니다."},
+  {id:"waste",title:"폐기물 투기·유출",tags:["폐기물","투기","부유물","폐흡착재"],summary:"폐기물, 폐흡착재, 작업 부산물 등이 해상 또는 항포구에 유입된 상황",check:["폐기물 종류와 양","발생원 추정","해상 유입 여부","회수·보관 가능 여부"],initial:["확산 전 사진·위치 기록","안전하게 회수 가능한지 판단","회수 후 임시보관과 처리 경로 확인","발생원 조사 필요사항 정리"],evidence:["폐기물 형태, 위치, 수량","라벨·표식·선박명 등 단서","회수 전후 사진"],resources:["수거망","폐기물 봉투/용기","장갑","집게","차량"],report:["폐기물 종류","회수량","처리 경로","발생원 확인 여부"],memo:"처리 경로와 보관 장소까지 한 화면에 넣을지 검토 필요합니다."},
+  {id:"oil-sheen",title:"유막·기름 유출",tags:["유막","기름","유출","방제"],summary:"수면에 유막 또는 기름 흔적이 확인되어 확산 방지와 원인 확인이 필요한 상황",check:["유막 범위와 색상","조류·풍향·확산 방향","주변 선박·시설","시료 채취 필요 여부"],initial:["유막 범위 사진과 위치 기록","확산 가능성이 크면 오일펜스·흡착재 검토","원인 선박·시설 확인","회수량과 사용 자재 기록"],evidence:["전체 범위 사진, 근접 사진","위치·시간·기상","시료 채취 정보"],resources:["오일펜스","유흡착재","방제정","기름채취병","폐기물 용기"],report:["유출 추정 원인","확산 범위","방제 조치","회수량"],memo:"현재 앱의 자재·장비 사용기록과 가장 잘 연결되는 상황입니다."}
 ];
 
 const view = document.getElementById("view");
@@ -265,7 +264,7 @@ function setHead(){
   if(page === "register") h.innerHTML = `<div class="page-title">${registerMode === "quick" ? "긴급기록" : "등록"}</div><div class="date">${registerMode === "quick" ? "현장 사용량 임시 저장" : "평상시 출고·입고 기록"}</div>`;
   if(page === "history") h.innerHTML = `<div class="page-title">이력</div><div class="date">출고·입고·긴급기록</div>`;
   if(page === "memo") h.innerHTML = `<div class="page-title">메모</div><div class="date">일자별 메모 관리</div>`;
-  if(page === "hns") h.innerHTML = `<div class="page-title">HNS 정보</div><div class="date">물질 검색 · 초동 대응 참고</div>`;
+  if(page === "technique") h.innerHTML = `<div class="page-title">방제기술</div><div class="date">상황별 조치요령 초안</div>`;
 }
 function render(){
   setHead();
@@ -274,7 +273,7 @@ function render(){
   if(page === "register") renderRegister();
   if(page === "history") renderHistory();
   if(page === "memo") renderMemo();
-  if(page === "hns") renderHnsInfo();
+  if(page === "technique") renderTechniqueInfo();
 }
 
 function lowStockCount(){
@@ -821,76 +820,76 @@ function renderAllEquipmentList(){
 function renderHnsView(){
   return `<div class="card">
     <div class="section-title">HNS</div>
-    <div class="emptybox">HNS는 방제자원과 분리해 정보 화면에서 관리합니다.<br>물질명·UN No.로 검색하고 초동 참고사항을 확인합니다.</div>
-    <button class="btn secondary" id="openHnsInfoFromWarehouse" type="button" style="width:100%;margin-top:12px">HNS 정보 보기</button>
+    <div class="emptybox">HNS 자료는 정식 자료를 받은 뒤 별도로 구성합니다.<br>검수 전 물질별 대응정보는 표시하지 않습니다.</div>
   </div>`;
 }
 
-function hnsSearchText(item){
-  return [item.name,item.un,item.category,item.priority,item.risk,item.initial,...(item.aliases||[])].join(" ").toLowerCase();
+function techniqueSearchText(item){
+  return [item.title,item.summary,item.memo,...(item.tags||[]),...(item.check||[]),...(item.initial||[]),...(item.evidence||[]),...(item.resources||[]),...(item.report||[])].join(" ").toLowerCase();
 }
 
-function filteredHnsItems(){
-  const query=hnsQuery.trim().toLowerCase();
-  return HNS_INFO_ITEMS.filter(item=>!query || hnsSearchText(item).includes(query)).sort((a,b)=>a.name.localeCompare(b.name,"ko"));
+function filteredTechniqueItems(){
+  const query=techniqueQuery.trim().toLowerCase();
+  return RESPONSE_TECH_ITEMS.filter(item=>!query || techniqueSearchText(item).includes(query)).sort((a,b)=>a.title.localeCompare(b.title,"ko"));
 }
 
-function hnsCard(item){
-  return `<button class="hns-card" data-hns-id="${esc(item.id)}" type="button">
+function techniqueCard(item){
+  return `<button class="tech-card" data-tech-id="${esc(item.id)}" type="button">
     <div>
-      <div class="row-title">${esc(item.name)} <span class="badge blue">UN ${esc(item.un)}</span></div>
-      <div class="row-sub">${esc(item.category)} · ${esc(item.priority)}</div>
+      <div class="row-title">${esc(item.title)}</div>
+      <div class="row-sub">${esc(item.summary)}</div>
+      <div class="tech-tags">${(item.tags||[]).slice(0,4).map(tag=>`<span>${esc(tag)}</span>`).join("")}</div>
     </div>
     <div class="chev">›</div>
   </button>`;
 }
 
-function renderHnsResults(){
-  const items=filteredHnsItems();
-  const result=document.getElementById("hnsResult");
-  const list=document.getElementById("hnsList");
-  if(result)result.textContent=hnsQuery.trim()?`검색 결과 ${items.length}건`:`대표 물질 ${items.length}건`;
-  if(list)list.innerHTML=items.map(hnsCard).join("") || `<div class="emptybox">검색 결과가 없습니다.</div>`;
-  list?.querySelectorAll("[data-hns-id]").forEach(button=>button.addEventListener("click",()=>openHnsDetail(button.dataset.hnsId)));
+function renderTechniqueResults(){
+  const items=filteredTechniqueItems();
+  const result=document.getElementById("techniqueResult");
+  const list=document.getElementById("techniqueList");
+  if(result)result.textContent=techniqueQuery.trim()?`검색 결과 ${items.length}건`:`상황별 초안 ${items.length}건`;
+  if(list)list.innerHTML=items.map(techniqueCard).join("") || `<div class="emptybox">검색 결과가 없습니다.</div>`;
+  list?.querySelectorAll("[data-tech-id]").forEach(button=>button.addEventListener("click",()=>openTechniqueDetail(button.dataset.techId)));
 }
 
-function renderHnsInfo(){
-  const items=filteredHnsItems();
+function renderTechniqueInfo(){
+  const items=filteredTechniqueItems();
   view.innerHTML=`
-    <div class="card hns-hero">
-      <div class="section-title">HNS 물질 정보</div>
-      <div class="row-sub">방제자원과 섞지 않고, 물질별 위험성·초동 참고·필요 자원을 따로 봅니다.</div>
-      <div class="callout" style="margin-top:12px">검수용 기본 자료입니다. 실제 현장 판단은 공식 SDS, ERG, 지휘체계 기준을 우선하세요.</div>
+    <div class="card tech-hero">
+      <div class="section-title">방제기술</div>
+      <div class="row-sub">침수선박, 빌지 배출, 매연, 폐기물처럼 현장에서 자주 마주치는 상황별 조치사항을 정리하는 공간입니다.</div>
+      <div class="callout" style="margin-top:12px">직원 검토용 초안입니다. 실제 조치 문구는 내부 지침·관련 법령·책자 기준으로 보완하세요.</div>
     </div>
     <div class="card">
-      <input class="search" id="hnsSearch" value="${esc(hnsQuery)}" placeholder="물질명 · UN No. · 위험성 검색">
-      <div class="filter-result" id="hnsResult">${hnsQuery.trim()?`검색 결과 ${items.length}건`:`대표 물질 ${items.length}건`}</div>
-      <div class="hns-list" id="hnsList">${items.map(hnsCard).join("") || `<div class="emptybox">검색 결과가 없습니다.</div>`}</div>
+      <input class="search" id="techniqueSearch" value="${esc(techniqueQuery)}" placeholder="상황 · 조치 · 자재 검색">
+      <div class="filter-result" id="techniqueResult">${techniqueQuery.trim()?`검색 결과 ${items.length}건`:`상황별 초안 ${items.length}건`}</div>
+      <div class="tech-list" id="techniqueList">${items.map(techniqueCard).join("") || `<div class="emptybox">검색 결과가 없습니다.</div>`}</div>
     </div>
     <div class="card">
-      <div class="section-title">다음 단계</div>
-      <div class="row-sub">내일 자료를 받으면 물질별 사진·대응자료를 이 구조에 맞춰 정식 입력합니다. 필요한 자재·장비도 기존 방제자원과 연결할 수 있게 확장합니다.</div>
+      <div class="section-title">정리 방식</div>
+      <div class="row-sub">직원 의견을 받아 항목을 줄이거나 늘리고, 책자·내부자료 문구를 확인한 뒤 확정본으로 바꾸면 됩니다.</div>
     </div>`;
-  document.getElementById("hnsSearch")?.addEventListener("input",event=>{hnsQuery=event.target.value;renderHnsResults();});
-  renderHnsResults();
+  document.getElementById("techniqueSearch")?.addEventListener("input",event=>{techniqueQuery=event.target.value;renderTechniqueResults();});
+  renderTechniqueResults();
 }
 
-function openHnsDetail(id){
-  const item=HNS_INFO_ITEMS.find(row=>row.id===id);
+function techList(title,items){
+  return `<div class="tech-detail-section"><div class="section-title">${esc(title)}</div><ul>${(items||[]).map(row=>`<li>${esc(row)}</li>`).join("")}</ul></div>`;
+}
+
+function openTechniqueDetail(id){
+  const item=RESPONSE_TECH_ITEMS.find(row=>row.id===id);
   if(!item)return;
-  openEntryModal(`${entryHeader(item.name,`UN ${item.un} · ${item.category}`)}
-    <div class="callout">현장 대응 참고용입니다. 최종 판단은 공식 SDS, ERG, 현장 지휘체계 기준을 우선하세요.</div>
-    <div class="detail-grid">
-      <div><span>우선 위험</span><strong>${esc(item.priority)}</strong></div>
-      <div><span>분류</span><strong>${esc(item.category)}</strong></div>
-      <div><span>UN No.</span><strong>${esc(item.un)}</strong></div>
-    </div>
-    <div class="hns-detail-section"><div class="section-title">위험성</div><p>${esc(item.risk)}</p></div>
-    <div class="hns-detail-section"><div class="section-title">초동 대응 참고</div><p>${esc(item.initial)}</p></div>
-    <div class="hns-detail-section"><div class="section-title">보호구</div><p>${esc(item.ppe)}</p></div>
-    <div class="hns-detail-section"><div class="section-title">필요 자원</div><p>${esc(item.resources)}</p></div>
-    <div class="hns-detail-section"><div class="section-title">메모</div><p>${esc(item.memo)}</p></div>
-    <div class="row-sub" style="margin-top:14px">참고 기준: PHMSA ERG 2024 구조 + 현장 검수 전 기본 자료 · 확인일 2026.07.15</div>`);
+  openEntryModal(`${entryHeader(item.title,"방제기술 초안")}
+    <div class="callout">직원 검토용 초안입니다. 현장 확정 지침으로 사용하기 전에 내부 기준으로 문구를 확인하세요.</div>
+    <div class="card compact-card"><div class="row-sub">상황 개요</div><div class="row-title">${esc(item.summary)}</div><div class="tech-tags" style="margin-top:10px">${(item.tags||[]).map(tag=>`<span>${esc(tag)}</span>`).join("")}</div></div>
+    ${techList("확인할 사항",item.check)}
+    ${techList("초동 조치",item.initial)}
+    ${techList("사진·증거 확보",item.evidence)}
+    ${techList("필요 자재·장비",item.resources)}
+    ${techList("보고·기록 사항",item.report)}
+    <div class="tech-detail-section"><div class="section-title">메모</div><p>${esc(item.memo)}</p></div>`);
 }
 
 function renderWarehouseGroupList(){
@@ -913,7 +912,7 @@ function renderWarehouse(){
       bindResourceGroupControls(renderAllEquipmentList);
       renderAllEquipmentList();
     }else if(warehouseViewMode === "hns"){
-      document.getElementById("openHnsInfoFromWarehouse")?.addEventListener("click",()=>setPage("hns"));
+      // HNS 정식 자료 입력 전 준비 화면입니다.
     }else{
       bindGroupedSections(renderWarehouse);
       view.querySelectorAll("[data-wh]").forEach(button => button.addEventListener("click", () => { selectedWarehouse=button.dataset.wh; warehouseTab="material"; renderWarehouse(); pushNavigationState({page:"warehouse",warehouse:selectedWarehouse,tab:warehouseTab}); }));
@@ -3029,7 +3028,7 @@ function bindGlobal(){
   document.getElementById("shareResourcesBtn")?.addEventListener("click",()=>{closeMenu();shareResourceSnapshot();});
   document.getElementById("openSharedResourcesBtn")?.addEventListener("click",()=>{closeMenu();const input=document.getElementById("sharedResourceFile");input.value="";input.click();});
   document.getElementById("cloudShareMenuBtn")?.addEventListener("click",()=>{closeMenu();openCloudShareActions();});
-  document.getElementById("hnsInfoMenuBtn")?.addEventListener("click",()=>{closeMenu();setPage("hns");});
+  document.getElementById("techniqueMenuBtn")?.addEventListener("click",()=>{closeMenu();setPage("technique");});
   document.getElementById("sharedResourceFile")?.addEventListener("change",event=>{const file=event.target.files?.[0];if(file)loadSharedResourceFile(file);});
   document.getElementById("resetBtn")?.addEventListener("click", () => { closeMenu(); resetAll(); });
   document.getElementById("trashBtn")?.addEventListener("click",openTrash);
@@ -3308,7 +3307,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m56")
+      navigator.serviceWorker.register("./sw.js?v=0190m57")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
