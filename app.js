@@ -482,12 +482,17 @@ function fmtDateTime(value){
   return `${sameDay?"오늘":`${Number(parts.month)}.${Number(parts.day)}`} ${parts.hour}:${parts.minute}`;
 }
 
+function fmtShareTime(value){
+  const text=fmtDateTime(value);
+  return text==="없음" ? "기록 없음" : text;
+}
+
 function cloudShareStatusHtml(){
   const meta=readCloudShareMeta();
-  const upload=fmtDateTime(meta.lastUploadedAt);
-  const applied=fmtDateTime(meta.lastAppliedAt);
+  const upload=fmtShareTime(meta.lastUploadedAt);
+  const applied=fmtShareTime(meta.lastAppliedAt);
   const safety=readCloudApplySafetyPoint();
-  return `<div class="cloud-share-status"><span>올린 시간 ${esc(upload)}</span><span>가져온 시간 ${esc(applied)}</span></div>${safety?`<button class="cloud-undo-btn" id="undoCloudApply" type="button">방금 적용 되돌리기</button>`:""}`;
+  return `<div class="cloud-share-status"><span>올림 기록 ${esc(upload)}</span><span>가져옴 기록 ${esc(applied)}</span></div>${safety?`<button class="cloud-undo-btn" id="undoCloudApply" type="button">방금 적용 되돌리기</button>`:""}`;
 }
 
 function cloudShareNoticeHtml(){
@@ -2484,24 +2489,26 @@ function cloudDashboardHtml(latest=null,{loading=false,error=""}={}){
   const cloudSummary=latest?snapshotSummary(latest):null;
   const safety=readCloudApplySafetyPoint();
   const status=loading?"클라우드 확인 중":error?"확인 실패":cloudStatusLabel(latest);
-  const statusHint=loading?"확인 중":error?"확인 실패":status==="클라우드 자료가 최신"?"새 자료 있음":status==="내 자료가 최신"?"올리기 가능":status==="이미 최신"?"최신 상태":"확인 필요";
-  return `${entryHeader("자원 공유","공유 현황을 확인하고 적용·올리기 합니다")}
+  const statusTitle=loading?"확인 중":error?"확인 실패":status==="클라우드 자료가 최신"?"새 자료 있음":status==="내 자료가 최신"?"올리기 가능":status==="이미 최신"?"최신 상태":"확인 필요";
+  const statusHint=status==="클라우드 자료가 최신"?"가져오기 가능":status==="내 자료가 최신"?"올리기 가능":statusTitle;
+  return `${entryHeader("자원 공유","공유자료 상태를 확인합니다")}
     <div class="form">
       <div class="share-status-card ${latest?"ready":""}">
         <div class="share-status-label">상태</div>
-        <div class="share-status-title">${esc(status)}</div>
+        <div class="share-status-title">${esc(statusTitle)}</div>
         <div class="row-sub">${esc(statusHint)}</div>
         <div class="row-sub">${esc(config.title)}</div>
       </div>
       ${error?`<div class="callout">클라우드 확인 실패: ${esc(error)}</div>`:""}
       <div class="cloud-action-summary">
-        <span><strong>내 자료 변경</strong><br>${esc(fmtDateTime(latestLocalResourceAt() || localSnapshot.createdAt))}<br>자재 ${localSummary.materials}종 · 장비 ${localSummary.equipment}개</span>
-        <span><strong>공유자료 갱신</strong><br>${esc(cloudSummary?fmtDateTime(cloudSummary.date):loading?"확인 중":"자료 없음")}<br>${cloudSummary?`자재 ${cloudSummary.materials}종 · 장비 ${cloudSummary.equipment}개`:"-"}</span>
-        <span><strong>올린 시간</strong><br>${esc(fmtDateTime(meta.lastUploadedAt))}</span>
-        <span><strong>가져온 시간</strong><br>${esc(fmtDateTime(meta.lastAppliedAt))}</span>
+        <span><strong>내 자료</strong><br>${esc(fmtShareTime(latestLocalResourceAt() || localSnapshot.createdAt))}<br>자재 ${localSummary.materials}종 · 장비 ${localSummary.equipment}개</span>
+        <span><strong>공유 자료</strong><br>${esc(cloudSummary?fmtShareTime(cloudSummary.date):loading?"확인 중":"자료 없음")}<br>${cloudSummary?`자재 ${cloudSummary.materials}종 · 장비 ${cloudSummary.equipment}개`:"-"}</span>
+        <span><strong>올림 기록</strong><br>${esc(fmtShareTime(meta.lastUploadedAt))}</span>
+        <span><strong>가져옴 기록</strong><br>${esc(fmtShareTime(meta.lastAppliedAt))}</span>
         <span><strong>PIN</strong><br>${currentCloudUploadPinHash()?"설정됨":"미설정"}</span>
-        <span><strong>되돌리기</strong><br>${safety?`${esc(fmtDateTime(safety.createdAt))} 가능`:"없음"}</span>
+        <span><strong>되돌리기</strong><br>${safety?`${esc(fmtShareTime(safety.createdAt))} 가능`:"없음"}</span>
       </div>
+      <div class="share-time-note">올림·가져옴 기록은 이 기기 기준입니다.</div>
       <button class="btn primary" id="cloudApplyNow" type="button">공유자료 가져오기</button>
       <button class="btn secondary" id="cloudUploadNow" type="button">내 자료 올리기</button>
       ${safety?`<button class="btn danger" id="cloudUndoNow" type="button">방금 적용 되돌리기</button>`:""}
@@ -2923,7 +2930,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m47")
+      navigator.serviceWorker.register("./sw.js?v=0190m50")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
