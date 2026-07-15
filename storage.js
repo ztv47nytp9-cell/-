@@ -1,4 +1,4 @@
-const VERSION = "Alpha 0.19.0m Dual Engine Beta";
+const VERSION = "Alpha 0.19.0";
 const KEY = "victor_state_alpha_0_19_0e";
 const MIGRATE_KEYS = [
   "victor_state_alpha_0_19_0d",

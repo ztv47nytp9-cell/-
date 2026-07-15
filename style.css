@@ -1,4 +1,5 @@
 :root{--blue:#1565C0;--blue2:#0D47A1;--light:#F7F9FC;--card:#fff;--text:#101828;--muted:#667085;--border:#E4EAF2;--danger:#D92D20;--green:#08785F;--orange:#B54708}
+:root[data-theme="dark"]{--blue:#74B7FF;--blue2:#A7CCFF;--light:#08111F;--card:#101C2D;--text:#EEF5FF;--muted:#A9B8C9;--border:#26384D;--danger:#FF8A80;--green:#70E0C2;--orange:#FFC27A}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html{touch-action:pan-y manipulation;-webkit-text-size-adjust:100%;overscroll-behavior-x:none}
 html,body{margin:0;padding:0;background:var(--light);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif;overflow-x:hidden;overscroll-behavior-x:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
@@ -41,6 +42,18 @@ button:active,.btn:active,.quick-action:active,.choice-card:active,.flow-btn:act
 .badge.orange{background:#FFF0DE;color:var(--orange)}
 .badge.red{background:#FDECEC;color:#B42318}
 .search{width:100%;border:0;background:#EEF2F7;border-radius:16px;padding:13px 15px;margin:10px 0 14px;color:var(--text)}
+:root[data-theme="dark"] .top{background:rgba(8,17,31,.94);border-bottom-color:#26384D}
+:root[data-theme="dark"] .page-title,:root[data-theme="dark"] .more,:root[data-theme="dark"] .section-title,:root[data-theme="dark"] .row-title,:root[data-theme="dark"] .stock-name{color:var(--text)}
+:root[data-theme="dark"] .card,:root[data-theme="dark"] .list-card,:root[data-theme="dark"] .list-row,:root[data-theme="dark"] .item-box,:root[data-theme="dark"] .dialog,:root[data-theme="dark"] .menu-group,:root[data-theme="dark"] .emptybox{background:var(--card);border-color:var(--border);color:var(--text)}
+:root[data-theme="dark"] input,:root[data-theme="dark"] select,:root[data-theme="dark"] textarea,:root[data-theme="dark"] .search{background:#17263A;border-color:#30465F;color:var(--text)}
+:root[data-theme="dark"] input::placeholder,:root[data-theme="dark"] textarea::placeholder{color:#7F92A8}
+:root[data-theme="dark"] .bottom{background:rgba(14,28,45,.97);border-top-color:#2D4057}
+:root[data-theme="dark"] .menu-sheet,:root[data-theme="dark"] .menu button{background:#101C2D;color:var(--text);border-color:var(--border)}
+:root[data-theme="dark"] .menu-group>button,:root[data-theme="dark"] .btn.gray,:root[data-theme="dark"] .btn.secondary{background:#17263A;color:#D7E7F8;border-color:#30465F}
+:root[data-theme="dark"] .callout{background:#2B2114;border-color:#694719;color:#FFD89A}
+:root[data-theme="dark"] .storage-view-switch,:root[data-theme="dark"] .activity-tabs,:root[data-theme="dark"] .tabbar{background:#122136;border-color:#30465F}
+:root[data-theme="dark"] .storage-view-switch button.active,:root[data-theme="dark"] .activity-tabs button.active,:root[data-theme="dark"] .tabbtn.active{background:#203652;color:#D9ECFF}
+:root[data-theme="dark"] .badge.blue{background:#173A5C;color:#BFE0FF}:root[data-theme="dark"] .badge.green{background:#123D34;color:#9AF0D9}:root[data-theme="dark"] .badge.orange{background:#493015;color:#FFD29A}:root[data-theme="dark"] .badge.red{background:#4B1F1D;color:#FFB4AC}
 .group-title{font-size:14px;font-weight:850;color:var(--blue2);margin:16px 0 5px}
 .stock-line{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--border);background:transparent;border-left:0;border-right:0;border-top:0;width:100%;text-align:left}
 .stock-line:last-child{border-bottom:0}
@@ -238,7 +251,7 @@ input[type="date"]{height:46px;line-height:20px;-webkit-appearance:none;appearan
 .menu-sheet,.menu button{background:#F3F8FD}
 button:active{filter:brightness(.98)}
 
-/* Alpha 0.19.0h Field Ops Beta */
+/* 현장 업무 개선 */
 .top-actions{display:flex;align-items:center;gap:6px;padding-top:3px}
 .global-search-card{padding:11px 13px}
 .global-search-card .search{margin:0}

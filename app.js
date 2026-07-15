@@ -39,6 +39,7 @@ const CLOUD_SHARE_CONFIG_KEY = "victor_cloud_share_config_0_19_0m";
 const CLOUD_SHARE_META_KEY = "victor_cloud_share_meta_0_19_0m";
 const CLOUD_APPLY_SAFETY_KEY = "victor_cloud_apply_safety_0_19_0m";
 const CLOUD_UPLOAD_PIN_HASH_KEY = "victor_cloud_upload_pin_hash_0_19_0m";
+const THEME_MODE_KEY = "victor_theme_mode_0_19_0m";
 const DEFAULT_CLOUD_SHARE_CONFIG = {
   url:"https://vzwzkeqxkqlrctylspxz.supabase.co",
   key:"sb_publishable_8X3VXnF63hNSUzYf14lDfg_IBj-PD72",
@@ -48,6 +49,7 @@ const DEFAULT_CLOUD_SHARE_CONFIG = {
 let registerDraftTimer = null;
 let registerFormDraft = null;
 let pendingRegisterDraft = null;
+let themeRefreshTimer = null;
 const stockEditReasons = ["재고조사","오기입 수정","폐기","파손","전산 수정","기타"];
 
 const view = document.getElementById("view");
@@ -97,6 +99,42 @@ function qtyText(q,u){
 function materialQtyText(q,u,item){
   const base=qtyText(q,u),n=Number(q||0);
   return u==="L" && isDispersant(item) && n>0 && n%18===0 ? `${n.toLocaleString("ko-KR",{maximumFractionDigits:1})}L · ${n/18}캔` : base;
+}
+
+function readThemeMode(){
+  try{return localStorage.getItem(THEME_MODE_KEY) || "light";}catch(_){return "light";}
+}
+
+function isNightTime(){
+  const hour = new Date().getHours();
+  return hour >= 18 || hour < 6;
+}
+
+function resolveThemeMode(mode=readThemeMode()){
+  if(mode === "dark") return "dark";
+  if(mode === "system") return window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ? "dark" : "light";
+  if(mode === "auto") return isNightTime() ? "dark" : "light";
+  return "light";
+}
+
+function applyThemeMode(mode=readThemeMode()){
+  const resolved = resolveThemeMode(mode);
+  document.documentElement.dataset.theme = resolved;
+  document.documentElement.dataset.themeMode = mode;
+  document.getElementById("themeColorMeta")?.setAttribute("content", resolved === "dark" ? "#08111F" : "#1565C0");
+}
+
+function saveThemeMode(mode){
+  try{localStorage.setItem(THEME_MODE_KEY,mode);}catch(_){}
+  applyThemeMode(mode);
+  const labels={light:"밝게",dark:"어둡게",system:"기기 설정",auto:"야간 자동"};
+  showFeedback("success",`화면 설정: ${labels[mode] || "밝게"}`);
+}
+
+function startThemeWatcher(){
+  clearInterval(themeRefreshTimer);
+  themeRefreshTimer = setInterval(()=>applyThemeMode(), 5 * 60 * 1000);
+  window.matchMedia?.("(prefers-color-scheme: dark)")?.addEventListener?.("change",()=>applyThemeMode());
 }
 
 function isMeaningfulRegisterDraft(draft){
@@ -827,19 +865,49 @@ function renderWarehouseEquipment(place){
 
 function editWarehouseInfo(w){
   const info = state.warehouseInfos[w] || {memo:"",updated:""};
-  openEntryModal(`${entryHeader("보관장소 정보 수정",w)}<div class="form"><label>유형<select id="warehouseKindEdit">${["차량","함정","파출소","창고","기타"].map(kind=>`<option ${kind===warehouseKind(w)?"selected":""}>${kind}</option>`).join("")}</select></label><label>중요 메모<textarea id="warehouseMemo" placeholder="보관장소 특이사항을 입력하세요">${esc(info.memo || "")}</textarea></label><button class="btn primary" id="saveWarehouseMemo" type="button">저장</button></div>`);
+  openEntryModal(`${entryHeader("보관장소 정보 수정",w)}<div class="form"><label>보관장소명<input id="warehouseNameEdit" value="${esc(w)}" placeholder="보관장소명을 입력하세요"></label><label>유형<select id="warehouseKindEdit">${["창고","차량","함정","파출소","기타"].map(kind=>`<option ${kind===warehouseKind(w)?"selected":""}>${kind}</option>`).join("")}</select></label><label>중요 메모<textarea id="warehouseMemo" placeholder="보관장소 특이사항을 입력하세요">${esc(info.memo || "")}</textarea></label><button class="btn primary" id="saveWarehouseMemo" type="button">저장</button></div>`);
   document.getElementById("saveWarehouseMemo")?.addEventListener("click", () => {
-    const kind=document.getElementById("warehouseKindEdit").value;state.warehouseKinds=state.warehouseKinds||{};state.warehouseKinds[w]=kind;if(kind==="차량"&&!state.assetOps[w])state.assetOps[w]={distanceBase:0,logs:[],maintenance:[],counterMode:"absolute"};if(kind==="함정"&&!state.assetOps[w])state.assetOps[w]={mileageBase:0,hoursBase:0,portHoursBase:0,starboardHoursBase:0,engineSplitMode:"dual",fuelBase:0,logs:[],maintenance:[],counterMode:"absolute"};
-    state.warehouseInfos[w] = {memo:document.getElementById("warehouseMemo").value.trim(),updated:todayISO()};
-    save(); closeEntryModal(); showFeedback("success","보관 메모 저장"); renderWarehouse();
+    const nextName=document.getElementById("warehouseNameEdit").value.trim();
+    const kind=document.getElementById("warehouseKindEdit").value;
+    const memo=document.getElementById("warehouseMemo").value.trim();
+    if(!nextName){showFeedback("error","보관장소명을 입력해주세요");return;}
+    if(nextName!==w && warehouses.includes(nextName)){showFeedback("error","이미 있는 보관장소명입니다");return;}
+    renameWarehouse(w,nextName,{kind,memo});
+    selectedWarehouse=nextName;
+    save(); closeEntryModal(); showFeedback("success","보관장소 정보 저장"); renderWarehouse();
   });
+}
+
+function renameWarehouse(oldName,newName,{kind,memo}={}){
+  if(!oldName || !newName) return;
+  if(oldName!==newName){
+    state.warehouses=(state.warehouses||[]).map(name=>name===oldName?newName:name);
+    if(state.stock?.[oldName]){state.stock[newName]=state.stock[oldName];delete state.stock[oldName];}
+    (state.equipment||[]).forEach(item=>{if(item.place===oldName)item.place=newName;(item.moves||[]).forEach(move=>{if(move.from===oldName)move.from=newName;if(move.to===oldName)move.to=newName;});});
+    (state.records||[]).forEach(record=>{if(record.warehouse===oldName)record.warehouse=newName;if(record.targetWarehouse===oldName)record.targetWarehouse=newName;(record.equipmentItems||[]).forEach(item=>{if(item.place===oldName)item.place=newName;});});
+    state.warehouseInfos=state.warehouseInfos||{};
+    state.warehouseKinds=state.warehouseKinds||{};
+    state.assetOps=state.assetOps||{};
+    state.warehouseInfos[newName]=state.warehouseInfos[oldName]||{};
+    state.warehouseKinds[newName]=state.warehouseKinds[oldName]||warehouseKind(oldName);
+    if(state.assetOps[oldName]){state.assetOps[newName]=state.assetOps[oldName];delete state.assetOps[oldName];}
+    delete state.warehouseInfos[oldName];
+    delete state.warehouseKinds[oldName];
+  }
+  state.warehouseKinds=state.warehouseKinds||{};
+  state.warehouseInfos=state.warehouseInfos||{};
+  state.assetOps=state.assetOps||{};
+  state.warehouseKinds[newName]=kind||state.warehouseKinds[newName]||warehouseKind(newName);
+  state.warehouseInfos[newName]={memo:memo??state.warehouseInfos[newName]?.memo??"",updated:todayISO()};
+  if(state.warehouseKinds[newName]==="차량"&&!state.assetOps[newName])state.assetOps[newName]={distanceBase:0,logs:[],maintenance:[],counterMode:"absolute"};
+  if(state.warehouseKinds[newName]==="함정"&&!state.assetOps[newName])state.assetOps[newName]={mileageBase:0,hoursBase:0,portHoursBase:0,starboardHoursBase:0,engineSplitMode:"dual",fuelBase:0,logs:[],maintenance:[],counterMode:"absolute"};
 }
 
 function renderStockList(){
   const q = (document.getElementById("stockSearch")?.value || "").trim();
   const el = document.getElementById("stockList");
   const html = cats.map(cat => {
-    const items = catalog.filter(i => i.cat === cat && (!q || i.name.includes(q) || cat.includes(q)));
+    const items = catalog.filter(i => i.cat === cat && Number(state.stock[selectedWarehouse]?.[i.name]||0)>0 && (!q || i.name.includes(q) || cat.includes(q)));
     if(!items.length) return "";
     const sorted=items.sort((a,b)=>materialSortMode==="qty"?Number(state.stock[selectedWarehouse]?.[b.name]||0)-Number(state.stock[selectedWarehouse]?.[a.name]||0):materialSortMode==="recent"?String(b.updatedAt||"").localeCompare(String(a.updatedAt||"")):a.name.localeCompare(b.name,"ko"));return groupedSection(`warehouse-material-${selectedWarehouse}`,cat,`${items.length}종`,sorted.map(i => `
       <button class="stock-line ${Number(state.stock[selectedWarehouse]?.[i.name]||0)===0?"zero-stock":""}" data-stock="${esc(i.name)}" type="button">
@@ -2004,7 +2072,7 @@ function simpleResourceForm(kind,existing=null){
     ${entryHeader(existing ? `${isEquipment ? "장비" : "자재"} 수정` : `${isEquipment ? "장비" : "자재"} 빠른 등록`,currentWarehouse)}
     <div class="form entry-form simple-resource-form">
       <label>품목명<input id="resourceName" value="${esc(existing?.name || "")}" placeholder="품목명을 입력하세요"></label>
-      ${isEquipment?`<label>장비 분류<select id="resourceCategory">${equipmentCategories.map(cat=>`<option ${cat===(existing?.cat||"기타장비")?"selected":""}>${esc(cat)}</option>`).join("")}</select></label>`:""}
+      ${isEquipment?`<label>장비 분류<select id="resourceCategory">${equipmentCategories.map(cat=>`<option ${cat===(existing?.cat||"기타장비")?"selected":""}>${esc(cat)}</option>`).join("")}</select></label>`:`<label>자재 분류<select id="resourceCategory">${cats.map(cat=>`<option ${cat===(existing?.cat||"기타")?"selected":""}>${esc(cat)}</option>`).join("")}</select></label>`}
       <label>규격<input id="resourceSpec" value="${esc(existing?.spec || existing?.detail || "")}" placeholder="규격·모델명을 입력하세요"></label>
       <label>수량<input id="resourceQty" type="number" inputmode="decimal" min="0" step="0.1" value="${Number(existing?.qty || (isEquipment ? 1 : 0))||""}"></label>
       <label>보관창고<select id="resourceWarehouse">${warehouses.map(name => `<option value="${esc(name)}" ${name === currentWarehouse ? "selected" : ""}>${esc(name)}</option>`).join("")}</select></label>
@@ -2014,8 +2082,82 @@ function simpleResourceForm(kind,existing=null){
   document.getElementById("saveSimpleResource")?.addEventListener("click", () => saveSimpleResource(kind,existing?.id || null));
 }
 
-function addMaterialChoice(){ simpleResourceForm("material"); }
-function addEquipmentChoice(){ simpleResourceForm("equipment"); }
+function addMaterialChoice(){ openResourceAddChoice("material"); }
+function addEquipmentChoice(){ openResourceAddChoice("equipment"); }
+
+function openResourceAddChoice(kind){
+  const label=kind==="material"?"자재":"장비";
+  openEntryModal(`${entryHeader(`${label} 추가`,selectedWarehouse || "보관장소")}
+    <div class="entry-actions">
+      <button class="btn secondary" id="addExistingResource" type="button">기존 목록에서 추가</button>
+      <button class="btn primary" id="addNewResource" type="button">새로 등록</button>
+    </div>
+    <div class="global-search-hint">자주 쓰는 품목은 기존 목록에서 빠르게 추가하고, 목록에 없을 때만 새로 등록하세요.</div>`);
+  document.getElementById("addExistingResource")?.addEventListener("click",()=>kind==="material"?openExistingMaterialAdd():openExistingEquipmentAdd());
+  document.getElementById("addNewResource")?.addEventListener("click",()=>simpleResourceForm(kind));
+}
+
+function openExistingMaterialAdd(){
+  const place=selectedWarehouse || warehouses[0];
+  const firstCat=cats[0] || "";
+  openEntryModal(`${entryHeader("기존 자재 추가",place)}
+    <div class="form">
+      <label>분류<select id="existingMaterialCat">${cats.map(cat=>`<option>${esc(cat)}</option>`).join("")}</select></label>
+      <label>자재<select id="existingMaterialName"></select></label>
+      <label>추가 수량<input id="existingMaterialQty" type="number" inputmode="decimal" min="0" step="0.1" placeholder="수량"></label>
+      <button class="btn primary" id="saveExistingMaterial" type="button">추가</button>
+    </div>`);
+  const renderNames=()=>{
+    const cat=document.getElementById("existingMaterialCat")?.value || firstCat;
+    const rows=catalog.filter(item=>item.cat===cat);
+    const select=document.getElementById("existingMaterialName");
+    if(select)select.innerHTML=rows.map(item=>`<option value="${esc(item.name)}">${esc(item.name)} · ${esc(item.spec||item.unit||"")}</option>`).join("");
+  };
+  document.getElementById("existingMaterialCat")?.addEventListener("change",renderNames);
+  renderNames();
+  document.getElementById("saveExistingMaterial")?.addEventListener("click",()=>{
+    const name=document.getElementById("existingMaterialName")?.value || "";
+    const item=itemOf(name);
+    const qty=Number(document.getElementById("existingMaterialQty")?.value || 0);
+    if(!item){showFeedback("error","자재를 선택해주세요");return;}
+    if(!Number.isFinite(qty)||qty<=0){showFeedback("error","추가 수량을 입력해주세요");return;}
+    const before=Number(state.stock[place]?.[name]||0),after=before+qty;
+    if(!state.stock[place])state.stock[place]={};
+    state.stock[place][name]=after;
+    state.records.push({id:uid(),flow:"재고수정",type:"재고수정",title:`${name} 기존목록 추가`,date:todayISO(),warehouse:place,memo:"변경사유: 기존 자재 목록에서 추가",status:"done",sourceId:null,items:[{cat:item.cat,name,qty,unit:item.unit,kind:item.kind,before,after,diff:qty}]});
+    save();closeEntryModal();showFeedback("success","기존 자재 추가 완료");renderWarehouse();
+  });
+}
+
+function openExistingEquipmentAdd(){
+  const place=selectedWarehouse || warehouses[0];
+  const templates=[...new Map((state.equipment||[]).map(item=>[`${item.cat}|${item.name}|${item.spec||item.detail||""}|${item.model||""}`,item])).values()];
+  const firstCat=equipmentCategories.find(cat=>templates.some(item=>(item.cat||"기타장비")===cat)) || equipmentCategories[0] || "";
+  if(!templates.length){simpleResourceForm("equipment");showFeedback("info","등록된 장비 목록이 없어 새로 등록합니다");return;}
+  openEntryModal(`${entryHeader("기존 장비 추가",place)}
+    <div class="form">
+      <label>장비 분류<select id="existingEquipmentCat">${equipmentCategories.map(cat=>`<option ${cat===firstCat?"selected":""}>${esc(cat)}</option>`).join("")}</select></label>
+      <label>장비<select id="existingEquipmentName"></select></label>
+      <label>수량<input id="existingEquipmentQty" type="number" inputmode="numeric" min="1" step="1" value="1"></label>
+      <button class="btn primary" id="saveExistingEquipment" type="button">추가</button>
+    </div>`);
+  const renderNames=()=>{
+    const cat=document.getElementById("existingEquipmentCat")?.value || firstCat;
+    const rows=templates.filter(item=>(item.cat||"기타장비")===cat);
+    const select=document.getElementById("existingEquipmentName");
+    if(select)select.innerHTML=rows.map(item=>`<option value="${esc(item.id)}">${esc(item.name)} · ${esc(item.spec||item.detail||item.model||"규격 없음")}</option>`).join("");
+  };
+  document.getElementById("existingEquipmentCat")?.addEventListener("change",renderNames);
+  renderNames();
+  document.getElementById("saveExistingEquipment")?.addEventListener("click",()=>{
+    const source=templates.find(item=>item.id===document.getElementById("existingEquipmentName")?.value);
+    const qty=Math.max(1,Math.round(Number(document.getElementById("existingEquipmentQty")?.value||1)));
+    if(!source){showFeedback("error","장비를 선택해주세요");return;}
+    if(state.equipment.some(item=>item.name===source.name&&item.place===place&&String(item.spec||item.detail||"")===String(source.spec||source.detail||""))){showFeedback("error","이 창고에 같은 장비가 이미 있습니다");return;}
+    state.equipment.push({id:uid(),cat:source.cat||"기타장비",name:source.name,spec:source.spec||source.detail||"",detail:source.detail||source.spec||"",model:source.model||source.spec||source.detail||"",qty,place,memo:source.memo||source.etc||"",etc:source.etc||source.memo||"",photo:"",photos:[],battery:source.battery||"",fuel:source.fuel||"",status:"정상",maintenance:[],moves:[],updatedAt:new Date().toISOString()});
+    save();closeEntryModal();showFeedback("success","기존 장비 추가 완료");renderWarehouse();
+  });
+}
 
 function saveSimpleResource(kind,id=null){
   const name = document.getElementById("resourceName")?.value.trim() || "";
@@ -2023,12 +2165,12 @@ function saveSimpleResource(kind,id=null){
   const qty = Number(document.getElementById("resourceQty")?.value || 0);
   const place = document.getElementById("resourceWarehouse")?.value || warehouses[0];
   const memo = document.getElementById("resourceMemo")?.value.trim() || "";
-  const category=document.getElementById("resourceCategory")?.value||"기타장비";
+  const category=document.getElementById("resourceCategory")?.value||(kind==="material"?"기타":"기타장비");
   if(!name){ showFeedback("error","품목명을 입력해주세요"); return; }
   if(!Number.isFinite(qty) || qty < 0){ showFeedback("error","수량을 확인해주세요"); return; }
   if(kind === "material"){
     if(state.catalog.some(item => item.name === name)){ showFeedback("error","이미 등록된 자재명입니다"); return; }
-    const item = {cat:"기타",name,unit:"개",spec,kind:"consume",memo,photo:"",updatedAt:new Date().toISOString()};
+    const item = {cat:category,name,unit:"개",spec,kind:"consume",memo,photo:"",updatedAt:new Date().toISOString()};
     ensureCatalogItem(item);
     if(!state.stock[place]) state.stock[place] = {};
     state.stock[place][name] = qty;
@@ -2758,6 +2900,7 @@ function bindGlobal(){
   document.getElementById("bulkUndoBtn")?.addEventListener("click",restoreBulkSafetyPoint);
   document.getElementById("surveyUndoBtn")?.addEventListener("click",()=>{closeMenu();undoLastSurvey();});
   document.getElementById("fastSurveyMenuBtn")?.addEventListener("click",()=>{closeMenu();state.survey?.active?renderFastSurvey():openFastSurveySetup();});
+  document.getElementById("themeSettingsBtn")?.addEventListener("click",()=>{closeMenu();openThemeSettings();});
   document.getElementById("appInfoBtn")?.addEventListener("click", () => {
     closeMenu();
     openAppInfoModal();
@@ -2780,6 +2923,25 @@ function bindGlobal(){
     lastTouchEnd = now;
   }, {passive:false});
   document.addEventListener("dragstart", event => event.preventDefault());
+}
+
+function openThemeSettings(){
+  const current=readThemeMode();
+  openEntryModal(`${entryHeader("화면 설정","부드럽고 빠르게 보기 좋게 조정합니다")}
+    <div class="form">
+      <label>화면 모드<select id="themeModeSelect">
+        <option value="light" ${current==="light"?"selected":""}>밝게</option>
+        <option value="dark" ${current==="dark"?"selected":""}>어둡게</option>
+        <option value="system" ${current==="system"?"selected":""}>기기 설정 따라가기</option>
+        <option value="auto" ${current==="auto"?"selected":""}>야간 자동 전환</option>
+      </select></label>
+      <div class="callout">야간 자동은 18시부터 06시까지 어두운 화면으로 전환합니다. 기본값은 현장 시인성을 위해 밝게입니다.</div>
+      <button class="btn primary" id="saveThemeMode" type="button">저장</button>
+    </div>`);
+  document.getElementById("saveThemeMode")?.addEventListener("click",()=>{
+    saveThemeMode(document.getElementById("themeModeSelect")?.value || "light");
+    closeEntryModal();
+  });
 }
 
 function openAppInfoModal(){
@@ -2997,6 +3159,8 @@ function init(){
   });
 
   try{
+    applyThemeMode();
+    startThemeWatcher();
     bindGlobal();
     render();
     replaceNavigationState({page:"home"});
@@ -3008,7 +3172,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m53")
+      navigator.serviceWorker.register("./sw.js?v=0190m54")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
