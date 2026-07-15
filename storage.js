@@ -500,6 +500,10 @@ function normalize(raw){
     const old = state.warehouseInfos[w] && typeof state.warehouseInfos[w] === "object" ? state.warehouseInfos[w] : {};
     state.warehouseInfos[w] = {
       memo: typeof old.memo === "string" ? old.memo : "",
+      access: typeof old.access === "string" ? old.access : "",
+      keyNote: typeof old.keyNote === "string" ? old.keyNote : "",
+      special: typeof old.special === "string" ? old.special : "",
+      contactMemo: typeof old.contactMemo === "string" ? old.contactMemo : "",
       updated: typeof old.updated === "string" ? old.updated : ""
     };
   });
@@ -523,6 +527,8 @@ function normalize(raw){
     createdAt: typeof r.createdAt === "string" && r.createdAt ? r.createdAt : new Date().toISOString(),
     appliedAt: typeof r.appliedAt === "string" ? r.appliedAt : null,
     targetWarehouse: oldName(r.targetWarehouse || ""),
+    location: r.location && typeof r.location === "object" && !Array.isArray(r.location) ? {type:typeof r.location.type==="string"?r.location.type:"",detail:typeof r.location.detail==="string"?r.location.detail:""} : null,
+    evidence: r.evidence && typeof r.evidence === "object" && !Array.isArray(r.evidence) ? {...r.evidence} : null,
     checklist: Array.isArray(r.checklist) ? r.checklist.filter(step => ["출동","회수","세척","복귀"].includes(step)) : [],
     equipmentItems: Array.isArray(r.equipmentItems) ? r.equipmentItems.filter(it => it && typeof it === "object").map(it => ({
       id: typeof it.id === "string" ? it.id : "",
