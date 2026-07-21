@@ -142,7 +142,8 @@ function applyThemeMode(mode=readThemeMode()){
   const resolved = resolveThemeMode(mode);
   document.documentElement.dataset.theme = resolved;
   document.documentElement.dataset.themeMode = mode;
-  document.getElementById("themeColorMeta")?.setAttribute("content", resolved === "dark" ? "#08111F" : "#1565C0");
+  document.getElementById("themeColorMeta")?.setAttribute("content", resolved === "dark" ? "#152232" : "#1565C0");
+  document.getElementById("appleStatusBarMeta")?.setAttribute("content", resolved === "dark" ? "black-translucent" : "default");
 }
 
 function saveThemeMode(mode){
@@ -868,6 +869,7 @@ function renderTechniqueResults(){
 function renderTechniqueInfo(){
   const items=filteredTechniqueItems();
   view.innerHTML=`
+    <button class="back" id="techniqueBack" type="button">‹ 홈으로</button>
     <div class="card tech-hero">
       <div class="section-title">방제기술</div>
       <div class="row-sub">침수선박, 빌지 배출, 매연, 폐기물처럼 현장에서 자주 마주치는 상황별 조치사항을 정리하는 공간입니다.</div>
@@ -882,6 +884,7 @@ function renderTechniqueInfo(){
       <div class="section-title">정리 방식</div>
       <div class="row-sub">직원 의견을 받아 항목을 줄이거나 늘리고, 책자·내부자료 문구를 확인한 뒤 확정본으로 바꾸면 됩니다.</div>
     </div>`;
+  document.getElementById("techniqueBack")?.addEventListener("click",()=>setPage("home"));
   document.getElementById("techniqueSearch")?.addEventListener("input",event=>{techniqueQuery=event.target.value;renderTechniqueResults();});
   renderTechniqueResults();
 }
@@ -2885,32 +2888,41 @@ function cloudDashboardHtml(latest=null,{loading=false,error=""}={}){
   const safety=readCloudApplySafetyPoint();
   const status=loading?"클라우드 확인 중":error?"확인 실패":cloudStatusLabel(latest);
   const statusTitle=loading?"확인 중":error?"확인 실패":status==="클라우드 자료가 최신"?"새 자료 있음":status==="내 자료가 최신"?"올리기 가능":status==="이미 최신"?"최신 상태":"확인 필요";
-  const statusHint=status==="클라우드 자료가 최신"?"가져오기 가능":status==="내 자료가 최신"?"올리기 가능":statusTitle;
+  const statusHint=status==="클라우드 자료가 최신"?"공유자료 가져오기를 누르면 반영됩니다":status==="내 자료가 최신"?"내 자료 올리기를 누르면 공유됩니다":status==="이미 최신"?"지금은 따로 할 작업이 없습니다":statusTitle;
+  const cloudLine=cloudSummary?`공유자료 ${cloudSummary.materials}종 · 장비 ${cloudSummary.equipment}개`:(loading?"공유자료 확인 중":"공유자료 없음");
+  const localLine=`내 자료 ${localSummary.materials}종 · 장비 ${localSummary.equipment}개`;
   return `${entryHeader("자원 공유","공유자료 상태를 확인합니다")}
     <div class="form">
       <div class="share-status-card ${latest?"ready":""}">
-        <div class="share-status-label">상태</div>
+        <div class="share-status-label">${esc(config.title)}</div>
         <div class="share-status-title">${esc(statusTitle)}</div>
-        <div class="row-sub">${esc(statusHint)}</div>
-        <div class="row-sub">${esc(config.title)}</div>
+        <div class="share-status-brief">${esc(statusHint)}</div>
+        <div class="share-mini-summary"><span>${esc(localLine)}</span><span>${esc(cloudLine)}</span></div>
       </div>
       ${error?`<div class="callout">클라우드 확인 실패: ${esc(error)}</div>`:""}
-      <div class="cloud-action-summary">
-        <span><strong>내 자료</strong><br>${esc(fmtShareTime(latestLocalResourceAt() || localSnapshot.createdAt))}<br>자재 ${localSummary.materials}종 · 장비 ${localSummary.equipment}개</span>
-        <span><strong>공유 자료</strong><br>${esc(cloudSummary?fmtShareTime(cloudSummary.date):loading?"확인 중":"자료 없음")}<br>${cloudSummary?`자재 ${cloudSummary.materials}종 · 장비 ${cloudSummary.equipment}개`:"-"}</span>
-        <span><strong>올림 기록</strong><br>${esc(fmtShareTime(meta.lastUploadedAt))}</span>
-        <span><strong>가져옴 기록</strong><br>${esc(fmtShareTime(meta.lastAppliedAt))}</span>
-        <span><strong>올린 기기</strong><br>${esc(cloudSummary?.device || meta.lastUploadedDeviceName || "기록 없음")}</span>
-        <span><strong>적용 기기</strong><br>${esc(meta.lastAppliedDeviceName || "기록 없음")}</span>
-        <span><strong>PIN</strong><br>${currentCloudUploadPinHash()?"설정됨":"미설정"}</span>
-        <span><strong>되돌리기</strong><br>${safety?`${esc(fmtShareTime(safety.createdAt))} 가능`:"없음"}</span>
+      <div class="cloud-main-actions">
+        <button class="btn primary" id="cloudApplyNow" type="button">공유자료 가져오기</button>
+        <button class="btn secondary" id="cloudUploadNow" type="button">내 자료 올리기</button>
       </div>
-      <div class="share-time-note">올림·가져옴 기록은 이 기기 기준입니다.</div>
-      <button class="btn primary" id="cloudApplyNow" type="button">공유자료 가져오기</button>
-      <button class="btn secondary" id="cloudUploadNow" type="button">내 자료 올리기</button>
       ${safety?`<button class="btn danger" id="cloudUndoNow" type="button">방금 적용 되돌리기</button>`:""}
-      <button class="btn gray" id="cloudRefreshNow" type="button">최신자료 확인</button>
-      <div class="entry-actions"><button class="btn gray" id="cloudPinNow" type="button">PIN 설정</button><button class="btn gray" id="cloudSettingsNow" type="button">공유 연결</button></div>
+      <div class="cloud-sub-actions">
+        <button class="btn gray" id="cloudRefreshNow" type="button">최신자료 확인</button>
+        <button class="btn gray" id="cloudPinNow" type="button">PIN</button>
+        <button class="btn gray" id="cloudSettingsNow" type="button">연결</button>
+      </div>
+      <details class="cloud-detail-fold">
+        <summary>상세 정보</summary>
+        <div class="cloud-action-summary">
+          <span><strong>내 자료</strong><br>${esc(fmtShareTime(latestLocalResourceAt() || localSnapshot.createdAt))}</span>
+          <span><strong>공유 자료</strong><br>${esc(cloudSummary?fmtShareTime(cloudSummary.date):loading?"확인 중":"자료 없음")}</span>
+          <span><strong>올림</strong><br>${esc(fmtShareTime(meta.lastUploadedAt))}</span>
+          <span><strong>가져옴</strong><br>${esc(fmtShareTime(meta.lastAppliedAt))}</span>
+          <span><strong>올린 기기</strong><br>${esc(cloudSummary?.device || meta.lastUploadedDeviceName || "기록 없음")}</span>
+          <span><strong>적용 기기</strong><br>${esc(meta.lastAppliedDeviceName || "기록 없음")}</span>
+          <span><strong>PIN</strong><br>${currentCloudUploadPinHash()?"설정됨":"미설정"}</span>
+          <span><strong>되돌리기</strong><br>${safety?`${esc(fmtShareTime(safety.createdAt))} 가능`:"없음"}</span>
+        </div>
+      </details>
     </div>`;
 }
 
@@ -3475,7 +3487,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m61")
+      navigator.serviceWorker.register("./sw.js?v=0190m64")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
