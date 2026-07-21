@@ -55,6 +55,7 @@ let registerDraftTimer = null;
 let registerFormDraft = null;
 let pendingRegisterDraft = null;
 let themeRefreshTimer = null;
+let lastInputFocusAt = 0;
 const stockEditReasons = ["재고조사","오기입 수정","폐기","파손","전산 수정","기타"];
 const LOCATION_TYPES = ["항포구","해상","선박명","기타 위치"];
 const EVIDENCE_FIELDS = [
@@ -168,7 +169,12 @@ function isMeaningfulRegisterDraft(draft){
   if(draft.mode === "normal" && String(draft.title || "").trim()) return true;
   return false;
 }
-function readRegisterDraft(){try{const draft=JSON.parse(localStorage.getItem(REGISTER_DRAFT_KEY)||"null");return isMeaningfulRegisterDraft(draft)?draft:null;}catch(_){return null;}}
+function readRegisterDraft(){try{const draft=JSON.parse(localStorage.getItem(REGISTER_DRAFT_KEY)||"null");return shouldOfferRegisterDraft(draft)?draft:null;}catch(_){return null;}}
+function shouldOfferRegisterDraft(draft){
+  if(!isMeaningfulRegisterDraft(draft)) return false;
+  const saved=dateMs(draft.savedAt);
+  return !saved || Date.now() - saved < 24 * 60 * 60 * 1000;
+}
 function clearRegisterDraft(){clearTimeout(registerDraftTimer);registerFormDraft=null;pendingRegisterDraft=null;try{localStorage.removeItem(REGISTER_DRAFT_KEY);}catch(_){}}
 function captureRegisterDraft(){
   if(page!=="register")return;
@@ -446,10 +452,10 @@ function homeActivityHtml(){
     return memos.length ? memos.map(memo => `
       <button class="list-row" data-home-memo="${memo.id}" type="button">
         <div><div class="row-title">${esc(memo.title)}</div><div class="row-sub">${fmtDate(memo.date)} · ${esc((memo.body || "").slice(0,55))}</div></div><div class="chev">›</div>
-      </button>`).join("") : `<div class="emptybox">아직 메모가 없습니다.</div>`;
+      </button>`).join("") : `<div class="emptybox compact-empty-action">아직 메모가 없습니다.<button class="btn secondary compact" id="emptyMemoWrite" type="button">메모 쓰기</button></div>`;
   }
   const recent = getRecent(3);
-  return recent.length ? recent.map(recordRow).join("") : `<div class="emptybox">아직 기록이 없습니다.</div>`;
+  return recent.length ? recent.map(recordRow).join("") : `<div class="emptybox compact-empty-action">아직 기록이 없습니다.<button class="btn secondary compact" id="emptyRecordWrite" type="button">등록하기</button></div>`;
 }
 
 function readCloudShareMeta(){
@@ -597,10 +603,10 @@ function cloudShareNoticeHtml(){
   if(!cloudShareNotice) return "";
   const summary=cloudShareNotice.summary || {};
   const tone=cloudShareNotice.kind==="new" ? "new" : "same";
-  const text=cloudShareNotice.kind==="new" ? "새 공유자료 있음" : "공유자료 최신 상태";
+  const text=cloudShareNotice.kind==="new" ? "새 공유자료 있음" : "공유 최신";
   return `<div class="cloud-notice ${tone}">
-    <div><strong>${text}</strong><span>${esc(fmtDateTime(summary.date))} · 보관 ${Number(summary.warehouses||0)}곳 · 자재 ${Number(summary.materials||0)}종 · 장비 ${Number(summary.equipment||0)}개</span></div>
-    ${cloudShareNotice.kind==="new"?`<button class="btn primary compact" id="applyCloudNotice" type="button">적용하기</button>`:`<button class="btn gray compact" id="checkCloudNotice" type="button">다시 확인</button>`}
+    <div><strong>${text}</strong><span>${esc(fmtDateTime(summary.date))}</span></div>
+    ${cloudShareNotice.kind==="new"?`<button class="btn primary compact" id="applyCloudNotice" type="button">가져오기</button>`:`<button class="btn gray compact" id="checkCloudNotice" type="button">확인</button>`}
   </div>`;
 }
 
@@ -609,7 +615,7 @@ function renderHome(){
   view.innerHTML = `
     ${storageSummaryCard(true)}
     <div class="card global-search-card">
-      <input class="search" id="globalSearch" value="${esc(globalSearchQuery)}" placeholder="자재·장비·창고 통합 찾기" aria-label="통합 찾기">
+      <input class="search" id="globalSearch" value="${esc(globalSearchQuery)}" placeholder="자재·장비·창고 찾기" aria-label="통합 찾기" autocomplete="off" enterkeyhint="search">
       <div id="globalSearchResults"></div>
     </div>
     <div class="home-quick card">
@@ -624,8 +630,8 @@ function renderHome(){
       <div class="section-title">자주 쓰는 기능</div>
       <div class="home-tool-grid">
         <button id="homeAllResources" type="button"><span>📦</span><strong>자재·장비</strong></button>
-        <button id="homeShareResources" type="button"><span>☁️</span><strong>자원 공유</strong></button>
-        <button id="homePending" type="button"><span class="urgent-mark">🚨</span><strong>미반영 ${pending}건</strong></button>
+        <button id="homeShareResources" type="button"><span>☁️</span><strong>공유</strong></button>
+        <button id="homePending" class="${pending ? "" : "quiet-tool"}" type="button"><span class="urgent-mark">${pending ? "🚨" : "✓"}</span><strong>${pending ? `미반영 ${pending}건` : "미반영 없음"}</strong></button>
         <button id="homeMemoShortcut" type="button"><span>📝</span><strong>새 메모</strong></button>
       </div>
     </div>
@@ -634,7 +640,9 @@ function renderHome(){
     ${homeActivityTab === "memo" ? `<button class="btn primary" id="homeNewMemo" type="button" style="width:100%;margin-bottom:10px">+ 새 메모 작성</button>` : ""}
     <div class="list-card">${homeActivityHtml()}</div>
   `;
-  document.getElementById("globalSearch")?.addEventListener("input", event => { globalSearchQuery=event.target.value; renderGlobalSearchResults(); });
+  const globalSearch=document.getElementById("globalSearch");
+  globalSearch?.addEventListener("input", event => { globalSearchQuery=event.target.value; renderGlobalSearchResults(); });
+  globalSearch?.addEventListener("keydown", event => { if(event.key==="Enter") event.currentTarget.blur(); });
   renderGlobalSearchResults();
   document.getElementById("homeQuickEmergency")?.addEventListener("click", () => startHomeRegister("quick"));
   document.getElementById("homeQuickOut")?.addEventListener("click", () => startHomeRegister("normal","출고"));
@@ -648,6 +656,8 @@ function renderHome(){
   document.getElementById("homeActivityMemo")?.addEventListener("click", () => { homeActivityTab="memo"; renderHome(); });
   document.getElementById("goActivityAll")?.addEventListener("click", () => { if(homeActivityTab === "memo") setPage("memo"); else { historyFilter="all"; setPage("history"); } });
   document.getElementById("homeNewMemo")?.addEventListener("click", () => { editingMemoId=null; setPage("memo"); });
+  document.getElementById("emptyRecordWrite")?.addEventListener("click", () => startHomeRegister("normal","출고"));
+  document.getElementById("emptyMemoWrite")?.addEventListener("click", () => { editingMemoId=null; setPage("memo"); });
   view.querySelectorAll("[data-detail]").forEach(button => button.addEventListener("click", () => openDetail(button.dataset.detail)));
   view.querySelectorAll("[data-home-memo]").forEach(button => button.addEventListener("click", () => { editingMemoId=button.dataset.homeMemo; page="memo"; updateBottomNav(); render(); pushNavigationState({page:"memo",memoId:editingMemoId}); }));
   checkCloudShareNotice({silent:true});
@@ -669,13 +679,19 @@ function globalSearchRows(){
   const rows = [];
   warehouses.forEach(name => {
     const memo = state.warehouseInfos?.[name]?.memo || "";
-    if([name,memo].join(" ").toLowerCase().includes(query)) rows.push({kind:"warehouse",id:name,title:name,sub:"창고"});
+    if([name,memo].join(" ").toLowerCase().includes(query)){
+      const sum=warehouseSummary(name);
+      rows.push({kind:"warehouse",id:name,title:name,sub:`창고 · 자재 ${sum.materialCount}종 · 장비 ${sum.equipmentCount}개`});
+    }
   });
   catalog.forEach(item => {
-    if([item.name,item.spec,item.memo,item.cat].join(" ").toLowerCase().includes(query)) rows.push({kind:"material",id:item.name,title:item.name,sub:`자재 · ${item.spec || item.cat}`});
+    if([item.name,item.spec,item.memo,item.cat].join(" ").toLowerCase().includes(query)){
+      const total=warehouses.reduce((sum,w)=>sum+Number(state.stock[w]?.[item.name]||0),0);
+      rows.push({kind:"material",id:item.name,title:item.name,sub:`자재 · ${item.spec || item.cat} · ${materialQtyText(total,item.unit,item)}`});
+    }
   });
   (state.equipment || []).forEach(item => {
-    if(equipmentSearchText(item).includes(query)) rows.push({kind:"equipment",id:item.id,title:item.name,sub:`장비 · ${item.place || "보관 미지정"}`});
+    if(equipmentSearchText(item).includes(query)) rows.push({kind:"equipment",id:item.id,title:item.name,sub:`장비 · ${item.place || "보관 미지정"} · ${Number(item.qty||0)}대`});
   });
   return rows.slice(0,8);
 }
@@ -685,10 +701,10 @@ function renderGlobalSearchResults(){
   if(!target) return;
   const rows = globalSearchRows();
   if(!globalSearchQuery.trim()){
-    target.innerHTML = `<div class="global-search-hint">이름·규격·메모·창고명으로 찾을 수 있습니다.</div>`;
+    target.innerHTML = `<div class="global-search-hint">이름·규격·창고명으로 빠르게 찾습니다.</div>`;
     return;
   }
-  target.innerHTML = rows.length ? `<div class="global-search-list">${rows.map(row => `<button class="list-row" data-global-kind="${row.kind}" data-global-id="${esc(row.id)}" type="button"><div><div class="row-title">${esc(row.title)}</div><div class="row-sub">${esc(row.sub)}</div></div><div class="chev">›</div></button>`).join("")}</div>` : `<div class="global-search-hint">검색 결과가 없습니다.</div>`;
+  target.innerHTML = rows.length ? `<div class="global-search-list">${rows.map(row => `<button class="list-row compact-search-row" data-global-kind="${row.kind}" data-global-id="${esc(row.id)}" type="button"><div><div class="row-title">${esc(row.title)}</div><div class="row-sub">${esc(row.sub)}</div></div><div class="chev">›</div></button>`).join("")}</div>` : `<div class="global-search-hint">검색 결과가 없습니다.</div>`;
   target.querySelectorAll("[data-global-kind]").forEach(button => button.addEventListener("click", () => {
     const kind = button.dataset.globalKind;
     const id = button.dataset.globalId;
@@ -902,10 +918,10 @@ function renderTechniqueInfo(){
 
 function renderMenuPage(){
   view.innerHTML=`
-    <button class="back" id="menuBackHome" type="button">‹ 홈으로</button>
+    <button class="back" id="menuBackHome" type="button">‹ 홈</button>
     <div class="card menu-page-hero">
       <div class="section-title">앱 관리</div>
-      <div class="row-sub">자주 쓰지 않는 관리 기능만 모아둔 화면입니다. 메뉴를 띄우지 않고 일반 화면으로 열어 화면 얼룩 문제를 피합니다.</div>
+      <div class="row-sub">백업·공유·화면·복구 기능만 모았습니다.</div>
     </div>
     <div class="menu-page-section">
       <div class="menu-label">데이터 관리</div>
@@ -917,25 +933,25 @@ function renderMenuPage(){
     <div class="menu-page-section">
       <div class="menu-label">공유</div>
       <div class="menu-page-grid single">
-        <button type="button" id="pageCloudShareBtn">자원 공유</button>
+        <button type="button" id="pageCloudShareBtn">자원 공유 <span>올리기·가져오기</span></button>
       </div>
     </div>
     <div class="menu-page-section">
       <div class="menu-label">정보</div>
       <div class="menu-page-grid single">
-        <button type="button" id="pageTechniqueBtn">방제기술</button>
+        <button type="button" id="pageTechniqueBtn">방제기술 <span>상황별 조치 초안</span></button>
       </div>
     </div>
     <div class="menu-page-section">
       <div class="menu-label">업무</div>
       <div class="menu-page-grid single">
-        <button type="button" id="pageFastSurveyBtn">초기 재고실사</button>
+        <button type="button" id="pageFastSurveyBtn">초기 재고실사 <span>빠른 수량 확인</span></button>
       </div>
     </div>
     <div class="menu-page-section">
       <div class="menu-label">화면</div>
       <div class="menu-page-grid single">
-        <button type="button" id="pageThemeBtn">화면 설정</button>
+        <button type="button" id="pageThemeBtn">화면 설정 <span>밝게·어둡게</span></button>
       </div>
     </div>
     <div class="menu-page-section">
@@ -1197,13 +1213,13 @@ function renderRegister(){
   if(!registerFormDraft&&!pendingRegisterDraft) pendingRegisterDraft=readRegisterDraft();
   draftItems = draftItems.length ? draftItems : [];
   view.innerHTML = `
-    ${pendingRegisterDraft&&!registerFormDraft ? `<div class="callout">작성 중 기록 있음 <div class="btn-row" style="margin-top:8px"><button class="btn secondary compact" id="loadRegisterDraft" type="button">불러오기</button><button class="btn gray compact" id="discardRegisterDraft" type="button">새로 시작</button></div></div>` : ""}
+    ${pendingRegisterDraft&&!registerFormDraft ? `<div class="callout compact-draft">작성 중 기록 있음 <div class="btn-row" style="margin-top:8px"><button class="btn secondary compact" id="loadRegisterDraft" type="button">불러오기</button><button class="btn gray compact" id="discardRegisterDraft" type="button">버리기</button></div></div>` : ""}
     <div class="choice-grid">
       <button class="choice-card ${registerMode === "normal" ? "active" : ""}" id="modeNormal" type="button">
-        <div><div class="choice-title">일반등록</div><div class="choice-sub">평상시 자재 출고·입고를 기록하고 재고에 즉시 반영합니다.</div></div>
+        <div><div class="choice-title">일반등록</div><div class="choice-sub">출고·입고를 바로 재고에 반영합니다.</div></div>
       </button>
       <button class="choice-card danger ${registerMode === "quick" ? "active" : ""}" id="modeQuick" type="button">
-        <div><div class="choice-title">긴급기록</div><div class="choice-sub">사고 현장에서 사용량만 빠르게 저장합니다. 재고는 나중에 반영합니다.</div></div><div class="choice-icon">›</div>
+        <div><div class="choice-title">긴급기록</div><div class="choice-sub">사용량과 메모만 빠르게 남깁니다.</div></div><div class="choice-icon">›</div>
       </button>
     </div>
     ${registerMode === "quick" ? quickRecordCard() : ""}
@@ -1245,7 +1261,7 @@ function renderRegister(){
         <div id="stockAfterPreview"></div>
       </div>
       <label>메모<textarea id="recMemo" placeholder="${registerMode === "quick" ? "현장 메모를 간단히 입력하세요" : "메모를 입력하세요"}"></textarea></label>
-      <button class="btn primary" id="saveRecord" type="button">${registerMode === "quick" ? "미반영으로 저장" : registerFlow + " 저장"}</button>
+      <button class="btn primary sticky-action" id="saveRecord" type="button">${registerMode === "quick" ? "미반영 저장" : registerFlow + " 저장"}</button>
     </div>
   `;
   document.getElementById("modeNormal")?.addEventListener("click", () => { registerMode = "normal"; renderRegister(); setHead(); });
@@ -1259,7 +1275,7 @@ function renderRegister(){
   document.getElementById("addHnsItem")?.addEventListener("click", openHnsRegisterGuide);
   document.getElementById("openHnsGuide")?.addEventListener("click", openHnsRegisterGuide);
   document.getElementById("saveRecord")?.addEventListener("click", saveRecord);
-  document.getElementById("loadRegisterDraft")?.addEventListener("click",()=>{applyRegisterDraft(pendingRegisterDraft||readRegisterDraft());renderRegister();setHead();showSnack("작성 중 기록을 불러왔습니다");});
+  document.getElementById("loadRegisterDraft")?.addEventListener("click",()=>{applyRegisterDraft(pendingRegisterDraft||readRegisterDraft());renderRegister();setHead();showSnack("작성 중 기록 불러옴");});
   document.getElementById("discardRegisterDraft")?.addEventListener("click",()=>{clearRegisterDraft();draftItems=[];draftEquipmentItems=[];renderRegister();});
   document.getElementById("recWarehouse")?.addEventListener("change",()=>{renderItems();updateStockAfterPreview();});
   renderItems();
@@ -1274,7 +1290,7 @@ function renderRegister(){
 }
 
 function openHnsRegisterGuide(){
-  showFeedback("info","HNS 자료는 별도 목록을 받은 뒤 입고·출고에 연결합니다");
+  showFeedback("info","HNS는 자료 확정 후 연결합니다");
 }
 
 function collectRegisterLocation(){
@@ -1461,7 +1477,7 @@ async function saveRecord(){
   const saveButton=document.getElementById("saveRecord");
 
   if(registerMode === "quick"){
-    if(saveButton) saveButton.disabled=true;
+    if(saveButton){saveButton.disabled=true;saveButton.textContent="저장 중";}
     state.records.push(createFlowRecord({
       flow:"긴급", type:"사고", warehouse:"", date, title:title || nowQuickTitle(), memo, status:"pending",
       quick:true, officialTitle:false, createdAt:new Date().toISOString(), items, equipmentItems, checklist
@@ -1481,7 +1497,7 @@ async function saveRecord(){
     return;
   }
 
-  if(saveButton) saveButton.disabled=true;
+    if(saveButton){saveButton.disabled=true;saveButton.textContent="저장 중";}
 
   const changedItems = stockChangeItems(warehouse, items, registerFlow);
   applyStock(warehouse, items, registerFlow);
@@ -2974,7 +2990,7 @@ function cloudDashboardHtml(latest=null,{loading=false,error=""}={}){
   const safety=readCloudApplySafetyPoint();
   const status=loading?"클라우드 확인 중":error?"확인 실패":cloudStatusLabel(latest);
   const statusTitle=loading?"확인 중":error?"확인 실패":status==="클라우드 자료가 최신"?"새 자료 있음":status==="내 자료가 최신"?"올리기 가능":status==="이미 최신"?"최신 상태":"확인 필요";
-  const statusHint=status==="클라우드 자료가 최신"?"공유자료 가져오기를 누르면 반영됩니다":status==="내 자료가 최신"?"내 자료 올리기를 누르면 공유됩니다":status==="이미 최신"?"지금은 따로 할 작업이 없습니다":statusTitle;
+  const statusHint=status==="클라우드 자료가 최신"?"가져오면 반영됩니다":status==="내 자료가 최신"?"올리면 공유됩니다":status==="이미 최신"?"할 작업 없음":statusTitle;
   const cloudLine=cloudSummary?`공유자료 ${cloudSummary.materials}종 · 장비 ${cloudSummary.equipment}개`:(loading?"공유자료 확인 중":"공유자료 없음");
   const localLine=`내 자료 ${localSummary.materials}종 · 장비 ${localSummary.equipment}개`;
   return `${entryHeader("자원 공유","공유자료 상태를 확인합니다")}
@@ -2987,12 +3003,12 @@ function cloudDashboardHtml(latest=null,{loading=false,error=""}={}){
       </div>
       ${error?`<div class="callout">클라우드 확인 실패: ${esc(error)}</div>`:""}
       <div class="cloud-main-actions">
-        <button class="btn primary" id="cloudApplyNow" type="button">공유자료 가져오기</button>
-        <button class="btn secondary" id="cloudUploadNow" type="button">내 자료 올리기</button>
+        <button class="btn primary" id="cloudApplyNow" type="button">가져오기</button>
+        <button class="btn secondary" id="cloudUploadNow" type="button">올리기</button>
       </div>
       ${safety?`<button class="btn danger" id="cloudUndoNow" type="button">방금 적용 되돌리기</button>`:""}
       <div class="cloud-sub-actions">
-        <button class="btn gray" id="cloudRefreshNow" type="button">최신자료 확인</button>
+        <button class="btn gray" id="cloudRefreshNow" type="button">최신 확인</button>
         <button class="btn gray" id="cloudPinNow" type="button">PIN</button>
         <button class="btn gray" id="cloudSettingsNow" type="button">연결</button>
       </div>
@@ -3055,7 +3071,7 @@ async function refreshCloudShareWithPopup(){
     openEntryModal(cloudDashboardHtml(snapshot));
     bindCloudDashboard();
     const summary=snapshotSummary(snapshot);
-    showFeedback(kind==="new"?"info":"success",kind==="new"?`새 공유자료 있음 · ${fmtDateTime(summary.date)}`:`이미 최신자료입니다 · ${fmtDateTime(summary.date)}`);
+    showFeedback(kind==="new"?"info":"success",kind==="new"?`새 공유자료 · ${fmtDateTime(summary.date)}`:`이미 최신 · ${fmtDateTime(summary.date)}`);
   }catch(error){
     console.warn("[Victor] 최신자료 확인 실패",error);
     openEntryModal(cloudDashboardHtml(cloudShareNotice?.snapshot||null,{error:cloudErrorMessage(error)}));
@@ -3119,12 +3135,12 @@ async function checkCloudShareNotice({force=false,notify=false,silent=false}={})
   lastCloudShareCheckAt=now;
   try{
     const snapshot=await fetchLatestCloudShareSnapshot();
-    if(!snapshot){cloudShareNotice=null;if(notify)showFeedback("info","아직 클라우드 공유자료가 없습니다");return;}
+    if(!snapshot){cloudShareNotice=null;if(notify)showFeedback("info","공유자료 없음");return;}
     const summary=snapshotSummary(snapshot);
     const kind=isCloudSnapshotNewer(snapshot) ? "new" : "same";
     const previous=JSON.stringify(cloudShareNotice);
     cloudShareNotice={kind,summary,snapshot};
-    if(notify) showFeedback(kind==="new"?"info":"success",kind==="new"?"새 공유자료가 있습니다":"이미 최신 공유자료입니다");
+    if(notify) showFeedback(kind==="new"?"info":"success",kind==="new"?"새 공유자료 있음":"이미 최신");
     if(page==="home" && previous!==JSON.stringify(cloudShareNotice)) renderHome();
   }catch(error){
     console.warn("[Victor] 클라우드 공유 확인 실패",error);
@@ -3189,7 +3205,7 @@ async function loadCloudShareSnapshot(){
 
 async function refreshVictorAppCache(){
   closeMenu();
-  showFeedback("info","앱만 새로고침합니다 · 저장자료 유지");
+  showFeedback("info","앱 새로고침 · 저장자료 유지");
   try{
     if("serviceWorker" in navigator){
       const registrations = await navigator.serviceWorker.getRegistrations();
@@ -3215,12 +3231,14 @@ function bindGlobal(){
     const input=event.target;
     if(input?.matches?.('input[type="number"]')&&Number(input.value)===0)input.value="";
     if(input?.matches?.("input, textarea, select")){
+      lastInputFocusAt = Date.now();
+      document.documentElement.classList.add("input-focused");
       document.body.classList.add("keyboard-open");
       lockPageScroll("input");
     }
   });
   document.addEventListener("focusout",event=>{
-    if(event.target?.matches?.("input, textarea, select"))setTimeout(()=>{document.body.classList.remove("keyboard-open");unlockPageScroll("input");},120);
+    if(event.target?.matches?.("input, textarea, select"))setTimeout(()=>{document.documentElement.classList.remove("input-focused");document.body.classList.remove("keyboard-open");unlockPageScroll("input");},120);
   });
   document.querySelectorAll(".nav").forEach(b => b.addEventListener("click", () => setPage(b.dataset.page)));
 
@@ -3475,6 +3493,7 @@ function preventPageRubberBand(event){
   if(event.touches?.length !== 1) return;
   const target=event.target;
   if(target?.closest?.(".menu.show,.modal.show")) return;
+  if(Date.now() - lastInputFocusAt < 700 && target?.closest?.("input,textarea,select")){event.preventDefault();return;}
   const currentY=event.touches[0].clientY;
   const deltaY=currentY-pageTouchY;
   pageTouchY=currentY;
@@ -3596,7 +3615,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m75")
+      navigator.serviceWorker.register("./sw.js?v=0190m76")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
