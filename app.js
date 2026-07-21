@@ -35,6 +35,7 @@ let lastCloudShareCheckAt = 0;
 let lockedMenuScrollY = 0;
 let scrollLockReasons = new Set();
 let lockedTouchY = 0;
+let pageTouchY = 0;
 let menuCloseTimer = null;
 let appInfoCloseTimer = null;
 const REGISTER_DRAFT_KEY = "victor_register_draft_0_19_0j";
@@ -389,6 +390,14 @@ function applyStock(warehouse, items, flow){
     if(!(it.name in state.stock[warehouse])) state.stock[warehouse][it.name] = 0;
     if(flow === "입고") state.stock[warehouse][it.name] += Number(it.qty || 0);
     else state.stock[warehouse][it.name] -= Number(it.qty || 0);
+  });
+}
+
+function stockChangeItems(warehouse, items, flow){
+  return (items || []).map(item => {
+    const before = Number(state.stock[warehouse]?.[item.name] || 0);
+    const diff = flow === "입고" ? Number(item.qty || 0) : -Number(item.qty || 0);
+    return {...item,before,after:before+diff,diff};
   });
 }
 
@@ -1084,7 +1093,7 @@ function editStock(name){
     state.stock[selectedWarehouse][name]=num;
     item.updatedAt=new Date().toISOString();
     state.records.push({id:uid(),flow:"재고수정",type:"재고수정",title:`${name} 재고수정`,date:todayISO(),warehouse:selectedWarehouse,memo:`변경사유: ${reason}${memo ? "\n"+memo : ""}`,status:"done",sourceId:null,equipmentItems:[],createdAt:new Date().toISOString(),items:[{cat:item.cat,name,qty:Math.abs(diff),unit:item.unit,kind:item.kind,before:cur,after:num,diff}]});
-    save(); closeEntryModal(); showFeedback("success",`재고수정 완료 (${diff>0?"+":""}${diff}${item.unit})`); renderStockList();
+    save(); closeEntryModal(); showFeedback("success",`재고수정 · ${name} ${materialQtyText(cur,item.unit,item)} → ${materialQtyText(num,item.unit,item)}`); renderStockList();
   });
 }
 
@@ -1385,7 +1394,7 @@ async function saveRecord(){
     draftEquipmentItems = [];
     clearRegisterDraft();
     save();
-    showSnack("긴급기록 저장(미반영)");
+    showSnack(`긴급기록 저장 · ${summarizeItems(items,equipmentItems,"긴급")}`);
     historyFilter = "pending";
     setPage("history");
     return;
@@ -1398,16 +1407,17 @@ async function saveRecord(){
 
   if(saveButton) saveButton.disabled=true;
 
+  const changedItems = stockChangeItems(warehouse, items, registerFlow);
   applyStock(warehouse, items, registerFlow);
   state.records.push(createFlowRecord({
-    flow:registerFlow, type, warehouse, date, title, memo, status:"done", items, equipmentItems, checklist, location, evidence
+    flow:registerFlow, type, warehouse, date, title, memo, status:"done", items:changedItems, equipmentItems, checklist, location, evidence
   }));
 
   draftItems = [];
   draftEquipmentItems = [];
   clearRegisterDraft();
   save();
-  showSnack(`자재 ${items.length}종 · 장비 ${equipmentItems.length}종 저장`);
+  showSnack(`${registerFlow} 저장 · ${summarizeItems(changedItems,equipmentItems,registerFlow)}`);
   historyFilter = "done";
   setPage("history");
 }
@@ -3095,16 +3105,35 @@ async function uploadCloudShareSnapshot(){
 async function loadCloudShareSnapshot(){
   closeMenu();
   try{
-    sharedSnapshot=await fetchLatestCloudShareSnapshot();
+    const sharedSnapshot=await fetchLatestCloudShareSnapshot();
     if(!sharedSnapshot){showFeedback("info","아직 클라우드 공유자료가 없습니다");return;}
     await applySharedSnapshot(sharedSnapshot,"클라우드 공유자료");
   }catch(error){console.warn("[Victor] 클라우드 공유 조회 실패",error);showFeedback("error",cloudErrorMessage(error));}
 }
 
+async function refreshVictorAppCache(){
+  closeMenu();
+  showFeedback("info","앱만 새로고침합니다 · 저장자료 유지");
+  try{
+    if("serviceWorker" in navigator){
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(registrations.map(registration => registration.unregister()));
+    }
+    if("caches" in window){
+      const keys = await caches.keys();
+      await Promise.all(keys.filter(key => key.startsWith("victor-")).map(key => caches.delete(key)));
+    }
+  }finally{
+    setTimeout(()=>location.reload(),250);
+  }
+}
+
 function bindGlobal(){
   document.addEventListener("touchstart",event=>{
     lockedTouchY = event.touches?.[0]?.clientY || 0;
+    pageTouchY = lockedTouchY;
   },{passive:true});
+  document.addEventListener("touchmove",preventPageRubberBand,{passive:false});
   document.addEventListener("touchmove",preventLockedBackgroundScroll,{passive:false});
   document.addEventListener("focusin",event=>{
     const input=event.target;
@@ -3183,6 +3212,7 @@ function bindGlobal(){
     closeMenu();
     openAppInfoModal();
   });
+  document.getElementById("refreshAppBtn")?.addEventListener("click",refreshVictorAppCache);
   document.getElementById("closeAppInfo")?.addEventListener("click", closeAppInfoModal);
   document.getElementById("appInfoModal")?.addEventListener("click", event => {
     if(event.target.id === "appInfoModal") closeAppInfoModal();
@@ -3365,6 +3395,22 @@ function preventLockedBackgroundScroll(event){
   if((atTop&&deltaY>0)||(atBottom&&deltaY<0)) event.preventDefault();
 }
 
+function preventPageRubberBand(event){
+  if(document.body.classList.contains("menu-open")) return;
+  if(event.touches?.length !== 1) return;
+  const target=event.target;
+  if(target?.closest?.(".menu.show,.modal.show")) return;
+  const currentY=event.touches[0].clientY;
+  const deltaY=currentY-pageTouchY;
+  pageTouchY=currentY;
+  const root=document.scrollingElement || document.documentElement;
+  const top=window.scrollY || root.scrollTop || 0;
+  const max=Math.max(0, root.scrollHeight - window.innerHeight);
+  if((top<=0 && deltaY>0) || (top>=max-1 && deltaY<0)){
+    event.preventDefault();
+  }
+}
+
 function resetMenuMotion(){
   const menu=document.getElementById("moreMenu");
   const sheet=menu?.querySelector(".menu-sheet");
@@ -3434,20 +3480,7 @@ function showStartupError(error){
       <button class="btn secondary" id="refreshAppCache" type="button" style="width:100%;margin-top:10px">앱 캐시 새로 받기</button>
     </div>`;
   document.getElementById("retryApp")?.addEventListener("click", () => location.reload());
-  document.getElementById("refreshAppCache")?.addEventListener("click", async () => {
-    try{
-      if("serviceWorker" in navigator){
-        const registrations = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(registrations.map(registration => registration.unregister()));
-      }
-      if("caches" in window){
-        const keys = await caches.keys();
-        await Promise.all(keys.filter(key => key.startsWith("victor-")).map(key => caches.delete(key)));
-      }
-    }finally{
-      location.reload();
-    }
-  });
+  document.getElementById("refreshAppCache")?.addEventListener("click", refreshVictorAppCache);
 }
 
 function lockPortraitOrientation(){
@@ -3487,7 +3520,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m65")
+      navigator.serviceWorker.register("./sw.js?v=0190m68")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
