@@ -350,7 +350,7 @@ button:active{filter:brightness(.98)}
 :root[data-theme="dark"] body,:root[data-theme="dark"] .app{background:#152232}
 :root[data-theme="dark"] .top{background:linear-gradient(180deg,rgba(24,39,57,.98),rgba(21,34,50,.94));border-bottom-color:#40546A}
 :root[data-theme="dark"] .logo-main,:root[data-theme="dark"] .title{color:#C6D8E8}
-:root[data-theme="dark"] .more{background:#26384B;color:#D9E4EF;border-radius:12px;min-width:34px}
+:root[data-theme="dark"] .more{background:transparent;color:#D9E4EF;border-radius:0;min-width:0}
 :root[data-theme="dark"] .menu{background:#111C2A}
 :root[data-theme="dark"] .menu.show{background:#111C2A}
 :root[data-theme="dark"] .menu-sheet{background:#1B2938;border-color:#42576C;box-shadow:none}

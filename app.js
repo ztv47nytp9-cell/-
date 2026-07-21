@@ -615,7 +615,7 @@ function renderHome(){
     <div class="home-quick card">
       <div class="section-title">바로 등록</div>
       <div class="home-quick-grid">
-        <button class="quick-action emergency" id="homeQuickEmergency" type="button"><span>🚨</span><strong>긴급기록</strong></button>
+        <button class="quick-action emergency" id="homeQuickEmergency" type="button"><span>!</span><strong>긴급기록</strong></button>
         <button class="quick-action" id="homeQuickOut" type="button"><span>↗</span><strong>출고</strong></button>
         <button class="quick-action" id="homeQuickIn" type="button"><span>↙</span><strong>입고</strong></button>
       </div>
@@ -625,7 +625,7 @@ function renderHome(){
       <div class="home-tool-grid">
         <button id="homeAllResources" type="button"><span>📦</span><strong>자재·장비</strong></button>
         <button id="homeShareResources" type="button"><span>☁️</span><strong>자원 공유</strong></button>
-        <button id="homePending" type="button"><span>🚨</span><strong>미반영 ${pending}건</strong></button>
+        <button id="homePending" type="button"><span>!</span><strong>미반영 ${pending}건</strong></button>
         <button id="homeMemoShortcut" type="button"><span>📝</span><strong>새 메모</strong></button>
       </div>
     </div>
@@ -1203,7 +1203,7 @@ function renderRegister(){
         <div><div class="choice-title">일반등록</div><div class="choice-sub">평상시 자재 출고·입고를 기록하고 재고에 즉시 반영합니다.</div></div>
       </button>
       <button class="choice-card danger ${registerMode === "quick" ? "active" : ""}" id="modeQuick" type="button">
-        <div><div class="choice-title">🚨 긴급기록</div><div class="choice-sub">사고 현장에서 사용량만 빠르게 저장합니다. 재고는 나중에 반영합니다.</div></div><div class="choice-icon">›</div>
+        <div><div class="choice-title">긴급기록</div><div class="choice-sub">사고 현장에서 사용량만 빠르게 저장합니다. 재고는 나중에 반영합니다.</div></div><div class="choice-icon">›</div>
       </button>
     </div>
     ${registerMode === "quick" ? quickRecordCard() : ""}
@@ -3596,7 +3596,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m72")
+      navigator.serviceWorker.register("./sw.js?v=0190m73")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
