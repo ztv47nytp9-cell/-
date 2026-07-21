@@ -33,6 +33,8 @@ let cloudShareNotice = null;
 let cloudShareCheckInFlight = false;
 let lastCloudShareCheckAt = 0;
 let lockedMenuScrollY = 0;
+let scrollLockReasons = new Set();
+let lockedTouchY = 0;
 let menuCloseTimer = null;
 let appInfoCloseTimer = null;
 const REGISTER_DRAFT_KEY = "victor_register_draft_0_19_0j";
@@ -1133,7 +1135,7 @@ function renderRegister(){
         <input id="recDate" type="hidden" value="${todayISO()}">
         <input id="recTitle" type="hidden" value="${nowQuickTitle()}">
       `}
-      <div class="field-card">
+      ${registerMode === "normal" ? `<div class="field-card">
         <div class="section-title" style="font-size:16px">사고·작업 위치</div>
         <div class="location-grid">
           <label>구분<select id="recLocationType">${LOCATION_TYPES.map(type=>`<option value="${esc(type)}">${esc(type)}</option>`).join("")}</select></label>
@@ -1143,7 +1145,7 @@ function renderRegister(){
       <div class="field-card">
         <div class="section-title" style="font-size:16px">현장 확인사항</div>
         <div class="evidence-grid">${EVIDENCE_FIELDS.map(field=>`<label>${esc(field.label)}<select id="evidence_${esc(field.key)}">${field.options.map(option=>`<option value="${esc(option)}">${esc(option)}</option>`).join("")}</select></label>`).join("")}</div>
-      </div>
+      </div>` : ""}
       <div>
         <div class="section-head" style="margin:5px 0 8px">
           <div class="section-title" style="font-size:16px">${registerMode === "quick" ? "사용 내역" : registerFlow}</div>
@@ -1176,7 +1178,7 @@ function renderRegister(){
   renderEquipmentItems();
   updateStockAfterPreview();
   if(registerFormDraft){[["recType","type"],["recWarehouse","warehouse"],["recDate","date"],["recTitle","title"],["recMemo","memo"]].forEach(([id,key])=>{const input=document.getElementById(id);if(input&&registerFormDraft[key]!==undefined)input.value=registerFormDraft[key];});}
-  if(registerFormDraft){
+  if(registerFormDraft && registerMode === "normal"){
     [["recLocationType","locationType"],["recLocationDetail","locationDetail"]].forEach(([id,key])=>{const input=document.getElementById(id);if(input&&registerFormDraft[key]!==undefined)input.value=registerFormDraft[key];});
     EVIDENCE_FIELDS.forEach(field=>{const input=document.getElementById(`evidence_${field.key}`);if(input&&registerFormDraft.evidence?.[field.key]!==undefined)input.value=registerFormDraft.evidence[field.key];});
   }
@@ -1374,7 +1376,7 @@ async function saveRecord(){
     if(saveButton) saveButton.disabled=true;
     state.records.push(createFlowRecord({
       flow:"긴급", type:"사고", warehouse:"", date, title:title || nowQuickTitle(), memo, status:"pending",
-      quick:true, officialTitle:false, createdAt:new Date().toISOString(), items, equipmentItems, checklist, location, evidence
+      quick:true, officialTitle:false, createdAt:new Date().toISOString(), items, equipmentItems, checklist
     }));
     draftItems = [];
     draftEquipmentItems = [];
@@ -2205,6 +2207,7 @@ function addWarehouse(){
 
 function openEntryModal(html){
   document.getElementById("entryDialog").innerHTML = html;
+  lockPageScroll("entry");
   document.getElementById("entryModal").classList.add("show");
   document.getElementById("closeEntryModal")?.addEventListener("click", closeEntryModal);
 }
@@ -2213,13 +2216,14 @@ function closeEntryModal(){
   if(modalConfirmResolver){ const resolve=modalConfirmResolver; modalConfirmResolver=null; resolve(false); }
   document.getElementById("entryModal").classList.remove("show");
   document.getElementById("entryDialog").innerHTML = "";
+  unlockPageScroll("entry");
 }
 
 function askConfirm(title,message,confirmText="확인",danger=false){
   return new Promise(resolve=>{
     modalConfirmResolver=resolve;
     openEntryModal(`${entryHeader(title,"내용을 확인해주세요")}<div class="confirm-message">${esc(message)}</div><div class="entry-actions"><button class="btn gray" id="cancelConfirm" type="button">취소</button><button class="btn ${danger?"solid-danger":"primary"}" id="acceptConfirm" type="button">${esc(confirmText)}</button></div>`);
-    const finish=value=>{ const resolver=modalConfirmResolver; modalConfirmResolver=null; document.getElementById("entryModal").classList.remove("show"); document.getElementById("entryDialog").innerHTML=""; if(resolver) resolver(value); };
+    const finish=value=>{ const resolver=modalConfirmResolver; modalConfirmResolver=null; document.getElementById("entryModal").classList.remove("show"); document.getElementById("entryDialog").innerHTML=""; unlockPageScroll("entry"); if(resolver) resolver(value); };
     document.getElementById("cancelConfirm")?.addEventListener("click",()=>finish(false));
     document.getElementById("acceptConfirm")?.addEventListener("click",()=>finish(true));
   });
@@ -2238,6 +2242,7 @@ function requestUploadPin(title="올리기 PIN 확인",subtitle="내 자료 올�
       modalConfirmResolver=null;
       document.getElementById("entryModal").classList.remove("show");
       document.getElementById("entryDialog").innerHTML="";
+      unlockPageScroll("entry");
       if(resolver)resolver(value);
     };
     document.getElementById("cancelUploadPin")?.addEventListener("click",()=>finish(null));
@@ -3085,13 +3090,20 @@ async function loadCloudShareSnapshot(){
 }
 
 function bindGlobal(){
+  document.addEventListener("touchstart",event=>{
+    lockedTouchY = event.touches?.[0]?.clientY || 0;
+  },{passive:true});
+  document.addEventListener("touchmove",preventLockedBackgroundScroll,{passive:false});
   document.addEventListener("focusin",event=>{
     const input=event.target;
     if(input?.matches?.('input[type="number"]')&&Number(input.value)===0)input.value="";
-    if(input?.matches?.("input, textarea, select"))document.body.classList.add("keyboard-open");
+    if(input?.matches?.("input, textarea, select")){
+      document.body.classList.add("keyboard-open");
+      lockPageScroll("input");
+    }
   });
   document.addEventListener("focusout",event=>{
-    if(event.target?.matches?.("input, textarea, select"))setTimeout(()=>document.body.classList.remove("keyboard-open"),120);
+    if(event.target?.matches?.("input, textarea, select"))setTimeout(()=>{document.body.classList.remove("keyboard-open");unlockPageScroll("input");},120);
   });
   document.querySelectorAll(".nav").forEach(b => b.addEventListener("click", () => setPage(b.dataset.page)));
 
@@ -3108,22 +3120,31 @@ function bindGlobal(){
   let menuDragStartY = 0;
   let menuDragDistance = 0;
   let menuDragging = false;
+  let menuPotentialDrag = false;
   menuSheet?.addEventListener("touchstart", event => {
-    if(!menu.classList.contains("show") || menuSheet.scrollTop > 0) return;
-    menuDragging = true;
+    if(!menu.classList.contains("show")) return;
+    menuPotentialDrag = menuSheet.scrollTop <= 0;
+    menuDragging = false;
     menuDragStartY = event.touches[0].clientY;
     menuDragDistance = 0;
-    menuSheet.classList.add("dragging");
   }, {passive:true});
   menuSheet?.addEventListener("touchmove", event => {
-    if(!menuDragging) return;
-    menuDragDistance = Math.max(0, event.touches[0].clientY - menuDragStartY);
+    if(!menuPotentialDrag) return;
+    const distance = event.touches[0].clientY - menuDragStartY;
+    if(distance <= 0 || menuSheet.scrollTop > 0) return;
+    if(distance < 7 && !menuDragging) return;
+    event.preventDefault();
+    menuDragging = true;
+    menuDragDistance = Math.max(0, distance);
+    menuSheet.classList.add("dragging");
     if(menuDragDistance > 0){
       menuSheet.style.transform = `translateY(${menuDragDistance}px)`;
       menu.style.backgroundColor = `rgba(16,24,40,${Math.max(.12,.35 - menuDragDistance / 700)})`;
     }
-  }, {passive:true});
+  }, {passive:false});
   menuSheet?.addEventListener("touchend", () => {
+    if(!menuPotentialDrag) return;
+    menuPotentialDrag = false;
     if(!menuDragging) return;
     menuDragging = false;
     menuSheet.classList.remove("dragging");
@@ -3194,6 +3215,7 @@ function openAppInfoModal(){
   if(!modal)return;
   clearTimeout(appInfoCloseTimer);
   modal.classList.remove("closing");
+  lockPageScroll("appInfo");
   modal.classList.add("show");
 }
 
@@ -3205,7 +3227,9 @@ function closeAppInfoModal(){
     clearTimeout(appInfoCloseTimer);
     modal.classList.add("closing");
     modal.classList.remove("show");
-    appInfoCloseTimer=setTimeout(()=>modal.classList.remove("closing"),340);
+    appInfoCloseTimer=setTimeout(()=>{modal.classList.remove("closing");unlockPageScroll("appInfo");},340);
+  }else{
+    unlockPageScroll("appInfo");
   }
 }
 
@@ -3281,18 +3305,52 @@ function closeMenu(fromPop=false){
 }
 
 function lockMenuBackground(){
-  if(document.body.classList.contains("menu-open")) return;
-  lockedMenuScrollY = window.scrollY || document.documentElement.scrollTop || 0;
-  document.body.style.top = `-${lockedMenuScrollY}px`;
-  document.body.classList.add("menu-open");
+  lockPageScroll("menu");
 }
 
 function unlockMenuBackground(){
+  unlockPageScroll("menu");
+}
+
+function lockPageScroll(reason="app"){
+  if(reason) scrollLockReasons.add(reason);
+  if(document.body.classList.contains("menu-open")) return;
+  lockedMenuScrollY = window.scrollY || document.documentElement.scrollTop || 0;
+  document.body.style.top = `-${lockedMenuScrollY}px`;
+  document.documentElement.classList.add("scroll-locked");
+  document.body.classList.add("menu-open");
+}
+
+function unlockPageScroll(reason="app"){
+  if(reason) scrollLockReasons.delete(reason);
+  if(scrollLockReasons.size) return;
   if(!document.body.classList.contains("menu-open")) return;
   document.body.classList.remove("menu-open");
+  document.documentElement.classList.remove("scroll-locked");
   document.body.style.top = "";
   window.scrollTo(0, lockedMenuScrollY || 0);
   lockedMenuScrollY = 0;
+}
+
+function preventLockedBackgroundScroll(event){
+  if(!document.body.classList.contains("menu-open")) return;
+  const container=event.target?.closest?.(".menu.show .menu-sheet,.modal.show .dialog");
+  if(!container){
+    event.preventDefault();
+    return;
+  }
+  if(event.touches?.length !== 1) return;
+  const currentY=event.touches[0].clientY;
+  const deltaY=currentY-lockedTouchY;
+  lockedTouchY=currentY;
+  const canScroll=container.scrollHeight>container.clientHeight+1;
+  if(!canScroll){
+    event.preventDefault();
+    return;
+  }
+  const atTop=container.scrollTop<=0;
+  const atBottom=container.scrollTop+container.clientHeight>=container.scrollHeight-1;
+  if((atTop&&deltaY>0)||(atBottom&&deltaY<0)) event.preventDefault();
 }
 
 function resetMenuMotion(){
@@ -3417,7 +3475,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m59")
+      navigator.serviceWorker.register("./sw.js?v=0190m61")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
