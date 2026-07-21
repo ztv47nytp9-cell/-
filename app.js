@@ -1670,7 +1670,7 @@ function openDetail(id, options={}){
     view.innerHTML = `
       <button class="back" id="backHist" type="button">‹ 이력</button>
       ${pendingRecordForm(r)}
-      <button class="btn danger" id="deleteRecord" type="button" style="width:100%">미반영 기록 삭제</button>`;
+      <button class="btn danger detail-delete-btn" id="deleteRecord" type="button">미반영 기록 삭제</button>`;
     document.getElementById("backHist")?.addEventListener("click", () => window.history.back());
     document.getElementById("savePending")?.addEventListener("click", () => savePendingEdits(id,false));
     document.getElementById("applyPending")?.addEventListener("click", () => savePendingEdits(id,true));
@@ -1700,7 +1700,7 @@ function openDetail(id, options={}){
     </div>
     ${r.items.length ? `<div class="card"><div class="section-title">${r.flow === "입고" ? "입고 자재" : r.flow === "이송" ? "이송 자재" : "사용 자재"}</div>${r.items.map(i => `<div class="stock-line"><div><div class="stock-name">${esc(i.name)}</div><div class="stock-spec">${esc(i.cat)}${i.before !== undefined ? " · " + materialQtyText(i.before,i.unit,i) + " → " + materialQtyText(i.after,i.unit,i) : ""}</div></div><div class="stock-qty">${i.before !== undefined ? (i.diff > 0 ? "+" : "") + materialQtyText(i.diff,i.unit,i) : materialQtyText(i.qty,i.unit,i)}</div></div>`).join("")}</div>` : ""}
     ${(r.equipmentItems || []).length ? `<div class="card"><div class="section-title">${r.flow==="입고"?"입고 장비":"사용 장비"}</div>${r.equipmentItems.map((item,index)=>{const returned=Math.min(Number(item.qty||0),Number(item.returnedQty||0)),using=Number(item.qty||0)-returned;return `<div class="stock-line"><button class="plain-button" data-used-equipment="${item.id}" type="button"><div class="stock-name">${esc(item.name)}</div><div class="stock-spec">${esc(item.place || "보관 미지정")} · ${r.flow==="입고"?`입고 ${Number(item.qty||0)}대`:`사용 중 ${using}대 · 반납 ${returned}대`}</div></button>${r.flow==="입고"?"":`<button class="btn secondary compact" data-return-equipment="${index}" type="button">부분 반납</button>`}</div>`;}).join("")}</div>` : ""}
-    <button class="btn danger" id="deleteRecord" type="button" style="width:100%">삭제</button>`;
+    <button class="btn danger detail-delete-btn" id="deleteRecord" type="button">삭제</button>`;
   document.getElementById("backHist")?.addEventListener("click", () => window.history.back());
   view.querySelectorAll("[data-used-equipment]").forEach(button=>button.addEventListener("click",()=>openEquipment(button.dataset.usedEquipment)));
   view.querySelectorAll("[data-return-equipment]").forEach(button=>button.addEventListener("click",()=>openPartialReturn(r.id,Number(button.dataset.returnEquipment))));
@@ -3487,7 +3487,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m64")
+      navigator.serviceWorker.register("./sw.js?v=0190m65")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
