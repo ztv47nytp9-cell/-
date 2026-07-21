@@ -3180,7 +3180,6 @@ function bindGlobal(){
     menuSheet.classList.add("dragging");
     if(menuDragDistance > 0){
       menuSheet.style.transform = `translateY(${menuDragDistance}px)`;
-      menu.style.backgroundColor = `rgba(16,24,40,${Math.max(.12,.35 - menuDragDistance / 700)})`;
     }
   }, {passive:false});
   menuSheet?.addEventListener("touchend", () => {
@@ -3520,7 +3519,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m68")
+      navigator.serviceWorker.register("./sw.js?v=0190m69")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
