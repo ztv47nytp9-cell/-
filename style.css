@@ -61,7 +61,8 @@ button:active,.btn:active,.quick-action:active,.choice-card:active,.flow-btn:act
 :root[data-theme="dark"] .row-sub,:root[data-theme="dark"] .stock-spec,:root[data-theme="dark"] .choice-sub,:root[data-theme="dark"] .date,:root[data-theme="dark"] .logo-sub,:root[data-theme="dark"] .summary-label,:root[data-theme="dark"] .detail-label,:root[data-theme="dark"] .filter-result,:root[data-theme="dark"] .history-date-label{color:#9AAABC}
 :root[data-theme="dark"] .summary-card,:root[data-theme="dark"] .summary-pill,:root[data-theme="dark"] .dash-card,:root[data-theme="dark"] .choice-card,:root[data-theme="dark"] .flow-btn,:root[data-theme="dark"] .manage-card,:root[data-theme="dark"] .memo-box,:root[data-theme="dark"] .detail-row,:root[data-theme="dark"] .inline-field,:root[data-theme="dark"] .history-tab,:root[data-theme="dark"] .history-date-buttons button,:root[data-theme="dark"] .quick-action,:root[data-theme="dark"] .home-tool-grid button,:root[data-theme="dark"] .history-box,:root[data-theme="dark"] .confirm-message{background:#1D2B3C;border-color:#33475C;color:#D9E4EF}
 :root[data-theme="dark"] .choice-card.active,:root[data-theme="dark"] .flow-btn.active,:root[data-theme="dark"] .history-tab.active,:root[data-theme="dark"] .history-date-buttons button.active{background:#2B4055;border-color:#58718A;color:#DDE8F2}
-:root[data-theme="dark"] .choice-card.danger.active,:root[data-theme="dark"] .quick-action.emergency{background:#3C332B;border-color:#6A5641;color:#E8C49A}
+:root[data-theme="dark"] .choice-card.danger.active,:root[data-theme="dark"] .quick-action.emergency{background:#2E3440;border-color:#6E5647;color:#E9C7AD}
+:root[data-theme="dark"] .urgent-mark{filter:saturate(.65) brightness(.92);opacity:.82}
 :root[data-theme="dark"] .summary-value,:root[data-theme="dark"] .stock-qty,:root[data-theme="dark"] .detail-value,:root[data-theme="dark"] .version-chip{color:#BFD4E7}
 :root[data-theme="dark"] .iconbox,:root[data-theme="dark"] .version-chip,:root[data-theme="dark"] .today-chip,:root[data-theme="dark"] .tech-tags span{background:#2B4055;color:#C7DCEC}
 :root[data-theme="dark"] .register-stock-now,:root[data-theme="dark"] .can-converter,:root[data-theme="dark"] .cloud-share-status span,:root[data-theme="dark"] .cloud-action-summary span{background:#26384B;border-color:#465B70;color:#CAD8E5}
@@ -252,6 +253,8 @@ input[type="date"]{height:46px;line-height:20px;-webkit-appearance:none;appearan
 .quick-action{border:1px solid #BFD4E3;background:#fff;color:#285873;border-radius:15px;padding:15px 8px;display:grid;gap:6px;place-items:center}
 .quick-action span{font-size:22px}.quick-action strong{font-size:14px}
 .quick-action.emergency{background:#FFF3EB;border-color:#F5C19B;color:#9A3412}
+.urgent-mark{font-size:18px;line-height:1;filter:saturate(.72) brightness(.96);opacity:.86}
+.quick-action.emergency .urgent-mark{font-size:19px}
 .activity-tabs{display:grid;grid-template-columns:1fr 1fr;background:#E8F1F7;border-radius:13px;padding:4px;margin-bottom:10px}
 .activity-tabs button{border:0;background:transparent;border-radius:10px;padding:10px;color:#667E8E;font-weight:800}
 .activity-tabs button.active{background:#fff;color:var(--sierra-deep);box-shadow:0 1px 3px rgba(40,106,155,.14)}

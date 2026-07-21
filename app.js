@@ -615,7 +615,7 @@ function renderHome(){
     <div class="home-quick card">
       <div class="section-title">바로 등록</div>
       <div class="home-quick-grid">
-        <button class="quick-action emergency" id="homeQuickEmergency" type="button"><strong>긴급기록</strong></button>
+        <button class="quick-action emergency" id="homeQuickEmergency" type="button"><span class="urgent-mark">🚨</span><strong>긴급기록</strong></button>
         <button class="quick-action" id="homeQuickOut" type="button"><span>↗</span><strong>출고</strong></button>
         <button class="quick-action" id="homeQuickIn" type="button"><span>↙</span><strong>입고</strong></button>
       </div>
@@ -625,7 +625,7 @@ function renderHome(){
       <div class="home-tool-grid">
         <button id="homeAllResources" type="button"><span>📦</span><strong>자재·장비</strong></button>
         <button id="homeShareResources" type="button"><span>☁️</span><strong>자원 공유</strong></button>
-        <button id="homePending" type="button"><strong>미반영 ${pending}건</strong></button>
+        <button id="homePending" type="button"><span class="urgent-mark">🚨</span><strong>미반영 ${pending}건</strong></button>
         <button id="homeMemoShortcut" type="button"><span>📝</span><strong>새 메모</strong></button>
       </div>
     </div>
@@ -3596,7 +3596,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m74")
+      navigator.serviceWorker.register("./sw.js?v=0190m75")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
