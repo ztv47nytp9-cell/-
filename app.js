@@ -279,6 +279,7 @@ function setHead(){
   if(page === "history") h.innerHTML = `<div class="page-title">이력</div><div class="date">출고·입고·긴급기록</div>`;
   if(page === "memo") h.innerHTML = `<div class="page-title">메모</div><div class="date">일자별 메모 관리</div>`;
   if(page === "technique") h.innerHTML = `<div class="page-title">방제기술</div><div class="date">상황별 조치요령 초안</div>`;
+  if(page === "menu") h.innerHTML = `<div class="page-title">앱 관리</div><div class="date">데이터·공유·화면·복구 설정</div>`;
 }
 function render(){
   setHead();
@@ -288,6 +289,7 @@ function render(){
   if(page === "history") renderHistory();
   if(page === "memo") renderMemo();
   if(page === "technique") renderTechniqueInfo();
+  if(page === "menu") renderMenuPage();
 }
 
 function lowStockCount(){
@@ -896,6 +898,80 @@ function renderTechniqueInfo(){
   document.getElementById("techniqueBack")?.addEventListener("click",()=>setPage("home"));
   document.getElementById("techniqueSearch")?.addEventListener("input",event=>{techniqueQuery=event.target.value;renderTechniqueResults();});
   renderTechniqueResults();
+}
+
+function renderMenuPage(){
+  view.innerHTML=`
+    <button class="back" id="menuBackHome" type="button">‹ 홈으로</button>
+    <div class="card menu-page-hero">
+      <div class="section-title">앱 관리</div>
+      <div class="row-sub">자주 쓰지 않는 관리 기능만 모아둔 화면입니다. 메뉴를 띄우지 않고 일반 화면으로 열어 화면 얼룩 문제를 피합니다.</div>
+    </div>
+    <div class="menu-page-section">
+      <div class="menu-label">데이터 관리</div>
+      <div class="menu-page-grid">
+        <button type="button" id="pageBackupBtn">백업</button>
+        <button type="button" id="pageRestoreBtn">복원</button>
+      </div>
+    </div>
+    <div class="menu-page-section">
+      <div class="menu-label">공유</div>
+      <div class="menu-page-grid single">
+        <button type="button" id="pageCloudShareBtn">자원 공유</button>
+      </div>
+    </div>
+    <div class="menu-page-section">
+      <div class="menu-label">정보</div>
+      <div class="menu-page-grid single">
+        <button type="button" id="pageTechniqueBtn">방제기술</button>
+      </div>
+    </div>
+    <div class="menu-page-section">
+      <div class="menu-label">업무</div>
+      <div class="menu-page-grid single">
+        <button type="button" id="pageFastSurveyBtn">초기 재고실사</button>
+      </div>
+    </div>
+    <div class="menu-page-section">
+      <div class="menu-label">화면</div>
+      <div class="menu-page-grid single">
+        <button type="button" id="pageThemeBtn">화면 설정</button>
+      </div>
+    </div>
+    <div class="menu-page-section">
+      <div class="menu-label">복구</div>
+      <div class="menu-page-grid">
+        <button type="button" id="pageTrashBtn">임시 보관함</button>
+        <button type="button" id="pageBulkUndoBtn">대량변경 되돌리기</button>
+        <button type="button" id="pageSurveyUndoBtn">실사 반영 취소</button>
+      </div>
+    </div>
+    <div class="menu-page-section">
+      <div class="menu-label">앱</div>
+      <div class="menu-page-grid">
+        <button type="button" id="pageAppInfoBtn">앱 정보</button>
+        <button type="button" id="pageRefreshAppBtn">앱 새로고침</button>
+      </div>
+    </div>
+    <div class="menu-page-section danger-group">
+      <div class="menu-label">위험 작업</div>
+      <div class="menu-page-grid single">
+        <button class="menu-danger" type="button" id="pageResetBtn">전체 초기화</button>
+      </div>
+    </div>`;
+  document.getElementById("menuBackHome")?.addEventListener("click",()=>setPage("home"));
+  document.getElementById("pageBackupBtn")?.addEventListener("click",backup);
+  document.getElementById("pageRestoreBtn")?.addEventListener("click",()=>document.getElementById("restoreFile")?.click());
+  document.getElementById("pageCloudShareBtn")?.addEventListener("click",openCloudShareActions);
+  document.getElementById("pageTechniqueBtn")?.addEventListener("click",()=>setPage("technique"));
+  document.getElementById("pageFastSurveyBtn")?.addEventListener("click",()=>state.survey?.active?renderFastSurvey():openFastSurveySetup());
+  document.getElementById("pageThemeBtn")?.addEventListener("click",openThemeSettings);
+  document.getElementById("pageTrashBtn")?.addEventListener("click",openTrash);
+  document.getElementById("pageBulkUndoBtn")?.addEventListener("click",restoreBulkSafetyPoint);
+  document.getElementById("pageSurveyUndoBtn")?.addEventListener("click",undoLastSurvey);
+  document.getElementById("pageAppInfoBtn")?.addEventListener("click",openAppInfoModal);
+  document.getElementById("pageRefreshAppBtn")?.addEventListener("click",refreshVictorAppCache);
+  document.getElementById("pageResetBtn")?.addEventListener("click",resetAll);
 }
 
 function techList(title,items){
@@ -3148,7 +3224,7 @@ function bindGlobal(){
   });
   document.querySelectorAll(".nav").forEach(b => b.addEventListener("click", () => setPage(b.dataset.page)));
 
-  document.getElementById("moreBtn")?.addEventListener("click", () => openMenu());
+  document.getElementById("moreBtn")?.addEventListener("click", () => setPage("menu"));
 
   document.addEventListener("click", e => {
     const menu = document.getElementById("moreMenu");
@@ -3424,8 +3500,9 @@ function restoreNavigation(nav){
   restoringNavigation = true;
   try{
     if(nav?.menu){
-      openMenu(false);
-      menuHistoryOpen=true;
+      page="menu";
+      updateBottomNav();
+      render();
       return;
     }
     closeMenu(true);
@@ -3519,7 +3596,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m71")
+      navigator.serviceWorker.register("./sw.js?v=0190m72")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
