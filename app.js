@@ -58,13 +58,6 @@ let themeRefreshTimer = null;
 let lastInputFocusAt = 0;
 const stockEditReasons = ["재고조사","오기입 수정","폐기","파손","전산 수정","기타"];
 const LOCATION_TYPES = ["항포구","해상","선박명","기타 위치"];
-const EVIDENCE_FIELDS = [
-  {key:"oilSheen",label:"유막",options:["확인 안함","있음","없음"]},
-  {key:"smell",label:"냄새",options:["확인 안함","있음","없음"]},
-  {key:"outlet",label:"배출구",options:["확인 안함","확인","미확인"]},
-  {key:"sample",label:"시료 채취",options:["해당 없음","채취","미채취"]},
-  {key:"statement",label:"관계자 진술",options:["확인 안함","확보","미확보"]}
-];
 const RESPONSE_TECH_ITEMS = [
   {id:"flooded-vessel",title:"침수선박",tags:["침수","기관실","빌지","선박"],summary:"선박 내부로 해수가 유입되어 연료·윤활유·빌지수가 외부로 나올 가능성이 있는 상황",check:["선명·위치·침수 구역","연료탱크·윤활유·빌지 상태","배수 작업 여부와 배출수 색상","방제자원 접근 가능 여부"],initial:["현장 안전 확보와 관계기관 상황 공유","오염 가능 배출구·배수 방향 확인","필요 시 오일펜스·흡착재 준비","배수 전후 사진과 배출수 상태 기록"],evidence:["선박 외관, 침수부, 배출구, 수면 유막","배수 시작·종료 시각","조치 전후 비교 사진"],resources:["오일펜스","유흡착재","폐흡착재 임시보관 용기","기름채취병"],report:["상황 발생 위치와 시간","배수 여부","오염 발견 여부","사용 자재와 회수량"],memo:"직원 검토용 초안입니다. 실제 문구는 내부 지침 기준으로 다듬어야 합니다."},
   {id:"sunken-vessel",title:"침몰선박",tags:["침몰","잔존유","인양","장기관리"],summary:"선박이 수면 아래로 침몰해 잔존유 유출 가능성과 장기 감시가 필요한 상황",check:["침몰 위치·수심·선종","잔존 연료 추정량","유출 흔적과 확산 방향","인양·봉쇄 가능성"],initial:["초기 유막 확인과 확산 방향 기록","필요 시 주변 해역 방제자원 배치 검토","잔존유 제거 또는 인양 관련 협의사항 기록","반복 순찰·관찰 지점 설정"],evidence:["위치도, 유막 범위, 항공/해상 사진","주변 양식장·민감해역 여부","일자별 유출 변화"],resources:["오일펜스","유흡착재","방제정","드론/촬영 장비","기름채취병"],report:["침몰선박 기본정보","유출 여부와 확산 범위","관계기관 협의사항","향후 감시 계획"],memo:"장기화될 수 있으므로 시간대별 기록 구조가 중요합니다."},
@@ -179,8 +172,7 @@ function clearRegisterDraft(){clearTimeout(registerDraftTimer);registerFormDraft
 function captureRegisterDraft(){
   if(page!=="register")return;
   const value=id=>document.getElementById(id)?.value||"";
-  const evidence=Object.fromEntries(EVIDENCE_FIELDS.map(field=>[field.key,value(`evidence_${field.key}`)]));
-  registerFormDraft={mode:registerMode,flow:registerFlow,type:value("recType"),warehouse:value("recWarehouse"),date:value("recDate"),title:value("recTitle"),locationType:value("recLocationType"),locationDetail:value("recLocationDetail"),memo:value("recMemo"),evidence,items:draftItems.map(item=>({...item})),equipmentItems:draftEquipmentItems.map(item=>({...item})),savedAt:new Date().toISOString()};
+  registerFormDraft={mode:registerMode,flow:registerFlow,type:value("recType"),warehouse:value("recWarehouse"),targetWarehouse:value("recTargetWarehouse"),date:value("recDate"),title:value("recTitle"),locationType:value("recLocationType"),locationDetail:value("recLocationDetail"),memo:value("recMemo"),items:draftItems.map(item=>({...item})),equipmentItems:draftEquipmentItems.map(item=>({...item})),savedAt:new Date().toISOString()};
   if(!isMeaningfulRegisterDraft(registerFormDraft)){try{localStorage.removeItem(REGISTER_DRAFT_KEY);}catch(_){};registerFormDraft=null;return;}
   try{localStorage.setItem(REGISTER_DRAFT_KEY,JSON.stringify(registerFormDraft));}catch(error){console.warn("[Victor] 작성 중 기록 저장 실패",error);}
 }
@@ -308,7 +300,7 @@ function getRecent(n=3){
 
 function recordRow(r){
   const cls = r.status === "pending" ? "red" : (r.type === "사고" ? "blue" : (r.type.includes("지급") ? "green" : "orange"));
-  const statusText = r.status === "pending" ? "미반영" : r.type;
+  const statusText = r.status === "pending" ? "진행중" : r.type;
   const count=(r.items||[]).length+(r.equipmentItems||[]).length;
   const place=r.location?.detail || r.warehouse || "보관 미지정";
   return `<button class="list-row" data-detail="${r.id}" type="button">
@@ -647,7 +639,7 @@ function renderHome(){
       <div class="home-tool-grid">
         <button id="homeAllResources" type="button"><span>📦</span><strong>자재·장비</strong><small>전체 현황</small></button>
         <button id="homeShareResources" type="button"><span>☁️</span><strong>공유</strong><small>올리기·가져오기</small></button>
-        <button id="homePending" class="${pending ? "" : "quiet-tool"}" type="button"><span class="urgent-mark">${pending ? "🚨" : "✓"}</span><strong>${pending ? `미반영 ${pending}건` : "미반영 없음"}</strong></button>
+        <button id="homePending" class="${pending ? "" : "quiet-tool"}" type="button"><span class="urgent-mark">${pending ? "🚨" : "✓"}</span><strong>${pending ? `진행중 ${pending}건` : "진행중 없음"}</strong></button>
         <button id="homeMemoShortcut" type="button"><span>📝</span><strong>새 메모</strong><small>현장 참고</small></button>
       </div>
     </div>
@@ -1078,6 +1070,8 @@ function renderWarehouse(){
   document.getElementById("tabEquipment")?.addEventListener("click", () => { warehouseTab="equipment"; renderWarehouse(); replaceNavigationState({page:"warehouse",warehouse:selectedWarehouse,tab:warehouseTab}); });
   const baseBtn = document.getElementById("editOpBase"); if(baseBtn) baseBtn.addEventListener("click", () => editOpBase(selectedWarehouse));
   const opBtn = document.getElementById("addOpLog"); if(opBtn) opBtn.addEventListener("click", () => addOpLog(selectedWarehouse));
+  document.getElementById("addFuelSupply")?.addEventListener("click",()=>openFuelSupplyForm(selectedWarehouse));
+  document.getElementById("editFuelBase")?.addEventListener("click",()=>openFuelStockEditForm(selectedWarehouse));
   document.getElementById("addAssetMaintenance")?.addEventListener("click",()=>openAssetMaintenanceForm(selectedWarehouse));
   document.getElementById("openVesselHistory")?.addEventListener("click",()=>openVesselHistory(selectedWarehouse));
   bindOpLogActions(selectedWarehouse);
@@ -1237,6 +1231,21 @@ function updateRegisterDraftSummary(){
   if(target) target.innerHTML=registerDraftSummaryHtml();
 }
 
+function transferTargetOptions(from=""){
+  const list=warehouses.filter(name=>name!==from);
+  return (list.length?list:warehouses).map(name=>`<option value="${esc(name)}">${esc(name)}</option>`).join("");
+}
+
+function syncTransferTarget(){
+  const from=document.getElementById("recWarehouse")?.value || "";
+  const target=document.getElementById("recTargetWarehouse");
+  if(!target) return;
+  const previous=target.value;
+  target.innerHTML=transferTargetOptions(from);
+  if(previous&&previous!==from&&warehouses.includes(previous)) target.value=previous;
+  else target.value=warehouses.find(name=>name!==from) || "";
+}
+
 function applyRegisterDraft(saved){
   if(!saved)return;
   registerFormDraft=saved;
@@ -1266,9 +1275,11 @@ function renderRegister(){
         <div class="flow-grid">
           <button class="flow-btn ${registerFlow === "출고" ? "active" : ""}" id="flowOut" type="button">출고</button>
           <button class="flow-btn ${registerFlow === "입고" ? "active" : ""}" id="flowIn" type="button">입고</button>
+          <button class="flow-btn ${registerFlow === "이송" ? "active" : ""}" id="flowMove" type="button">이송</button>
         </div>
-        <label>종류<select id="recType">${types.map(t=>`<option value="${t}">${t}</option>`).join("")}</select></label>
-        <label>보관<select id="recWarehouse">${warehouses.map(w=>`<option value="${esc(w)}">${esc(w)}</option>`).join("")}</select></label>
+        ${registerFlow === "이송" ? `<input id="recType" type="hidden" value="이송">` : `<label>종류<select id="recType">${types.map(t=>`<option value="${t}">${t}</option>`).join("")}</select></label>`}
+        <label>${registerFlow === "이송" ? "출발 보관" : "보관"}<select id="recWarehouse">${warehouses.map(w=>`<option value="${esc(w)}">${esc(w)}</option>`).join("")}</select></label>
+        ${registerFlow === "이송" ? `<label>도착 보관<select id="recTargetWarehouse">${transferTargetOptions(warehouses[0] || "")}</select></label>` : ""}
         <label>날짜<input id="recDate" type="date" value="${todayISO()}"></label>
         <label>제목<input id="recTitle" placeholder="제목을 입력하세요"></label>
       ` : `
@@ -1277,30 +1288,26 @@ function renderRegister(){
         <input id="recDate" type="hidden" value="${todayISO()}">
         <input id="recTitle" type="hidden" value="${nowQuickTitle()}">
       `}
-      ${registerMode === "normal" ? `<div class="field-card">
+      ${registerMode === "normal" && registerFlow !== "이송" ? `<div class="field-card">
         <div class="section-title" style="font-size:16px">사고·작업 위치</div>
         <div class="location-grid">
           <label>구분<select id="recLocationType">${LOCATION_TYPES.map(type=>`<option value="${esc(type)}">${esc(type)}</option>`).join("")}</select></label>
           <label>세부 위치<input id="recLocationDetail" placeholder="예: 장승포항, ○○호, 홍도 남방"></label>
         </div>
-      </div>
-      <div class="field-card">
-        <div class="section-title" style="font-size:16px">현장 확인사항</div>
-        <div class="evidence-grid">${EVIDENCE_FIELDS.map(field=>`<label>${esc(field.label)}<select id="evidence_${esc(field.key)}">${field.options.map(option=>`<option value="${esc(option)}">${esc(option)}</option>`).join("")}</select></label>`).join("")}</div>
       </div>` : ""}
       <div>
         <div class="section-head" style="margin:5px 0 8px">
           <div class="section-title" style="font-size:16px">${registerMode === "quick" ? "사용 내역" : registerFlow}</div>
-          <div class="btn-row"><button class="btn secondary compact" id="addItem" type="button">자재 선택</button><button class="btn secondary compact" id="addEquipmentItem" type="button">장비 선택</button><button class="btn secondary compact" id="addHnsItem" type="button">HNS</button></div>
+          <div class="btn-row"><button class="btn secondary compact" id="addItem" type="button">자재 선택</button>${registerMode==="normal"&&registerFlow==="이송"?"":`<button class="btn secondary compact" id="addEquipmentItem" type="button">장비 선택</button><button class="btn secondary compact" id="addHnsItem" type="button">HNS</button>`}</div>
         </div>
         <div id="itemArea"></div>
         <div id="equipmentItemArea"></div>
-        <div id="hnsItemArea">${registerMode==="normal"?`<div class="hns-register-card"><div><strong>HNS</strong><span>${registerFlow} 자료 연결 준비 중</span></div><button class="btn gray compact" id="openHnsGuide" type="button">안내</button></div>`:""}</div>
+        <div id="hnsItemArea">${registerMode==="normal"&&registerFlow!=="이송"?`<div class="hns-register-card"><div><strong>HNS</strong><span>${registerFlow} 자료 연결 준비 중</span></div><button class="btn gray compact" id="openHnsGuide" type="button">안내</button></div>`:""}</div>
         <div id="stockAfterPreview"></div>
       </div>
       <label>메모<textarea id="recMemo" placeholder="${registerMode === "quick" ? "현장 메모를 간단히 입력하세요" : "메모를 입력하세요"}"></textarea></label>
       <div id="registerDraftSummary">${registerDraftSummaryHtml()}</div>
-      <button class="btn primary sticky-action" id="saveRecord" type="button">${registerMode === "quick" ? "미반영 저장" : registerFlow + " 저장"}</button>
+      <button class="btn primary sticky-action" id="saveRecord" type="button">${registerMode === "quick" ? "진행 중 사건 저장" : registerFlow + " 저장"}</button>
     </div>
   `;
   document.getElementById("modeNormal")?.addEventListener("click", () => { registerMode = "normal"; renderRegister(); setHead(); });
@@ -1309,6 +1316,8 @@ function renderRegister(){
   if(outBtn) outBtn.addEventListener("click", () => { registerFlow = "출고"; renderRegister(); });
   const inBtn = document.getElementById("flowIn");
   if(inBtn) inBtn.addEventListener("click", () => { registerFlow = "입고"; draftEquipmentItems=[]; renderRegister(); });
+  const moveBtn = document.getElementById("flowMove");
+  if(moveBtn) moveBtn.addEventListener("click", () => { registerFlow = "이송"; draftEquipmentItems=[]; renderRegister(); });
   document.getElementById("addItem")?.addEventListener("click", addDraftItem);
   document.getElementById("addEquipmentItem")?.addEventListener("click", addDraftEquipmentItem);
   document.getElementById("addHnsItem")?.addEventListener("click", openHnsRegisterGuide);
@@ -1316,14 +1325,15 @@ function renderRegister(){
   document.getElementById("saveRecord")?.addEventListener("click", saveRecord);
   document.getElementById("loadRegisterDraft")?.addEventListener("click",()=>{applyRegisterDraft(pendingRegisterDraft||readRegisterDraft());renderRegister();setHead();showSnack("작성 중 기록 불러옴");});
   document.getElementById("discardRegisterDraft")?.addEventListener("click",()=>{clearRegisterDraft();draftItems=[];draftEquipmentItems=[];renderRegister();});
-  document.getElementById("recWarehouse")?.addEventListener("change",()=>{renderItems();updateStockAfterPreview();});
+  document.getElementById("recWarehouse")?.addEventListener("change",()=>{syncTransferTarget();renderItems();updateStockAfterPreview();});
+  document.getElementById("recTargetWarehouse")?.addEventListener("change",()=>{scheduleRegisterDraft();updateStockAfterPreview();});
   renderItems();
   renderEquipmentItems();
+  syncTransferTarget();
   updateStockAfterPreview();
-  if(registerFormDraft){[["recType","type"],["recWarehouse","warehouse"],["recDate","date"],["recTitle","title"],["recMemo","memo"]].forEach(([id,key])=>{const input=document.getElementById(id);if(input&&registerFormDraft[key]!==undefined)input.value=registerFormDraft[key];});}
+  if(registerFormDraft){[["recType","type"],["recWarehouse","warehouse"],["recDate","date"],["recTitle","title"],["recMemo","memo"]].forEach(([id,key])=>{const input=document.getElementById(id);if(input&&registerFormDraft[key]!==undefined)input.value=registerFormDraft[key];});syncTransferTarget();const targetInput=document.getElementById("recTargetWarehouse");if(targetInput&&registerFormDraft.targetWarehouse&&registerFormDraft.targetWarehouse!==document.getElementById("recWarehouse")?.value)targetInput.value=registerFormDraft.targetWarehouse;renderItems();renderEquipmentItems();updateStockAfterPreview();}
   if(registerFormDraft && registerMode === "normal"){
     [["recLocationType","locationType"],["recLocationDetail","locationDetail"]].forEach(([id,key])=>{const input=document.getElementById(id);if(input&&registerFormDraft[key]!==undefined)input.value=registerFormDraft[key];});
-    EVIDENCE_FIELDS.forEach(field=>{const input=document.getElementById(`evidence_${field.key}`);if(input&&registerFormDraft.evidence?.[field.key]!==undefined)input.value=registerFormDraft.evidence[field.key];});
   }
   view.querySelectorAll("input,select,textarea").forEach(input=>{input.addEventListener("input",scheduleRegisterDraft);input.addEventListener("change",scheduleRegisterDraft);});
 }
@@ -1339,16 +1349,15 @@ function collectRegisterLocation(){
 }
 
 function collectRegisterEvidence(){
-  const values=Object.fromEntries(EVIDENCE_FIELDS.map(field=>[field.key,document.getElementById(`evidence_${field.key}`)?.value || field.options[0]]));
-  return Object.values(values).some(value=>value && !["확인 안함","해당 없음"].includes(value)) ? values : null;
+  return null;
 }
 
 function updateStockAfterPreview(){
   const target=document.getElementById("stockAfterPreview");if(!target)return;
-  if(registerMode!=="normal"||registerFlow!=="출고"){target.innerHTML="";return;}
+  if(registerMode!=="normal"||!["출고","이송"].includes(registerFlow)){target.innerHTML="";return;}
   const warehouse=document.getElementById("recWarehouse")?.value||"";
   const rows=draftItems.filter(item=>Number(item.qty)>0).map(item=>{const before=Number(state.stock[warehouse]?.[item.name]||0),after=before-Number(item.qty||0);return `<div class="row-sub">${esc(item.name)} · ${materialQtyText(before,item.unit,item)} → <strong class="${after<0?"danger-text":""}">${materialQtyText(after,item.unit,item)}</strong></div>`;});
-  target.innerHTML=rows.length?`<div class="callout"><strong>출고 후 예상 잔량</strong>${rows.join("")}</div>`:"";
+  target.innerHTML=rows.length?`<div class="callout"><strong>${registerFlow==="이송"?"이송 후 출발 잔량":"출고 후 예상 잔량"}</strong>${rows.join("")}</div>`:"";
 }
 
 function mergeDuplicateDraftItems({notify=false}={}){
@@ -1374,17 +1383,23 @@ function mergeDuplicateDraftItems({notify=false}={}){
 
 function addDraftItem(){
   const warehouse=document.getElementById("recWarehouse")?.value || warehouses[0];
-  const f = (registerMode==="normal"&&registerFlow==="출고" ? catalog.find(item=>Number(state.stock[warehouse]?.[item.name]||0)>0) : null) || catalog[0];
+  const used=new Set(draftItems.map(item=>item.name).filter(Boolean));
+  const candidates=catalog.filter(item=>!used.has(item.name));
+  const needsStock=registerMode==="normal"&&["출고","이송"].includes(registerFlow);
+  const f = (needsStock ? candidates.find(item=>Number(state.stock[warehouse]?.[item.name]||0)>0) : null) || candidates[0];
+  if(!f){ showFeedback("info","추가할 다른 자재가 없습니다"); return; }
   draftItems.push({cat:f.cat,name:f.name,qty:"",unit:f.unit,kind:f.kind});
-  mergeDuplicateDraftItems({notify:true});
   renderItems();
   updateRegisterDraftSummary();
   showFeedback("success","자재 1건 추가");
 }
 
 function addDraftEquipmentItem(){
+  if(registerMode==="normal"&&registerFlow==="이송"){ showFeedback("info","이송은 자재만 등록합니다"); return; }
   const warehouse=document.getElementById("recWarehouse")?.value || "";
-  const equipment=(state.equipment || []).find(item=>item.place===warehouse&&Number(item.qty||0)>0) || (state.equipment || [])[0];
+  const used=new Set(draftEquipmentItems.map(item=>item.id).filter(Boolean));
+  const candidates=(state.equipment || []).filter(item=>!used.has(item.id));
+  const equipment=candidates.find(item=>item.place===warehouse&&Number(item.qty||0)>0) || candidates[0];
   if(!equipment){ showFeedback("info","등록된 장비가 없습니다"); return; }
   draftEquipmentItems.push({id:equipment.id,name:equipment.name,cat:equipment.cat || "기타장비",qty:"",place:equipment.place,spec:equipment.spec || equipment.detail || "",model:equipment.model || ""});
   renderEquipmentItems();
@@ -1401,6 +1416,7 @@ function equipmentRegisterLabel(equipment){
 function renderEquipmentItems(){
   const area=document.getElementById("equipmentItemArea");
   if(!area) return;
+  if(registerMode==="normal"&&registerFlow==="이송"){area.innerHTML="";return;}
   if(!draftEquipmentItems.length){ area.innerHTML=`<div class="emptybox slim-empty">추가된 장비가 없습니다.</div>`; return; }
   area.innerHTML=`<div class="group-title">${registerMode==="normal"&&registerFlow==="입고"?"입고 장비":"사용 장비"}</div>`+draftEquipmentItems.map((item,index) => {
     const selected=state.equipment.find(e=>e.id===item.id) || state.equipment[0];
@@ -1506,6 +1522,7 @@ function renderItems(){
 async function saveRecord(){
   const type = document.getElementById("recType").value;
   const warehouse = document.getElementById("recWarehouse").value;
+  const targetWarehouse = document.getElementById("recTargetWarehouse")?.value || "";
   const date = document.getElementById("recDate").value || todayISO();
   const title = document.getElementById("recTitle").value.trim();
   const memo = document.getElementById("recMemo").value.trim();
@@ -1517,7 +1534,11 @@ async function saveRecord(){
   const checklist=[];
 
   if(registerMode === "normal" && !title){ showSnack("제목을 입력해주세요"); return; }
-  if(!items.length && !equipmentItems.length){ showSnack("자재 또는 장비를 추가해주세요"); return; }
+  if(registerMode === "normal" && !items.length && !equipmentItems.length){ showSnack(registerFlow==="이송"?"이송할 자재를 추가해주세요":"자재 또는 장비를 추가해주세요"); return; }
+  if(registerMode === "normal" && registerFlow === "이송"){
+    if(!warehouse||!targetWarehouse){ showFeedback("error","출발·도착 보관을 선택해주세요"); return; }
+    if(warehouse===targetWarehouse){ showFeedback("error","출발 보관과 도착 보관을 다르게 선택해주세요"); return; }
+  }
   const invalidEquipment=equipmentItems.find(entry=>entry.qty>Number(state.equipment.find(item=>item.id===entry.id)?.qty || 0));
   if(invalidEquipment){ showFeedback("error",`${invalidEquipment.name} ${registerFlow==="입고"?"반납":"사용"}수량이 보유수량보다 많습니다`); return; }
   const unusuallyLarge=items.find(entry=>{const current=Number(state.stock[warehouse]?.[entry.name]||0);return entry.qty>=100&&entry.qty>Math.max(100,current*1.5);});
@@ -1537,18 +1558,45 @@ async function saveRecord(){
     draftEquipmentItems = [];
     clearRegisterDraft();
     save();
-    showSnack(`긴급기록 저장 · ${summarizeItems(items,equipmentItems,"긴급")}`);
+    showSnack(`진행 중 사건 저장 · ${summarizeItems(items,equipmentItems,"긴급")}`);
     historyFilter = "pending";
     setPage("history");
     return;
   }
 
-  if(registerFlow === "출고" && !stockAvailable(warehouse, items)){
+  if(["출고","이송"].includes(registerFlow) && !stockAvailable(warehouse, items)){
     showFeedback("error",stockShortageMessage(warehouse,items));
     return;
   }
 
     if(saveButton){saveButton.disabled=true;saveButton.textContent="저장 중";}
+
+  if(registerFlow === "이송"){
+    const movedItems=items.map(item=>{
+      const before=Number(state.stock[warehouse]?.[item.name]||0);
+      const targetBefore=Number(state.stock[targetWarehouse]?.[item.name]||0);
+      return {...item,before,after:before-Number(item.qty||0),diff:-Number(item.qty||0),targetBefore,targetAfter:targetBefore+Number(item.qty||0),targetDiff:Number(item.qty||0)};
+    });
+    if(!state.stock[warehouse]) state.stock[warehouse]={};
+    if(!state.stock[targetWarehouse]) state.stock[targetWarehouse]={};
+    movedItems.forEach(item=>{
+      state.stock[warehouse][item.name]=Number(item.after||0);
+      state.stock[targetWarehouse][item.name]=Number(item.targetAfter||0);
+      const catalogItem=itemOf(item.name);
+      if(catalogItem) catalogItem.updatedAt=new Date().toISOString();
+    });
+    state.records.push(createFlowRecord({
+      flow:"이송", type:"이송", warehouse, targetWarehouse, date, title, memo, status:"done", items:movedItems, equipmentItems:[], checklist:[]
+    }));
+    draftItems = [];
+    draftEquipmentItems = [];
+    clearRegisterDraft();
+    save();
+    showSnack(`이송 저장 · ${warehouse} → ${targetWarehouse} ${summarizeItems(movedItems,[],"이송")}`);
+    historyFilter = "done";
+    setPage("history");
+    return;
+  }
 
   const changedItems = stockChangeItems(warehouse, items, registerFlow);
   applyStock(warehouse, items, registerFlow);
@@ -1617,7 +1665,7 @@ function renderHistory(){
   view.innerHTML = `
     <div class="history-tabs">
       <button class="history-tab ${historyFilter === "all" ? "active" : ""}" data-hfilter="all" type="button">전체 ${counts.all}</button>
-      <button class="history-tab ${historyFilter === "pending" ? "active" : ""}" data-hfilter="pending" type="button">미반영 ${counts.pending}</button>
+      <button class="history-tab ${historyFilter === "pending" ? "active" : ""}" data-hfilter="pending" type="button">진행중 ${counts.pending}</button>
       <button class="history-tab ${historyFilter === "done" ? "active" : ""}" data-hfilter="done" type="button">완료 ${counts.done}</button>
     </div>
     <div class="history-date-buttons">
@@ -1658,7 +1706,7 @@ function renderHistoryListHtml(records){
   return defs.map(type=>{const typeRows=records.filter(record=>typeOf(record)===type);if(!typeRows.length)return"";const content=historyDateGroups(typeRows).map(g=>`<div class="history-date-label">${fmtDate(g.date)}</div><div class="list-card">${g.records.map(r => `
         <button class="list-row" data-detail="${r.id}" type="button">
           <div>
-            <div><span class="badge ${r.status === "pending" ? "red" : (r.flow === "입고" ? "green" : r.flow === "재고수정" ? "orange" : "blue")}">${r.status === "pending" ? "미반영" : esc(r.flow || r.type)}</span></div>
+            <div><span class="badge ${r.status === "pending" ? "red" : (r.flow === "입고" ? "green" : r.flow === "재고수정" ? "orange" : "blue")}">${r.status === "pending" ? "진행중" : esc(r.flow || r.type)}</span></div>
             <div class="row-title" style="margin-top:7px">${esc(r.title)}</div>
             <div class="row-sub">${r.warehouse ? esc(r.warehouse) : "보관 미지정"} · ${esc(summarizeItems(r.items,r.equipmentItems,r.flow))}</div>
           </div>
@@ -1674,26 +1722,21 @@ function bindHistoryRows(){
 
 function recordFieldSummary(r){
   const location=r.location?.detail?`<div class="detail-row"><div class="detail-label">사고·작업 위치</div><div class="detail-value">${esc(r.location.type||"위치")} · ${esc(r.location.detail)}</div></div>`:"";
-  const evidence=r.evidence||{};
-  const evidenceRows=EVIDENCE_FIELDS.map(field=>({label:field.label,value:evidence[field.key]})).filter(row=>row.value&&!["확인 안함","해당 없음"].includes(row.value));
-  const evidenceHtml=evidenceRows.length?`<div class="detail-row"><div class="detail-label">현장 확인사항</div><div class="detail-value">${evidenceRows.map(row=>`${esc(row.label)} ${esc(row.value)}`).join(" · ")}</div></div>`:"";
-  return location||evidenceHtml?`<div class="detail-grid">${location}${evidenceHtml}</div>`:"";
+  return location?`<div class="detail-grid">${location}</div>`:"";
 }
 
 function pendingRecordForm(r){
   const officialTitle = r.officialTitle ? r.title : "";
   const location=r.location||{};
-  const evidence=r.evidence||{};
   return `<div class="card">
-      <div><span class="badge red">미반영</span></div>
-      <div class="section-title" style="margin-top:10px">긴급기록 사후보완</div>
-      <div class="row-sub">현장에서 저장한 기록입니다. 내용을 확인한 뒤 재고에 반영하세요.</div>
+      <div><span class="badge red">진행 중</span></div>
+      <div class="section-title" style="margin-top:10px">진행 중 사건</div>
+      <div class="row-sub">사건이 끝나기 전까지 자재·장비·메모를 계속 추가할 수 있습니다.</div>
       <div class="form" style="margin-top:14px">
         <label>사고명·정식 제목<input id="pendingTitle" value="${esc(officialTitle)}" placeholder="예: ○○항 유류유출 방제"></label>
         <label>보관장소<select id="pendingWarehouse"><option value="">나중에 지정</option>${warehouses.map(w => `<option value="${esc(w)}" ${r.warehouse === w ? "selected" : ""}>${esc(w)}</option>`).join("")}</select></label>
         <label>발생일<input id="pendingDate" type="date" value="${esc(r.date || todayISO())}"></label>
         <div class="location-grid"><label>위치 구분<select id="pendingLocationType">${LOCATION_TYPES.map(type=>`<option value="${esc(type)}" ${location.type===type?"selected":""}>${esc(type)}</option>`).join("")}</select></label><label>세부 위치<input id="pendingLocationDetail" value="${esc(location.detail||"")}" placeholder="예: 장승포항, ○○호"></label></div>
-        <div class="evidence-grid">${EVIDENCE_FIELDS.map(field=>`<label>${esc(field.label)}<select id="pendingEvidence_${esc(field.key)}">${field.options.map(option=>`<option value="${esc(option)}" ${evidence[field.key]===option?"selected":""}>${esc(option)}</option>`).join("")}</select></label>`).join("")}</div>
         <label>현장 메모<textarea id="pendingMemo" placeholder="현장 상황이나 특이사항">${esc(r.memo || "")}</textarea></label>
       </div>
     </div>
@@ -1706,16 +1749,16 @@ function pendingRecordForm(r){
             <label>사용량<input id="pendingQty${index}" type="number" inputmode="decimal" min="0" step="0.1" value="${Number(item.qty || 0)}"></label>
             <button class="btn gray" data-remove-pending="${index}" type="button">이 자재 삭제</button>
           </div>
-        `).join("")}
+        `).join("") || `<div class="emptybox">아직 등록한 자재가 없습니다.</div>`}
       </div>
     </div>
-    ${(r.equipmentItems || []).length ? `<div class="card"><div class="section-title">사용 장비</div><div class="form">${r.equipmentItems.map((item,index)=>`<div class="item-box"><label>장비<select id="pendingEquipment${index}">${state.equipment.map(e=>`<option value="${e.id}" ${e.id===item.id?"selected":""}>${esc(e.name)} · ${esc(e.place)}</option>`).join("")}</select></label><label>사용 수량<input id="pendingEquipmentQty${index}" type="number" inputmode="numeric" min="1" step="1" value="${Number(item.qty || 1)}"></label></div>`).join("")}</div></div>` : ""}
-    <button class="btn secondary" id="savePending" type="button" style="width:100%;margin-bottom:9px">수정 내용 저장</button>
-    <button class="btn primary" id="applyPending" type="button" style="width:100%;margin-bottom:9px">저장 후 재고 반영 확정</button>`;
+    <div class="card"><div class="section-head"><div class="section-title">사용 장비</div><button class="btn secondary" id="addPendingEquipment" type="button">+ 장비 추가</button></div><div class="form">${(r.equipmentItems || []).map((item,index)=>`<div class="item-box"><label>장비<select id="pendingEquipment${index}">${state.equipment.map(e=>`<option value="${e.id}" ${e.id===item.id?"selected":""}>${esc(e.name)} · ${esc(e.place)}</option>`).join("")}</select></label><label>사용 수량<input id="pendingEquipmentQty${index}" type="number" inputmode="numeric" min="1" step="1" value="${Number(item.qty || 1)}"></label><button class="btn gray" data-remove-pending-equipment="${index}" type="button">이 장비 삭제</button></div>`).join("") || `<div class="emptybox">아직 등록한 장비가 없습니다.</div>`}</div></div>
+    <button class="btn secondary" id="savePending" type="button" style="width:100%;margin-bottom:9px">진행 내용 저장</button>
+    <button class="btn primary" id="applyPending" type="button" style="width:100%;margin-bottom:9px">사건 종결</button>`;
 }
 
 function collectPendingForm(r){
-  const items = r.items.map((original,index) => {
+  const items = (r.items || []).map((original,index) => {
     const selectedName = document.getElementById(`pendingName${index}`)?.value || original.name;
     const catalogItem = itemOf(selectedName) || original;
     const qty = Number(document.getElementById(`pendingQty${index}`)?.value || 0);
@@ -1734,7 +1777,7 @@ function collectPendingForm(r){
     date:document.getElementById("pendingDate")?.value || todayISO(),
     memo:document.getElementById("pendingMemo")?.value.trim() || "",
     location:(document.getElementById("pendingLocationDetail")?.value.trim() || "") ? {type:document.getElementById("pendingLocationType")?.value || "",detail:document.getElementById("pendingLocationDetail")?.value.trim() || ""} : null,
-    evidence:(()=>{const values=Object.fromEntries(EVIDENCE_FIELDS.map(field=>[field.key,document.getElementById(`pendingEvidence_${field.key}`)?.value || field.options[0]]));return Object.values(values).some(value=>value&&!["확인 안함","해당 없음"].includes(value))?values:null;})(),
+    evidence:null,
     items,
     equipmentItems:(r.equipmentItems || []).map((original,index)=>{
       const equipment=state.equipment.find(item=>item.id===document.getElementById(`pendingEquipment${index}`)?.value) || state.equipment.find(item=>item.id===original.id) || original;
@@ -1747,7 +1790,6 @@ async function savePendingEdits(id, shouldApply=false, silent=false){
   const r = state.records.find(x => x.id === id);
   if(!r || r.status !== "pending") return false;
   const form = collectPendingForm(r);
-  if(!form.items.length && !form.equipmentItems.length){ showSnack("자재 또는 장비를 한 개 이상 남겨주세요"); return false; }
 
   r.title = form.title || (r.officialTitle ? nowQuickTitle() : r.title || nowQuickTitle());
   r.officialTitle = Boolean(form.title);
@@ -1763,7 +1805,7 @@ async function savePendingEdits(id, shouldApply=false, silent=false){
   if(!shouldApply){
     save();
     if(!silent){
-      showSnack("미반영 기록 수정 완료");
+      showSnack("진행 중 사건 저장 완료");
       openDetail(id,{push:false,remember:false});
     }
     return true;
@@ -1771,17 +1813,17 @@ async function savePendingEdits(id, shouldApply=false, silent=false){
 
   if(!r.officialTitle){ showSnack("재고 반영 전에 사고명을 입력해주세요"); return false; }
   if(r.items.length && !r.warehouse){ showSnack("재고를 차감할 보관장소를 선택해주세요"); return false; }
-  if(!stockAvailable(r.warehouse, r.items)){
+  if(r.items.length && !stockAvailable(r.warehouse, r.items)){
     showFeedback("error",stockShortageMessage(r.warehouse,r.items));
     return false;
   }
-  if(!await askConfirm("재고 반영 확인",`${r.warehouse || "지정 창고"} 재고에서 사용 자재를 차감하고 완료 처리할까요?`,"재고 반영")) return false;
+  if(!await askConfirm("사건 종결",r.items.length?`${r.warehouse || "지정 창고"} 재고에서 사용 자재를 차감하고 사건을 종결할까요?`:"재고 차감 없이 사건을 종결할까요?","사건 종결")) return false;
 
   const stockBefore = Object.fromEntries(r.items.map(item => [item.name, Number(state.stock[r.warehouse]?.[item.name] || 0)]));
   const previous = {status:r.status, flow:r.flow, appliedAt:r.appliedAt};
-  applyStock(r.warehouse, r.items, "출고");
+  if(r.items.length) applyStock(r.warehouse, r.items, "출고");
   r.status = "done";
-  r.flow = "출고";
+  r.flow = r.items.length ? "출고" : "긴급";
   r.appliedAt = new Date().toISOString();
   try{
     save();
@@ -1790,7 +1832,7 @@ async function savePendingEdits(id, shouldApply=false, silent=false){
     Object.assign(r, previous);
     throw error;
   }
-  showSnack("재고 반영 완료");
+  showSnack("사건 종결 완료");
   openDetail(id,{push:false,remember:false});
   return true;
 }
@@ -1799,7 +1841,8 @@ async function addPendingItemToRecord(id){
   const r = state.records.find(x => x.id === id);
   if(!r || r.status !== "pending") return;
   if(!await savePendingEdits(id,false,true)) return;
-  const first = catalog[0];
+  const used=new Set((r.items||[]).map(item=>item.name));
+  const first = catalog.find(item=>!used.has(item.name)) || catalog[0];
   r.items.push({cat:first.cat,name:first.name,qty:1,unit:first.unit,kind:first.kind});
   save();
   openDetail(id,{push:false,remember:false});
@@ -1808,9 +1851,30 @@ async function addPendingItemToRecord(id){
 async function removePendingItemFromRecord(id,index){
   const r = state.records.find(x => x.id === id);
   if(!r || r.status !== "pending") return;
-  if(r.items.length <= 1 && !(r.equipmentItems || []).length){ showSnack("자재 또는 장비를 한 개 이상 남겨주세요"); return; }
   if(!await savePendingEdits(id,false,true)) return;
   r.items.splice(index,1);
+  save();
+  openDetail(id,{push:false,remember:false});
+}
+
+async function addPendingEquipmentToRecord(id){
+  const r = state.records.find(x => x.id === id);
+  if(!r || r.status !== "pending") return;
+  if(!await savePendingEdits(id,false,true)) return;
+  const used=new Set((r.equipmentItems||[]).map(item=>item.id));
+  const equipment=state.equipment.find(item=>!used.has(item.id)) || state.equipment[0];
+  if(!equipment){showFeedback("info","추가할 장비가 없습니다");return;}
+  r.equipmentItems=r.equipmentItems||[];
+  r.equipmentItems.push({id:equipment.id,name:equipment.name,qty:1,place:equipment.place,spec:equipment.spec || equipment.detail || ""});
+  save();
+  openDetail(id,{push:false,remember:false});
+}
+
+async function removePendingEquipmentFromRecord(id,index){
+  const r = state.records.find(x => x.id === id);
+  if(!r || r.status !== "pending") return;
+  if(!await savePendingEdits(id,false,true)) return;
+  r.equipmentItems=(r.equipmentItems||[]).filter((_,i)=>i!==index);
   save();
   openDetail(id,{push:false,remember:false});
 }
@@ -1827,20 +1891,22 @@ function openDetail(id, options={}){
     view.innerHTML = `
       <button class="back" id="backHist" type="button">‹ 이력</button>
       ${pendingRecordForm(r)}
-      <button class="btn danger detail-delete-btn" id="deleteRecord" type="button">미반영 기록 삭제</button>`;
+      <button class="btn danger detail-delete-btn" id="deleteRecord" type="button">진행 중 사건 삭제</button>`;
     document.getElementById("backHist")?.addEventListener("click", () => window.history.back());
     document.getElementById("savePending")?.addEventListener("click", () => savePendingEdits(id,false));
     document.getElementById("applyPending")?.addEventListener("click", () => savePendingEdits(id,true));
     document.getElementById("addPendingItem")?.addEventListener("click", () => addPendingItemToRecord(id));
+    document.getElementById("addPendingEquipment")?.addEventListener("click", () => addPendingEquipmentToRecord(id));
     view.querySelectorAll("[data-remove-pending]").forEach(button => button.addEventListener("click", () => removePendingItemFromRecord(id, Number(button.dataset.removePending))));
+    view.querySelectorAll("[data-remove-pending-equipment]").forEach(button => button.addEventListener("click", () => removePendingEquipmentFromRecord(id, Number(button.dataset.removePendingEquipment))));
     document.getElementById("deleteRecord")?.addEventListener("click", async () => {
-      if(!await askConfirm("미반영 기록 삭제","재고에는 영향이 없습니다.","삭제",true)) return;
+      if(!await askConfirm("진행 중 사건 삭제","재고에는 영향이 없습니다.","삭제",true)) return;
       const undoState=JSON.stringify(state);
       state.trash=state.trash||[];state.trash.push({id:uid(),kind:"record",data:JSON.parse(JSON.stringify(r)),deletedAt:new Date().toISOString()});
       state.records = state.records.filter(x => x.id !== id);
       save();
       setPage("history");
-      showUndoSnack("미반영 기록 삭제",undoState,()=>{historyFilter="all";setPage("history");});
+      showUndoSnack("진행 중 사건 삭제",undoState,()=>{historyFilter="all";setPage("history");});
     });
     return;
   }
@@ -1850,12 +1916,12 @@ function openDetail(id, options={}){
     <div class="card">
       <span class="badge ${r.flow === "입고" ? "green" : r.flow === "재고수정" ? "orange" : "blue"}">${r.quick ? "긴급기록 반영완료" : esc(r.flow || r.type)}</span>
       <div class="section-title" style="margin-top:10px">${esc(r.title)}</div>
-      <div class="row-sub">${fmtDate(r.date)} · ${r.warehouse ? esc(r.warehouse) : "보관 미지정"}</div>
+      <div class="row-sub">${fmtDate(r.date)} · ${r.flow==="이송"&&r.targetWarehouse ? `${esc(r.warehouse || "보관 미지정")} → ${esc(r.targetWarehouse)}` : (r.warehouse ? esc(r.warehouse) : "보관 미지정")}</div>
       ${r.appliedAt ? `<div class="row-sub">반영시각 ${esc(new Date(r.appliedAt).toLocaleString("ko-KR"))}</div>` : ""}
       ${recordFieldSummary(r)}
       ${r.memo ? `<div class="callout" style="margin-top:12px">${esc(r.memo)}</div>` : ""}
     </div>
-    ${r.items.length ? `<div class="card"><div class="section-title">${r.flow === "입고" ? "입고 자재" : r.flow === "이송" ? "이송 자재" : "사용 자재"}</div>${r.items.map(i => `<div class="stock-line"><div><div class="stock-name">${esc(i.name)}</div><div class="stock-spec">${esc(i.cat)}${i.before !== undefined ? " · " + materialQtyText(i.before,i.unit,i) + " → " + materialQtyText(i.after,i.unit,i) : ""}</div></div><div class="stock-qty">${i.before !== undefined ? (i.diff > 0 ? "+" : "") + materialQtyText(i.diff,i.unit,i) : materialQtyText(i.qty,i.unit,i)}</div></div>`).join("")}</div>` : ""}
+    ${r.items.length ? `<div class="card"><div class="section-title">${r.flow === "입고" ? "입고 자재" : r.flow === "이송" ? "이송 자재" : "사용 자재"}</div>${r.items.map(i => `<div class="stock-line"><div><div class="stock-name">${esc(i.name)}</div><div class="stock-spec">${esc(i.cat)}${r.flow==="이송"&&i.targetBefore!==undefined ? ` · 출발 ${materialQtyText(i.before,i.unit,i)} → ${materialQtyText(i.after,i.unit,i)} · 도착 ${materialQtyText(i.targetBefore,i.unit,i)} → ${materialQtyText(i.targetAfter,i.unit,i)}` : i.before !== undefined ? " · " + materialQtyText(i.before,i.unit,i) + " → " + materialQtyText(i.after,i.unit,i) : ""}</div></div><div class="stock-qty">${r.flow==="이송" ? materialQtyText(i.qty,i.unit,i) : i.before !== undefined ? (i.diff > 0 ? "+" : "") + materialQtyText(i.diff,i.unit,i) : materialQtyText(i.qty,i.unit,i)}</div></div>`).join("")}</div>` : ""}
     ${(r.equipmentItems || []).length ? `<div class="card"><div class="section-title">${r.flow==="입고"?"입고 장비":"사용 장비"}</div>${r.equipmentItems.map((item,index)=>{const returned=Math.min(Number(item.qty||0),Number(item.returnedQty||0)),using=Number(item.qty||0)-returned;return `<div class="stock-line"><button class="plain-button" data-used-equipment="${item.id}" type="button"><div class="stock-name">${esc(item.name)}</div><div class="stock-spec">${esc(item.place || "보관 미지정")} · ${r.flow==="입고"?`입고 ${Number(item.qty||0)}대`:`사용 중 ${using}대 · 반납 ${returned}대`}</div></button>${r.flow==="입고"?"":`<button class="btn secondary compact" data-return-equipment="${index}" type="button">부분 반납</button>`}</div>`;}).join("")}</div>` : ""}
     <button class="btn danger detail-delete-btn" id="deleteRecord" type="button">삭제</button>`;
   document.getElementById("backHist")?.addEventListener("click", () => window.history.back());
@@ -2170,15 +2236,10 @@ function opTotal(place,field){
 }
 function vehicleMonthlyDistance(place){const month=todayISO().slice(0,7);return (state.assetOps?.[place]?.logs||[]).filter(log=>String(log.date||"").slice(0,7)===month).reduce((sum,log)=>sum+Number(log.diff??log.distance??0),0);}
 
-function vesselFuelTotals(place){const now=todayISO(),month=now.slice(0,7),year=now.slice(0,4),logs=state.assetOps?.[place]?.logs||[];return {month:logs.filter(log=>String(log.date||"").slice(0,7)===month).reduce((sum,log)=>sum+Number(log.fuel||0),0),year:logs.filter(log=>String(log.date||"").slice(0,4)===year).reduce((sum,log)=>sum+Number(log.fuel||0),0)};}
 function vesselMonthlyMileage(place){const month=todayISO().slice(0,7);return (state.assetOps?.[place]?.logs||[]).filter(log=>String(log.date||"").slice(0,7)===month).reduce((sum,log)=>sum+Number(log.mileageDiff||0),0);}
-const vesselActivities=["출입검사","선외검사","방제훈련","방제조치","기타"];
-function logActivityCounts(log){const counts={};vesselActivities.forEach(activity=>counts[activity]=Math.max(0,Math.round(Number(log.activityCounts?.[activity]||0))));if(!log.activityCounts&&log.activity)counts[log.activity]=Math.max(1,counts[log.activity]||0);return counts;}
-function readActivityCounts(prefix){const counts={};vesselActivities.forEach((activity,index)=>counts[activity]=Math.max(0,Math.round(Number(document.getElementById(`${prefix}${index}`)?.value||0))));return counts;}
-function activityInputs(prefix,counts={}){return `<div class="group-title">활동 횟수</div><div class="activity-count-grid">${vesselActivities.map((activity,index)=>`<label>${activity}<input id="${prefix}${index}" type="number" inputmode="numeric" min="0" step="1" value="${Number(counts[activity]||0)||""}" placeholder="0"></label>`).join("")}</div>`;}
-function activityCountText(log){const counts=logActivityCounts(log);return vesselActivities.filter(activity=>counts[activity]>0).map(activity=>`${activity} ${counts[activity]}회`).join(" · ")||"활동 0회";}
-function logHasActivity(log,activity){return activity==="all"||logActivityCounts(log)[activity]>0;}
-function vesselMonthlySummary(place,month=todayISO().slice(0,7)){const logs=(state.assetOps?.[place]?.logs||[]).filter(log=>String(log.date||"").slice(0,7)===month),activities={};vesselActivities.forEach(activity=>activities[activity]=0);logs.forEach(log=>{const counts=logActivityCounts(log);vesselActivities.forEach(activity=>activities[activity]+=counts[activity]);});return {logs,count:logs.length,mileage:logs.reduce((sum,log)=>sum+Number(log.mileageDiff||0),0),port:logs.reduce((sum,log)=>sum+Number(log.portDiff||0),0),starboard:logs.reduce((sum,log)=>sum+Number(log.starboardDiff||0),0),fuel:logs.reduce((sum,log)=>sum+Number(log.fuel||0),0),activities};}
+function vesselFuelTotals(place){const now=todayISO(),month=now.slice(0,7),year=now.slice(0,4),logs=state.assetOps?.[place]?.logs||[];return {current:Number(state.assetOps?.[place]?.fuelBase||0),month:logs.filter(log=>String(log.date||"").slice(0,7)===month).reduce((sum,log)=>sum+Number(log.fuel||0),0),year:logs.filter(log=>String(log.date||"").slice(0,4)===year).reduce((sum,log)=>sum+Number(log.fuel||0),0)};}
+function vesselFuelRows(place){const rows=[...(state.assetOps?.[place]?.fuelLogs||[])].slice(-5).reverse();return rows.length?rows.map(log=>`<div class="row-sub">${fmtDate(log.date)} · ${Number(log.amount||0)>0?"+":""}${Number(log.amount||0)}L${log.memo?` · ${esc(log.memo)}`:""}</div>`).join(""):`<div class="row-sub">연료 수급 이력이 없습니다.</div>`;}
+function vesselMonthlySummary(place,month=todayISO().slice(0,7)){const logs=(state.assetOps?.[place]?.logs||[]).filter(log=>String(log.date||"").slice(0,7)===month);return {logs,count:logs.length,mileage:logs.reduce((sum,log)=>sum+Number(log.mileageDiff||0),0),port:logs.reduce((sum,log)=>sum+Number(log.portDiff||0),0),starboard:logs.reduce((sum,log)=>sum+Number(log.starboardDiff||0),0)};}
 
 function renderOps(place){
   if(!isVehiclePlace(place)&&!isVesselPlace(place)) return "";
@@ -2194,25 +2255,42 @@ function renderOps(place){
       <div class="section-title" style="margin-top:16px">정비이력</div>${assetMaintenanceRows(place)}
     </div>`;
   }
-  const fuelTotals=vesselFuelTotals(place);
   const monthly=vesselMonthlySummary(place);
+  const fuel=vesselFuelTotals(place);
   return `<div class="card"><div class="section-title">${esc(place)} 관리</div>
     <div class="grid2">
       <div class="metric" style="height:82px"><div><div class="metric-label">누적 마일수</div><div class="metric-value">${opTotal(place,"mileage")}NM</div><div class="row-sub">이번 달 ${vesselMonthlyMileage(place)}NM</div></div></div>
       <div class="metric" style="height:82px"><div><div class="metric-label">좌현 엔진</div><div class="metric-value">${opTotal(place,"portHours")}h</div></div></div>
       <div class="metric" style="height:82px"><div><div class="metric-label">우현 엔진</div><div class="metric-value">${opTotal(place,"starboardHours")}h</div></div></div>
-      <div class="metric" style="height:82px"><div><div class="metric-label">이번 달 연료유</div><div class="metric-value">${fuelTotals.month}L</div><div class="row-sub">올해 ${fuelTotals.year}L</div></div></div>
+      <div class="metric" style="height:82px"><div><div class="metric-label">연료유 재고</div><div class="metric-value">${fuel.current}L</div><div class="row-sub">월 ${fuel.month}L · 년 ${fuel.year}L 소모</div></div></div>
     </div>
-    <div class="callout"><strong>이번 달 운항 요약</strong><br>${monthly.count}회 · ${monthly.mileage}NM · 좌현 ${monthly.port}h · 우현 ${monthly.starboard}h · 연료유 ${monthly.fuel}L<br>${vesselActivities.map(activity=>`${activity} ${monthly.activities[activity]||0}회`).join(" · ")}</div>
+    <div class="callout"><strong>이번 달 운항 요약</strong><br>기록 ${monthly.count}건 · ${monthly.mileage}NM · 좌현 ${monthly.port}h · 우현 ${monthly.starboard}h · 연료 ${fuel.month}L</div>
     <div class="btn-row" style="display:grid;grid-template-columns:1fr 1fr;margin-top:12px">
         <button class="btn secondary" id="editOpBase" type="button">초기시간설정</button>
         <button class="btn primary" id="addOpLog" type="button">운항 기록</button>
     </div>
+    <div class="btn-row" style="display:grid;grid-template-columns:1fr 1fr;margin-top:9px">
+        <button class="btn secondary" id="addFuelSupply" type="button">연료 수급</button>
+        <button class="btn gray" id="editFuelBase" type="button">연료 재고수정</button>
+    </div>
+    <div class="callout" style="margin-top:12px"><strong>최근 연료 수급</strong><br>${vesselFuelRows(place)}</div>
     <button class="btn secondary" id="addAssetMaintenance" type="button" style="width:100%;margin-top:9px">+ 정비이력 추가</button>
     <div class="section-title" style="margin-top:16px">최근 이력</div>${recentOpRows(place)}
     <button class="btn gray" id="openVesselHistory" type="button" style="width:100%;margin-top:9px">전체 운항이력·검색</button>
     <div class="section-title" style="margin-top:16px">정비이력</div>${assetMaintenanceRows(place)}
   </div>`;
+}
+
+function openFuelSupplyForm(place){
+  const op=state.assetOps?.[place];if(!op)return;op.fuelLogs=op.fuelLogs||[];
+  openEntryModal(`${entryHeader("연료 수급",place)}<div class="form"><label>날짜<input id="fuelSupplyDate" type="date" value="${todayISO()}"></label><label>수급량(L)<input id="fuelSupplyAmount" type="number" inputmode="decimal" min="0" step="0.1" placeholder="예: 200"></label><label>메모<textarea id="fuelSupplyMemo" placeholder="수급처나 특이사항"></textarea></label><button class="btn primary" id="saveFuelSupply" type="button">저장</button></div>`);
+  document.getElementById("saveFuelSupply")?.addEventListener("click",()=>{const amount=Number(document.getElementById("fuelSupplyAmount").value||0);if(!Number.isFinite(amount)||amount<=0){showFeedback("error","수급량을 입력해주세요");return;}op.fuelBase=Number(op.fuelBase||0)+amount;op.fuelLogs.push({id:uid(),date:document.getElementById("fuelSupplyDate").value||todayISO(),amount,memo:document.getElementById("fuelSupplyMemo").value.trim(),createdAt:new Date().toISOString()});save();closeEntryModal();showFeedback("success",`연료 ${amount}L 수급 저장`);renderWarehouse();});
+}
+
+function openFuelStockEditForm(place){
+  const op=state.assetOps?.[place];if(!op)return;op.fuelLogs=op.fuelLogs||[];
+  openEntryModal(`${entryHeader("연료 재고수정",place)}<div class="form"><div class="callout">현재 기록 재고 ${Number(op.fuelBase||0)}L</div><label>현재 연료유 재고(L)<input id="fuelStockValue" type="number" inputmode="decimal" min="0" step="0.1" value="${Number(op.fuelBase||0)}"></label><label>메모<textarea id="fuelStockMemo" placeholder="수정 사유"></textarea></label><button class="btn primary" id="saveFuelStock" type="button">덮어쓰기 저장</button></div>`);
+  document.getElementById("saveFuelStock")?.addEventListener("click",()=>{const before=Number(op.fuelBase||0),after=Number(document.getElementById("fuelStockValue").value);if(!Number.isFinite(after)||after<0){showFeedback("error","연료 재고량을 확인해주세요");return;}op.fuelBase=after;op.fuelLogs.push({id:uid(),date:todayISO(),amount:after-before,memo:document.getElementById("fuelStockMemo").value.trim()||"재고수정",before,after,createdAt:new Date().toISOString()});save();closeEntryModal();showFeedback("success",`연료 재고 ${after}L 저장`);renderWarehouse();});
 }
 
 function editOpBase(place){
@@ -2227,11 +2305,11 @@ function editOpBase(place){
 
 function addOpLog(place){
   const vehicle=isVehiclePlace(place);
-  openEntryModal(`${entryHeader(vehicle?"주행 기록":"운항 기록",place)}<div class="form"><label>날짜<input id="opLogDate" type="date" value="${todayISO()}"></label>${vehicle?`<label>계기판 누적거리(km)<input id="opLogDistance" type="number" inputmode="decimal" min="0" value="" placeholder="현재 ${opTotal(place,"distance")}km"></label>`:`${activityInputs("opLogActivity",{})}<label>운항자<input id="opLogOperator" placeholder="운항자 이름"></label><label>동승자<input id="opLogPassengers" placeholder="여러 명은 쉼표로 구분"></label><label>활동 해역<input id="opLogArea" placeholder="예: 통영항 인근"></label><div class="grid2"><label>출항지<input id="opLogDeparture" placeholder="출항지"></label><label>도착지<input id="opLogArrival" placeholder="도착지"></label></div><label>누적 마일수(NM)<input id="opLogMileage" type="number" inputmode="decimal" min="0" value="" placeholder="현재 ${opTotal(place,"mileage")}NM"></label><label>좌현 엔진 누적시간(h)<input id="opLogPortHours" type="number" inputmode="decimal" min="0" value="" placeholder="현재 ${opTotal(place,"portHours")}h"></label><label>우현 엔진 누적시간(h)<input id="opLogStarboardHours" type="number" inputmode="decimal" min="0" value="" placeholder="현재 ${opTotal(place,"starboardHours")}h"></label><label>연료유 소모량(L)<input id="opLogFuel" type="number" inputmode="decimal" min="0" value="" placeholder="이번 운항 소모량"></label>`}<label>메모<textarea id="opLogMemo"></textarea></label><button class="btn primary" id="saveOpLog" type="button">저장</button></div>`);
-  document.getElementById("saveOpLog")?.addEventListener("click",()=>{
+  openEntryModal(`${entryHeader(vehicle?"주행 기록":"운항 기록",place)}<div class="form"><label>날짜<input id="opLogDate" type="date" value="${todayISO()}"></label>${vehicle?`<label>계기판 누적거리(km)<input id="opLogDistance" type="number" inputmode="decimal" min="0" value="" placeholder="현재 ${opTotal(place,"distance")}km"></label>`:`<div class="grid2"><label>출항지<input id="opLogDeparture" placeholder="출항지"></label><label>도착지<input id="opLogArrival" placeholder="도착지"></label></div><label>누적 마일수(NM)<input id="opLogMileage" type="number" inputmode="decimal" min="0" value="" placeholder="현재 ${opTotal(place,"mileage")}NM"></label><label>좌현 엔진 누적시간(h)<input id="opLogPortHours" type="number" inputmode="decimal" min="0" value="" placeholder="현재 ${opTotal(place,"portHours")}h"></label><label>우현 엔진 누적시간(h)<input id="opLogStarboardHours" type="number" inputmode="decimal" min="0" value="" placeholder="현재 ${opTotal(place,"starboardHours")}h"></label><label>연료유 소모량(L)<input id="opLogFuel" type="number" inputmode="decimal" min="0" step="0.1" value="" placeholder="현재 재고 ${Number(state.assetOps?.[place]?.fuelBase||0)}L"></label>`}<label>메모<textarea id="opLogMemo"></textarea></label><button class="btn primary" id="saveOpLog" type="button">저장</button></div>`);
+  document.getElementById("saveOpLog")?.addEventListener("click",async ()=>{
     const common={id:uid(),date:document.getElementById("opLogDate").value || todayISO(),memo:document.getElementById("opLogMemo").value.trim(),createdAt:new Date().toISOString()};
     if(vehicle){const input=document.getElementById("opLogDistance"),before=opTotal(place,"distance"),after=Number(input.value);if(input.value===""||!Number.isFinite(after)||after<before){showFeedback("error","현재 계기판 누적거리를 입력해주세요");return;}state.assetOps[place].distanceBase=after;state.assetOps[place].logs.push({...common,before,after,diff:after-before});}
-    else{const mileageInput=document.getElementById("opLogMileage"),portInput=document.getElementById("opLogPortHours"),starboardInput=document.getElementById("opLogStarboardHours"),activityCounts=readActivityCounts("opLogActivity"),operator=document.getElementById("opLogOperator").value.trim(),passengers=document.getElementById("opLogPassengers").value.trim(),area=document.getElementById("opLogArea").value.trim(),departure=document.getElementById("opLogDeparture").value.trim(),arrival=document.getElementById("opLogArrival").value.trim(),mileageBefore=opTotal(place,"mileage"),portBefore=opTotal(place,"portHours"),starboardBefore=opTotal(place,"starboardHours"),mileageAfter=Number(mileageInput.value),portAfter=Number(portInput.value),starboardAfter=Number(starboardInput.value),fuel=Number(document.getElementById("opLogFuel").value||0);if(mileageInput.value===""||portInput.value===""||starboardInput.value===""||!Number.isFinite(mileageAfter)||mileageAfter<mileageBefore||!Number.isFinite(portAfter)||portAfter<portBefore||!Number.isFinite(starboardAfter)||starboardAfter<starboardBefore||!Number.isFinite(fuel)||fuel<0){showFeedback("error","마일수·좌우 엔진시간·연료유 소모량을 확인해주세요");return;}state.assetOps[place].mileageBase=mileageAfter;state.assetOps[place].portHoursBase=portAfter;state.assetOps[place].starboardHoursBase=starboardAfter;state.assetOps[place].engineSplitMode="dual";state.assetOps[place].logs.push({...common,activityCounts,operator,passengers,area,departure,arrival,mileageBefore,mileageAfter,mileageDiff:mileageAfter-mileageBefore,portBefore,portAfter,portDiff:portAfter-portBefore,starboardBefore,starboardAfter,starboardDiff:starboardAfter-starboardBefore,fuel});}
+    else{const mileageInput=document.getElementById("opLogMileage"),portInput=document.getElementById("opLogPortHours"),starboardInput=document.getElementById("opLogStarboardHours"),departure=document.getElementById("opLogDeparture").value.trim(),arrival=document.getElementById("opLogArrival").value.trim(),mileageBefore=opTotal(place,"mileage"),portBefore=opTotal(place,"portHours"),starboardBefore=opTotal(place,"starboardHours"),mileageAfter=Number(mileageInput.value),portAfter=Number(portInput.value),starboardAfter=Number(starboardInput.value),fuel=Number(document.getElementById("opLogFuel").value||0);if(mileageInput.value===""||portInput.value===""||starboardInput.value===""||!Number.isFinite(mileageAfter)||mileageAfter<mileageBefore||!Number.isFinite(portAfter)||portAfter<portBefore||!Number.isFinite(starboardAfter)||starboardAfter<starboardBefore||!Number.isFinite(fuel)||fuel<0){showFeedback("error","마일수·좌우 엔진시간·연료유 소모량을 확인해주세요");return;}if(fuel>Number(state.assetOps[place].fuelBase||0)&&!await askConfirm("연료 재고 부족",`현재 재고보다 ${fuel-Number(state.assetOps[place].fuelBase||0)}L 많이 입력했습니다. 그래도 저장할까요?`,"저장"))return;state.assetOps[place].mileageBase=mileageAfter;state.assetOps[place].portHoursBase=portAfter;state.assetOps[place].starboardHoursBase=starboardAfter;state.assetOps[place].fuelBase=Number(state.assetOps[place].fuelBase||0)-fuel;state.assetOps[place].engineSplitMode="dual";state.assetOps[place].logs.push({...common,departure,arrival,mileageBefore,mileageAfter,mileageDiff:mileageAfter-mileageBefore,portBefore,portAfter,portDiff:portAfter-portBefore,starboardBefore,starboardAfter,starboardDiff:starboardAfter-starboardBefore,fuel});}
     save(); closeEntryModal(); showFeedback("success","일일 이력 저장"); renderWarehouse();
   });
 }
@@ -2240,15 +2318,15 @@ function recentOpRows(place){
   const logs = [...((state.assetOps?.[place]?.logs) || [])].slice(-5).reverse();
   if(!logs.length) return `<div class="emptybox">아직 일일 이력이 없습니다.</div>`;
   const allLogs=state.assetOps?.[place]?.logs||[],latestId=allLogs.length?allLogs[allLogs.length-1].id:null;
-  return logs.map(l=>{const dual=l.portAfter!==undefined&&l.starboardAfter!==undefined,editable=l.after!==undefined||dual;const mileage=l.mileageAfter!==undefined?`마일 ${Number(l.mileageBefore||0)} → ${Number(l.mileageAfter)}NM · `:"";const text=dual?`${mileage}좌현 ${Number(l.portBefore||0)} → ${Number(l.portAfter)}h · 우현 ${Number(l.starboardBefore||0)} → ${Number(l.starboardAfter)}h`:l.after!==undefined?`${Number(l.before||0)} → ${Number(l.after)} · +${Number(l.diff||0)}${isVehiclePlace(place)?"km":"h"}`:(isVehiclePlace(place)?`기존 이력 +${Number(l.distance||0)}km`:`기존 단일시간 이력 +${Number(l.hours||0)}h`);const crew=isVesselPlace(place)&&l.operator?` · 운항자 ${esc(l.operator)}${l.passengers?` · 동승 ${esc(l.passengers)}`:""}`:"";const route=isVesselPlace(place)?`${l.area?` · 해역 ${esc(l.area)}`:""}${l.departure||l.arrival?` · ${esc(l.departure||"미입력")} → ${esc(l.arrival||"미입력")}`:""}`:"";return `<div class="list-row"><div><div class="row-title">${esc(l.date||"")}${isVesselPlace(place)?` <span class="badge blue">${esc(activityCountText(l))}</span>`:""}</div><div class="row-sub">${text}${isVesselPlace(place)&&Number(l.fuel||0)>0?` · 연료유 ${Number(l.fuel)}L`:""}${crew}${route}${l.memo?` · ${esc(l.memo)}`:""}</div>${l.id===latestId&&editable?`<div class="btn-row" style="margin-top:7px"><button class="btn gray compact" data-op-edit="${l.id}" type="button">수정</button><button class="btn danger compact" data-op-delete="${l.id}" type="button">삭제</button></div>`:""}</div></div>`;}).join("");
+  return logs.map(l=>{const dual=l.portAfter!==undefined&&l.starboardAfter!==undefined,editable=l.after!==undefined||dual;const mileage=l.mileageAfter!==undefined?`마일 ${Number(l.mileageBefore||0)} → ${Number(l.mileageAfter)}NM · `:"";const text=dual?`${mileage}좌현 ${Number(l.portBefore||0)} → ${Number(l.portAfter)}h · 우현 ${Number(l.starboardBefore||0)} → ${Number(l.starboardAfter)}h`:l.after!==undefined?`${Number(l.before||0)} → ${Number(l.after)} · +${Number(l.diff||0)}${isVehiclePlace(place)?"km":"h"}`:(isVehiclePlace(place)?`기존 이력 +${Number(l.distance||0)}km`:`기존 단일시간 이력 +${Number(l.hours||0)}h`);const route=isVesselPlace(place)&&(l.departure||l.arrival)?` · ${esc(l.departure||"미입력")} → ${esc(l.arrival||"미입력")}`:"";const fuel=isVesselPlace(place)&&Number(l.fuel||0)>0?` · 연료 ${Number(l.fuel)}L`:"";return `<div class="list-row"><div><div class="row-title">${esc(l.date||"")}</div><div class="row-sub">${text}${fuel}${route}${l.memo?` · ${esc(l.memo)}`:""}</div>${l.id===latestId&&editable?`<div class="btn-row" style="margin-top:7px"><button class="btn gray compact" data-op-edit="${l.id}" type="button">수정</button><button class="btn danger compact" data-op-delete="${l.id}" type="button">삭제</button></div>`:""}</div></div>`;}).join("");
 }
 
 function bindOpLogActions(place){
   view.querySelector("[data-op-edit]")?.addEventListener("click",event=>editLatestOpLog(place,event.currentTarget.dataset.opEdit));
-  view.querySelector("[data-op-delete]")?.addEventListener("click",async event=>{const op=state.assetOps?.[place],log=op?.logs?.length?op.logs[op.logs.length-1]:null;if(!log||log.id!==event.currentTarget.dataset.opDelete)return;if(!await askConfirm("최근 이력 삭제","최근 기록을 삭제하고 누적값을 이전 값으로 되돌릴까요?","삭제",true))return;if(isVehiclePlace(place))op.distanceBase=Number(log.before||0);else{op.mileageBase=Number(log.mileageBefore??op.mileageBase??0);op.portHoursBase=Number(log.portBefore??log.before??op.portHoursBase??0);op.starboardHoursBase=Number(log.starboardBefore??log.before??op.starboardHoursBase??0);}op.logs.pop();save();showFeedback("success","최근 이력 삭제 완료");renderWarehouse();});
+  view.querySelector("[data-op-delete]")?.addEventListener("click",async event=>{const op=state.assetOps?.[place],log=op?.logs?.length?op.logs[op.logs.length-1]:null;if(!log||log.id!==event.currentTarget.dataset.opDelete)return;if(!await askConfirm("최근 이력 삭제","최근 기록을 삭제하고 누적값을 이전 값으로 되돌릴까요?","삭제",true))return;if(isVehiclePlace(place))op.distanceBase=Number(log.before||0);else{op.mileageBase=Number(log.mileageBefore??op.mileageBase??0);op.portHoursBase=Number(log.portBefore??log.before??op.portHoursBase??0);op.starboardHoursBase=Number(log.starboardBefore??log.before??op.starboardHoursBase??0);op.fuelBase=Number(op.fuelBase||0)+Number(log.fuel||0);}op.logs.pop();save();showFeedback("success","최근 이력 삭제 완료");renderWarehouse();});
 }
 
-function openVesselHistory(place){const month=todayISO().slice(0,7);openEntryModal(`${entryHeader("전체 운항이력",place)}<div class="form"><div class="history-filter-grid"><label>시작일<input id="vesselHistoryFrom" type="date" value="${month}-01"></label><label>종료일<input id="vesselHistoryTo" type="date" value="${todayISO()}"></label></div><label>활동<select id="vesselHistoryActivity"><option value="all">전체 활동</option>${vesselActivities.map(activity=>`<option>${activity}</option>`).join("")}</select></label></div><div id="vesselHistorySummary" class="callout"></div><div id="vesselHistoryList"></div>`);const update=()=>{const from=document.getElementById("vesselHistoryFrom").value,to=document.getElementById("vesselHistoryTo").value,activity=document.getElementById("vesselHistoryActivity").value;const logs=[...(state.assetOps?.[place]?.logs||[])].filter(log=>(!from||log.date>=from)&&(!to||log.date<=to)&&logHasActivity(log,activity)).sort((a,b)=>(b.date+b.createdAt).localeCompare(a.date+a.createdAt));const mileage=logs.reduce((sum,log)=>sum+Number(log.mileageDiff||0),0),port=logs.reduce((sum,log)=>sum+Number(log.portDiff||0),0),starboard=logs.reduce((sum,log)=>sum+Number(log.starboardDiff||0),0),fuel=logs.reduce((sum,log)=>sum+Number(log.fuel||0),0);document.getElementById("vesselHistorySummary").innerHTML=`<strong>검색 결과 ${logs.length}회</strong><br>${mileage}NM · 좌현 ${port}h · 우현 ${starboard}h · 연료유 ${fuel}L`;document.getElementById("vesselHistoryList").innerHTML=logs.map(log=>`<div class="history-box"><div><span class="badge blue">${esc(activityCountText(log))}</span></div><div class="row-title" style="margin-top:7px">${fmtDate(log.date)}${log.operator?` · 운항자 ${esc(log.operator)}`:""}</div><div class="row-sub">${Number(log.mileageDiff||0)}NM · 좌현 ${Number(log.portDiff||0)}h · 우현 ${Number(log.starboardDiff||0)}h · 연료유 ${Number(log.fuel||0)}L</div>${log.area?`<div class="row-sub">활동 해역 ${esc(log.area)}</div>`:""}${log.departure||log.arrival?`<div class="row-sub">${esc(log.departure||"미입력")} → ${esc(log.arrival||"미입력")}</div>`:""}${log.passengers?`<div class="row-sub">동승자 ${esc(log.passengers)}</div>`:""}${log.memo?`<div class="row-sub">${esc(log.memo)}</div>`:""}</div>`).join("")||`<div class="emptybox">조건에 맞는 운항이력이 없습니다.</div>`;};["vesselHistoryFrom","vesselHistoryTo","vesselHistoryActivity"].forEach(id=>document.getElementById(id)?.addEventListener("change",update));update();}
+function openVesselHistory(place){const month=todayISO().slice(0,7);openEntryModal(`${entryHeader("전체 운항이력",place)}<div class="form"><div class="history-filter-grid"><label>시작일<input id="vesselHistoryFrom" type="date" value="${month}-01"></label><label>종료일<input id="vesselHistoryTo" type="date" value="${todayISO()}"></label></div></div><div id="vesselHistorySummary" class="callout"></div><div id="vesselHistoryList"></div>`);const update=()=>{const from=document.getElementById("vesselHistoryFrom").value,to=document.getElementById("vesselHistoryTo").value;const logs=[...(state.assetOps?.[place]?.logs||[])].filter(log=>(!from||log.date>=from)&&(!to||log.date<=to)).sort((a,b)=>(b.date+b.createdAt).localeCompare(a.date+a.createdAt));const mileage=logs.reduce((sum,log)=>sum+Number(log.mileageDiff||0),0),port=logs.reduce((sum,log)=>sum+Number(log.portDiff||0),0),starboard=logs.reduce((sum,log)=>sum+Number(log.starboardDiff||0),0),fuel=logs.reduce((sum,log)=>sum+Number(log.fuel||0),0);document.getElementById("vesselHistorySummary").innerHTML=`<strong>검색 결과 ${logs.length}건</strong><br>${mileage}NM · 좌현 ${port}h · 우현 ${starboard}h · 연료 ${fuel}L`;document.getElementById("vesselHistoryList").innerHTML=logs.map(log=>`<div class="history-box"><div class="row-title">${fmtDate(log.date)}</div><div class="row-sub">${Number(log.mileageDiff||0)}NM · 좌현 ${Number(log.portDiff||0)}h · 우현 ${Number(log.starboardDiff||0)}h${Number(log.fuel||0)>0?` · 연료 ${Number(log.fuel)}L`:""}</div>${log.departure||log.arrival?`<div class="row-sub">${esc(log.departure||"미입력")} → ${esc(log.arrival||"미입력")}</div>`:""}${log.memo?`<div class="row-sub">${esc(log.memo)}</div>`:""}</div>`).join("")||`<div class="emptybox">조건에 맞는 운항이력이 없습니다.</div>`;};["vesselHistoryFrom","vesselHistoryTo"].forEach(id=>document.getElementById(id)?.addEventListener("change",update));update();}
 
 function assetMaintenanceRows(place){const rows=[...(state.assetOps?.[place]?.maintenance||[])].sort((a,b)=>(b.date+b.createdAt).localeCompare(a.date+a.createdAt)).slice(0,20);if(!rows.length)return `<div class="emptybox">등록된 정비이력이 없습니다.</div>`;return rows.map(log=>`<div class="history-box"><div><span class="badge orange">${esc(log.type||"정비")}</span></div><div class="row-title" style="margin-top:7px">${esc(log.content||"정비 기록")}</div><div class="row-sub">${fmtDate(log.date)}${log.parts?` · 부속품 ${esc(log.parts)}`:""}${Number(log.cost||0)>0?` · ${Number(log.cost).toLocaleString("ko-KR")}원`:""}</div>${log.memo?`<div class="row-sub">${esc(log.memo)}</div>`:""}<div class="btn-row" style="margin-top:8px"><button class="btn gray compact" data-asset-maint-edit="${log.id}" type="button">수정</button><button class="btn danger compact" data-asset-maint-delete="${log.id}" type="button">삭제</button></div></div>`).join("");}
 
@@ -2259,8 +2337,8 @@ function bindAssetMaintenanceActions(place){view.querySelectorAll("[data-asset-m
 function editLatestOpLog(place,logId){
   const op=state.assetOps?.[place],log=op?.logs?.length?op.logs[op.logs.length-1]:null;if(!log||log.id!==logId)return;const vehicle=isVehiclePlace(place);
   const mileageBefore=Number(log.mileageBefore??0),mileageAfter=Number(log.mileageAfter??op.mileageBase??0),portBefore=Number(log.portBefore??log.before??0),starboardBefore=Number(log.starboardBefore??log.before??0),portAfter=Number(log.portAfter??log.after??op.portHoursBase??0),starboardAfter=Number(log.starboardAfter??log.after??op.starboardHoursBase??0);
-  openEntryModal(`${entryHeader(vehicle?"최근 주행기록 수정":"최근 운항기록 수정",place)}<div class="form"><label>날짜<input id="editOpDate" type="date" value="${esc(log.date||todayISO())}"></label>${vehicle?`<div class="callout">이전 누적값 ${Number(log.before||0)}km</div><label>현재 누적거리(km)<input id="editOpAfter" type="number" inputmode="decimal" min="${Number(log.before||0)}" value="${Number(log.after||0)}"></label>`:`${activityInputs("editOpActivity",logActivityCounts(log))}<label>운항자<input id="editOpOperator" value="${esc(log.operator||"")}"></label><label>동승자<input id="editOpPassengers" value="${esc(log.passengers||"")}"></label><label>활동 해역<input id="editOpArea" value="${esc(log.area||"")}"></label><div class="grid2"><label>출항지<input id="editOpDeparture" value="${esc(log.departure||"")}"></label><label>도착지<input id="editOpArrival" value="${esc(log.arrival||"")}"></label></div><label>누적 마일수(NM)<input id="editOpMileageAfter" type="number" inputmode="decimal" min="${mileageBefore}" value="${mileageAfter}"></label><label>좌현 엔진 누적시간(h)<input id="editOpPortAfter" type="number" inputmode="decimal" min="${portBefore}" value="${portAfter}"></label><label>우현 엔진 누적시간(h)<input id="editOpStarboardAfter" type="number" inputmode="decimal" min="${starboardBefore}" value="${starboardAfter}"></label><label>연료유 소모량(L)<input id="editOpFuel" type="number" inputmode="decimal" min="0" value="${Number(log.fuel||0)}"></label>`}<label>메모<textarea id="editOpMemo">${esc(log.memo||"")}</textarea></label><button class="btn primary" id="saveOpEdit" type="button">수정 저장</button></div>`);
-  document.getElementById("saveOpEdit")?.addEventListener("click",()=>{log.date=document.getElementById("editOpDate").value||todayISO();log.memo=document.getElementById("editOpMemo").value.trim();if(vehicle){const before=Number(log.before||0),after=Number(document.getElementById("editOpAfter").value);if(!Number.isFinite(after)||after<before){showFeedback("error","누적거리를 확인해주세요");return;}log.after=after;log.diff=after-before;op.distanceBase=after;}else{const activityCounts=readActivityCounts("editOpActivity"),operator=document.getElementById("editOpOperator").value.trim(),passengers=document.getElementById("editOpPassengers").value.trim(),area=document.getElementById("editOpArea").value.trim(),departure=document.getElementById("editOpDeparture").value.trim(),arrival=document.getElementById("editOpArrival").value.trim(),nextMileage=Number(document.getElementById("editOpMileageAfter").value),nextPort=Number(document.getElementById("editOpPortAfter").value),nextStarboard=Number(document.getElementById("editOpStarboardAfter").value),fuel=Number(document.getElementById("editOpFuel").value||0);if(!Number.isFinite(nextMileage)||nextMileage<mileageBefore||!Number.isFinite(nextPort)||nextPort<portBefore||!Number.isFinite(nextStarboard)||nextStarboard<starboardBefore||!Number.isFinite(fuel)||fuel<0){showFeedback("error","마일수·좌우 엔진시간·연료유 소모량을 확인해주세요");return;}Object.assign(log,{activityCounts,operator,passengers,area,departure,arrival,mileageBefore,mileageAfter:nextMileage,mileageDiff:nextMileage-mileageBefore,portBefore,portAfter:nextPort,portDiff:nextPort-portBefore,starboardBefore,starboardAfter:nextStarboard,starboardDiff:nextStarboard-starboardBefore,fuel});delete log.activity;delete log.before;delete log.after;delete log.diff;op.mileageBase=nextMileage;op.portHoursBase=nextPort;op.starboardHoursBase=nextStarboard;op.engineSplitMode="dual";}save();closeEntryModal();showFeedback("success","최근 이력 수정 완료");renderWarehouse();});
+  openEntryModal(`${entryHeader(vehicle?"최근 주행기록 수정":"최근 운항기록 수정",place)}<div class="form"><label>날짜<input id="editOpDate" type="date" value="${esc(log.date||todayISO())}"></label>${vehicle?`<div class="callout">이전 누적값 ${Number(log.before||0)}km</div><label>현재 누적거리(km)<input id="editOpAfter" type="number" inputmode="decimal" min="${Number(log.before||0)}" value="${Number(log.after||0)}"></label>`:`<div class="grid2"><label>출항지<input id="editOpDeparture" value="${esc(log.departure||"")}"></label><label>도착지<input id="editOpArrival" value="${esc(log.arrival||"")}"></label></div><label>누적 마일수(NM)<input id="editOpMileageAfter" type="number" inputmode="decimal" min="${mileageBefore}" value="${mileageAfter}"></label><label>좌현 엔진 누적시간(h)<input id="editOpPortAfter" type="number" inputmode="decimal" min="${portBefore}" value="${portAfter}"></label><label>우현 엔진 누적시간(h)<input id="editOpStarboardAfter" type="number" inputmode="decimal" min="${starboardBefore}" value="${starboardAfter}"></label><label>연료유 소모량(L)<input id="editOpFuel" type="number" inputmode="decimal" min="0" step="0.1" value="${Number(log.fuel||0)}"></label>`}<label>메모<textarea id="editOpMemo">${esc(log.memo||"")}</textarea></label><button class="btn primary" id="saveOpEdit" type="button">수정 저장</button></div>`);
+  document.getElementById("saveOpEdit")?.addEventListener("click",()=>{log.date=document.getElementById("editOpDate").value||todayISO();log.memo=document.getElementById("editOpMemo").value.trim();if(vehicle){const before=Number(log.before||0),after=Number(document.getElementById("editOpAfter").value);if(!Number.isFinite(after)||after<before){showFeedback("error","누적거리를 확인해주세요");return;}log.after=after;log.diff=after-before;op.distanceBase=after;}else{const departure=document.getElementById("editOpDeparture").value.trim(),arrival=document.getElementById("editOpArrival").value.trim(),nextMileage=Number(document.getElementById("editOpMileageAfter").value),nextPort=Number(document.getElementById("editOpPortAfter").value),nextStarboard=Number(document.getElementById("editOpStarboardAfter").value),nextFuel=Number(document.getElementById("editOpFuel").value||0),oldFuel=Number(log.fuel||0);if(!Number.isFinite(nextMileage)||nextMileage<mileageBefore||!Number.isFinite(nextPort)||nextPort<portBefore||!Number.isFinite(nextStarboard)||nextStarboard<starboardBefore||!Number.isFinite(nextFuel)||nextFuel<0){showFeedback("error","마일수·좌우 엔진시간·연료유 소모량을 확인해주세요");return;}Object.assign(log,{departure,arrival,mileageBefore,mileageAfter:nextMileage,mileageDiff:nextMileage-mileageBefore,portBefore,portAfter:nextPort,portDiff:nextPort-portBefore,starboardBefore,starboardAfter:nextStarboard,starboardDiff:nextStarboard-starboardBefore,fuel:nextFuel});delete log.activity;delete log.activityCounts;delete log.operator;delete log.passengers;delete log.area;delete log.before;delete log.after;delete log.diff;op.mileageBase=nextMileage;op.portHoursBase=nextPort;op.starboardHoursBase=nextStarboard;op.fuelBase=Number(op.fuelBase||0)+oldFuel-nextFuel;op.engineSplitMode="dual";}save();closeEntryModal();showFeedback("success","최근 이력 수정 완료");renderWarehouse();});
 }
 
 function renderEquipment(){ return ""; }
@@ -2361,7 +2439,7 @@ function addWarehouse(){
     const kind=document.getElementById("newWarehouseKind").value;
     if(!name){ showFeedback("error",`${kind}명을 입력해주세요`); return; }
     if(state.warehouses.includes(name)){ showFeedback("error","이미 있는 창고입니다"); return; }
-    ensureWarehouse(name);state.warehouseKinds=state.warehouseKinds||{};state.warehouseKinds[name]=kind;if(kind==="차량")state.assetOps[name]={distanceBase:0,logs:[],maintenance:[],counterMode:"absolute"};if(kind==="함정")state.assetOps[name]={mileageBase:0,hoursBase:0,portHoursBase:0,starboardHoursBase:0,engineSplitMode:"dual",fuelBase:0,logs:[],maintenance:[],counterMode:"absolute"};save();closeEntryModal();showFeedback("success",`${kind} 추가 완료`);if(page==="warehouse") renderWarehouse();
+    ensureWarehouse(name);state.warehouseKinds=state.warehouseKinds||{};state.warehouseKinds[name]=kind;if(kind==="차량")state.assetOps[name]={distanceBase:0,logs:[],maintenance:[],counterMode:"absolute"};if(kind==="함정")state.assetOps[name]={mileageBase:0,hoursBase:0,portHoursBase:0,starboardHoursBase:0,engineSplitMode:"dual",fuelBase:0,logs:[],fuelLogs:[],maintenance:[],counterMode:"absolute"};save();closeEntryModal();showFeedback("success",`${kind} 추가 완료`);if(page==="warehouse") renderWarehouse();
   });
 }
 
@@ -2568,26 +2646,10 @@ function saveSimpleResource(kind,id=null){
 }
 
 function openMaterialTransferForm(){
-  openEntryModal(`${entryHeader("창고 간 자재 이동","한 번의 기록으로 양쪽 재고에 반영합니다")}<div class="form">
-    <label>출발 창고<select id="transferFrom">${warehouses.map(name=>`<option value="${esc(name)}">${esc(name)}</option>`).join("")}</select></label>
-    <label>도착 창고<select id="transferTo">${warehouses.map((name,index)=>`<option value="${esc(name)}" ${index===1?"selected":""}>${esc(name)}</option>`).join("")}</select></label>
-    <label>자재<select id="transferItem">${catalog.map(item=>`<option value="${esc(item.name)}">${esc(item.cat)} · ${esc(item.name)}</option>`).join("")}</select></label>
-    <label>수량<input id="transferQty" type="number" inputmode="decimal" min="0" step="0.1" placeholder="이동 수량"></label>
-    <label>날짜<input id="transferDate" type="date" value="${todayISO()}"></label>
-    <label>메모<textarea id="transferMemo" placeholder="필요한 경우 입력하세요"></textarea></label>
-    <button class="btn primary sticky-save" id="saveMaterialTransfer" type="button">이동 저장</button></div>`);
-  document.getElementById("saveMaterialTransfer")?.addEventListener("click",saveMaterialTransfer);
-}
-
-function saveMaterialTransfer(){
-  const from=document.getElementById("transferFrom").value,to=document.getElementById("transferTo").value,name=document.getElementById("transferItem").value;
-  const item=itemOf(name),qty=Number(document.getElementById("transferQty").value || 0),date=document.getElementById("transferDate").value || todayISO(),memo=document.getElementById("transferMemo").value.trim();
-  if(from===to){ showFeedback("error","출발 창고와 도착 창고를 다르게 선택해주세요"); return; }
-  if(!Number.isFinite(qty)||qty<=0){ showFeedback("error","이동 수량을 입력해주세요"); return; }
-  if(Number(state.stock[from]?.[name] || 0)<qty){ showFeedback("error",`${name} ${materialQtyText(qty-Number(state.stock[from]?.[name] || 0),item.unit,item)} 부족`); return; }
-  applyStock(from,[{...item,qty}],"출고"); applyStock(to,[{...item,qty}],"입고");
-  state.records.push(createFlowRecord({flow:"이송",type:"이송",title:`${name} 창고 간 이동`,date,warehouse:from,targetWarehouse:to,memo,items:[{...item,qty}],equipmentItems:[],status:"done"}));
-  save(); closeEntryModal(); showFeedback("success",`${from} → ${to} 이동 완료`); renderWarehouse();
+  const from=selectedWarehouse || warehouses[0] || "";
+  const target=warehouses.find(name=>name!==from) || "";
+  applyRegisterDraft({mode:"normal",flow:"이송",type:"이송",warehouse:from,targetWarehouse:target,date:todayISO(),title:"창고 간 이동",memo:"",items:[],equipmentItems:[]});
+  setPage("register");
 }
 
 function buildCloudResourceState(){
@@ -3604,7 +3666,7 @@ function restoreNavigation(nav){
     }
     if(page === "register"){
       registerMode = nav.mode === "quick" ? "quick" : "normal";
-      registerFlow = nav.flow === "입고" ? "입고" : "출고";
+      registerFlow = ["출고","입고","이송"].includes(nav.flow) ? nav.flow : "출고";
     }
     updateBottomNav();
     render();
@@ -3672,7 +3734,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m77")
+      navigator.serviceWorker.register("./sw.js?v=0190m81")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });

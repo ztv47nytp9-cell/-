@@ -401,7 +401,7 @@ function defaultState(){
     warehouseKinds: {...defaultWarehouseKinds},
     assetOps: {
       "방제지휘차량": {distanceBase:0, logs:[], maintenance:[]},
-      "소형방제정": {mileageBase:0, hoursBase:0, portHoursBase:0, starboardHoursBase:0, engineSplitMode:"dual", fuelBase:0, logs:[], maintenance:[]}
+      "소형방제정": {mileageBase:0, hoursBase:0, portHoursBase:0, starboardHoursBase:0, engineSplitMode:"dual", fuelBase:0, logs:[], fuelLogs:[], maintenance:[]}
     },
     equipment: defaultEquipment.map(x => ({...x})),
     equipmentCategories: [...defaultEquipmentCategories],
@@ -582,8 +582,9 @@ function normalize(raw){
   if(!state.assetOps["방제지휘차량"]) state.assetOps["방제지휘차량"] = {distanceBase:0, logs:[]};
   if(!Array.isArray(state.assetOps["방제지휘차량"].logs)) state.assetOps["방제지휘차량"].logs = [];
   if(typeof state.assetOps["방제지휘차량"].distanceBase !== "number") state.assetOps["방제지휘차량"].distanceBase = 0;
-  if(!state.assetOps["소형방제정"]) state.assetOps["소형방제정"] = {hoursBase:0, fuelBase:0, logs:[]};
+  if(!state.assetOps["소형방제정"]) state.assetOps["소형방제정"] = {hoursBase:0, fuelBase:0, logs:[], fuelLogs:[]};
   if(!Array.isArray(state.assetOps["소형방제정"].logs)) state.assetOps["소형방제정"].logs = [];
+  if(!Array.isArray(state.assetOps["소형방제정"].fuelLogs)) state.assetOps["소형방제정"].fuelLogs = [];
   if(typeof state.assetOps["소형방제정"].hoursBase !== "number") state.assetOps["소형방제정"].hoursBase = 0;
   if(typeof state.assetOps["소형방제정"].portHoursBase !== "number") state.assetOps["소형방제정"].portHoursBase = Number(state.assetOps["소형방제정"].hoursBase || 0);
   if(typeof state.assetOps["소형방제정"].starboardHoursBase !== "number") state.assetOps["소형방제정"].starboardHoursBase = Number(state.assetOps["소형방제정"].hoursBase || 0);
@@ -598,7 +599,7 @@ function normalize(raw){
     state.assetOps["소형방제정"].counterMode = "absolute";
   }
   if(state.assetOps["소형방제정"].engineSplitMode!=="dual"){state.assetOps["소형방제정"].portHoursBase=Number(state.assetOps["소형방제정"].hoursBase||0);state.assetOps["소형방제정"].starboardHoursBase=Number(state.assetOps["소형방제정"].hoursBase||0);state.assetOps["소형방제정"].engineSplitMode="dual";}
-  warehouseList.forEach(name=>{const kind=state.warehouseKinds[name];if(kind==="차량"){if(!state.assetOps[name])state.assetOps[name]={distanceBase:0,logs:[],maintenance:[],counterMode:"absolute"};if(!Array.isArray(state.assetOps[name].logs))state.assetOps[name].logs=[];if(!Array.isArray(state.assetOps[name].maintenance))state.assetOps[name].maintenance=[];if(!Number.isFinite(Number(state.assetOps[name].distanceBase)))state.assetOps[name].distanceBase=0;}else if(kind==="함정"){if(!state.assetOps[name])state.assetOps[name]={mileageBase:0,hoursBase:0,portHoursBase:0,starboardHoursBase:0,engineSplitMode:"dual",fuelBase:0,logs:[],maintenance:[],counterMode:"absolute"};if(!Array.isArray(state.assetOps[name].logs))state.assetOps[name].logs=[];if(!Array.isArray(state.assetOps[name].maintenance))state.assetOps[name].maintenance=[];if(!Number.isFinite(Number(state.assetOps[name].mileageBase)))state.assetOps[name].mileageBase=0;if(!Number.isFinite(Number(state.assetOps[name].hoursBase)))state.assetOps[name].hoursBase=0;if(state.assetOps[name].engineSplitMode!=="dual"){state.assetOps[name].portHoursBase=Number(state.assetOps[name].hoursBase||0);state.assetOps[name].starboardHoursBase=Number(state.assetOps[name].hoursBase||0);state.assetOps[name].engineSplitMode="dual";}if(!Number.isFinite(Number(state.assetOps[name].portHoursBase)))state.assetOps[name].portHoursBase=Number(state.assetOps[name].hoursBase||0);if(!Number.isFinite(Number(state.assetOps[name].starboardHoursBase)))state.assetOps[name].starboardHoursBase=Number(state.assetOps[name].hoursBase||0);}});
+  warehouseList.forEach(name=>{const kind=state.warehouseKinds[name];if(kind==="차량"){if(!state.assetOps[name])state.assetOps[name]={distanceBase:0,logs:[],maintenance:[],counterMode:"absolute"};if(!Array.isArray(state.assetOps[name].logs))state.assetOps[name].logs=[];if(!Array.isArray(state.assetOps[name].maintenance))state.assetOps[name].maintenance=[];if(!Number.isFinite(Number(state.assetOps[name].distanceBase)))state.assetOps[name].distanceBase=0;}else if(kind==="함정"){if(!state.assetOps[name])state.assetOps[name]={mileageBase:0,hoursBase:0,portHoursBase:0,starboardHoursBase:0,engineSplitMode:"dual",fuelBase:0,logs:[],fuelLogs:[],maintenance:[],counterMode:"absolute"};if(!Array.isArray(state.assetOps[name].logs))state.assetOps[name].logs=[];if(!Array.isArray(state.assetOps[name].fuelLogs))state.assetOps[name].fuelLogs=[];if(!Array.isArray(state.assetOps[name].maintenance))state.assetOps[name].maintenance=[];if(!Number.isFinite(Number(state.assetOps[name].fuelBase)))state.assetOps[name].fuelBase=0;if(!Number.isFinite(Number(state.assetOps[name].mileageBase)))state.assetOps[name].mileageBase=0;if(!Number.isFinite(Number(state.assetOps[name].hoursBase)))state.assetOps[name].hoursBase=0;if(state.assetOps[name].engineSplitMode!=="dual"){state.assetOps[name].portHoursBase=Number(state.assetOps[name].hoursBase||0);state.assetOps[name].starboardHoursBase=Number(state.assetOps[name].hoursBase||0);state.assetOps[name].engineSplitMode="dual";}if(!Number.isFinite(Number(state.assetOps[name].portHoursBase)))state.assetOps[name].portHoursBase=Number(state.assetOps[name].hoursBase||0);if(!Number.isFinite(Number(state.assetOps[name].starboardHoursBase)))state.assetOps[name].starboardHoursBase=Number(state.assetOps[name].hoursBase||0);}});
 
   state.equipmentCategories = [...new Set([
     ...defaultEquipmentCategories,
