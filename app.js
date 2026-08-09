@@ -2119,6 +2119,7 @@ function collectPendingForm(r){
 async function savePendingEdits(id, shouldApply=false, silent=false){
   const r = state.records.find(x => x.id === id);
   if(!r || r.status !== "pending") return false;
+  const recordBefore = JSON.parse(JSON.stringify(r));
   const form = collectPendingForm(r);
 
   r.title = form.title || (r.officialTitle ? nowQuickTitle() : r.title || nowQuickTitle());
@@ -2132,12 +2133,18 @@ async function savePendingEdits(id, shouldApply=false, silent=false){
   r.equipmentItems = form.equipmentItems;
 
   if(!shouldApply){
-    save();
-    if(!silent){
-      showSnack("진행 중 사건 저장 완료");
-      openDetail(id,{push:false,remember:false});
+    try{
+      save();
+      if(!silent){
+        showSnack("진행 중 사건 저장 완료");
+        openDetail(id,{push:false,remember:false});
+      }
+      return true;
+    }catch(error){
+      Object.assign(r, recordBefore);
+      showFeedback("error","저장에 실패했습니다. 저장공간을 확인해주세요");
+      return false;
     }
-    return true;
   }
 
   if(!r.officialTitle){ showSnack("재고 반영 전에 사고명을 입력해주세요"); return false; }
@@ -2150,7 +2157,6 @@ async function savePendingEdits(id, shouldApply=false, silent=false){
 
   const stockBefore = Object.fromEntries(r.items.map(item => [item.name, Number(state.stock[r.warehouse]?.[item.name] || 0)]));
   const changedItems = r.items.length ? stockChangeItems(r.warehouse, r.items, "출고") : [];
-  const previous = {status:r.status, flow:r.flow, appliedAt:r.appliedAt, items:r.items.map(item=>({...item}))};
   if(r.items.length) applyStock(r.warehouse, r.items, "출고");
   r.status = "done";
   r.flow = r.items.length ? "출고" : (r.quick ? "긴급" : "사고");
@@ -2160,8 +2166,9 @@ async function savePendingEdits(id, shouldApply=false, silent=false){
     save();
   }catch(error){
     Object.entries(stockBefore).forEach(([name,qty]) => { state.stock[r.warehouse][name] = qty; });
-    Object.assign(r, previous);
-    throw error;
+    Object.assign(r, recordBefore);
+    showFeedback("error","사건 종결 저장에 실패했습니다");
+    return false;
   }
   showSnack("사건 종결 완료");
   openDetail(id,{push:false,remember:false});
@@ -2174,6 +2181,7 @@ async function addPendingItemToRecord(id){
   if(!await savePendingEdits(id,false,true)) return;
   const used=new Set((r.items||[]).map(item=>item.name));
   const first = catalog.find(item=>!used.has(item.name)) || catalog[0];
+  if(!first){showFeedback("info","등록된 방제자재가 없습니다");return;}
   r.items.push({cat:first.cat,name:first.name,qty:1,unit:first.unit,kind:first.kind});
   save();
   openDetail(id,{push:false,remember:false});
@@ -4086,7 +4094,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m96")
+      navigator.serviceWorker.register("./sw.js?v=0190m98")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
