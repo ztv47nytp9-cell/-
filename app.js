@@ -1372,7 +1372,7 @@ function renderRegister(){
       <div>
         <div class="section-head" style="margin:5px 0 8px">
           <div class="section-title" style="font-size:16px">${registerMode === "quick" ? "사용 내역" : registerFlow}</div>
-          <div class="btn-row"><button class="btn secondary compact" id="addItem" type="button">자재 선택</button><button class="btn secondary compact" id="addEquipmentItem" type="button">장비 선택</button><button class="btn secondary compact" id="addHnsItem" type="button">HNS</button></div>
+          <div class="btn-row"><button class="btn secondary compact" id="addItem" type="button">방제자재</button><button class="btn secondary compact" id="addEquipmentItem" type="button">방제장비</button><button class="btn secondary compact" id="addHnsItem" type="button">HNS</button></div>
         </div>
         <div id="itemArea"></div>
         <div id="equipmentItemArea"></div>
@@ -1390,11 +1390,11 @@ function renderRegister(){
   const outBtn = document.getElementById("flowOut");
   if(outBtn) outBtn.addEventListener("click", () => { registerFlow = "출고"; renderRegister(); });
   const inBtn = document.getElementById("flowIn");
-  if(inBtn) inBtn.addEventListener("click", () => { registerFlow = "입고"; draftEquipmentItems=[]; renderRegister(); });
+  if(inBtn) inBtn.addEventListener("click", () => { registerFlow = "입고"; renderRegister(); });
   const moveBtn = document.getElementById("flowMove");
   if(moveBtn) moveBtn.addEventListener("click", () => { registerFlow = "이송"; renderRegister(); });
-  document.getElementById("addItem")?.addEventListener("click", openRegisterMaterialPicker);
-  document.getElementById("addEquipmentItem")?.addEventListener("click", openRegisterEquipmentPicker);
+  document.getElementById("addItem")?.addEventListener("click", addDraftItem);
+  document.getElementById("addEquipmentItem")?.addEventListener("click", addDraftEquipmentItem);
   document.getElementById("addHnsItem")?.addEventListener("click", openHnsRegisterGuide);
   document.getElementById("openHnsGuide")?.addEventListener("click", openHnsRegisterGuide);
   document.getElementById("saveRecord")?.addEventListener("click", saveRecord);
@@ -1432,32 +1432,18 @@ function updateRegisterTypeDependentUI(){
 }
 
 function openHnsRegisterGuide(){
-  showFeedback("info","HNS는 자료 확정 후 연결합니다");
-}
-
-function openRegisterResourceChoice(){
-  const subtitle=registerMode==="quick"?"긴급기록에 남길 자원을 선택하세요":"추가할 자원을 선택하세요";
-  openEntryModal(`${entryHeader("방제자원 추가",subtitle)}
-    <div class="entry-actions">
-      <button class="btn secondary" id="chooseRegisterMaterial" type="button">자재 추가</button>
-      <button class="btn secondary" id="chooseRegisterEquipment" type="button">장비 추가</button>
-    </div>
-    <div class="global-search-hint">HNS는 상단 HNS 버튼에서 확인하세요.</div>
-  `);
-  document.getElementById("chooseRegisterMaterial")?.addEventListener("click",()=>{closeEntryModal();addDraftItem();});
-  document.getElementById("chooseRegisterEquipment")?.addEventListener("click",()=>{closeEntryModal();addDraftEquipmentItem();});
+  document.getElementById("hnsItemArea")?.scrollIntoView({block:"nearest",behavior:"smooth"});
+  showFeedback("info","HNS는 자료 확정 후 이 화면에서 바로 연결합니다");
 }
 
 function renderResourceEmptyAction(){
   const target=document.getElementById("resourceEmptyAction");
   if(!target) return;
   if(draftItems.length || draftEquipmentItems.length){ target.innerHTML=""; return; }
-  const hint=registerMode==="quick"?"사용한 자재와 장비를 추가할 수 있습니다.":"자재와 장비를 추가할 수 있습니다.";
+  const hint=registerMode==="quick"?"상단의 방제자재·방제장비·HNS에서 사용 내역을 추가하세요.":"상단의 방제자재·방제장비·HNS에서 추가하세요.";
   target.innerHTML=`<div class="emptybox compact-empty-action resource-add-empty">
-    <button class="btn secondary" id="addResponseResource" type="button">+ 방제자원 추가</button>
     <div class="row-sub">${hint}</div>
   </div>`;
-  document.getElementById("addResponseResource")?.addEventListener("click",openRegisterResourceChoice);
 }
 
 function collectRegisterLocation(){
@@ -1498,6 +1484,36 @@ function mergeDuplicateDraftItems({notify=false}={}){
     if(notify) showFeedback("info","같은 자재는 기존 줄에 합쳤습니다");
   }
   return merged;
+}
+
+function addDraftItem(){
+  const warehouse=document.getElementById("recWarehouse")?.value || warehouses[0];
+  const used=new Set(draftItems.map(item=>item.name).filter(Boolean));
+  const candidates=catalog.filter(item=>!used.has(item.name));
+  const needsStock=registerMode==="normal"&&["출고","이송"].includes(registerFlow);
+  const item=(needsStock?candidates.find(row=>Number(state.stock[warehouse]?.[row.name]||0)>0):null)||candidates[0];
+  if(!item){showFeedback("info","추가할 방제자재가 없습니다");return;}
+  draftItems.push({cat:item.cat,name:item.name,qty:"",unit:item.unit,kind:item.kind});
+  renderItems();
+  scheduleRegisterDraft();
+  updateRegisterDraftSummary();
+  updateStockAfterPreview();
+  showFeedback("success","방제자재 추가");
+}
+
+function addDraftEquipmentItem(){
+  const warehouse=document.getElementById("recWarehouse")?.value || "";
+  const used=new Set(draftEquipmentItems.map(item=>item.id).filter(Boolean));
+  const candidates=(state.equipment || []).filter(item=>!used.has(item.id));
+  const isTransfer=registerMode==="normal"&&registerFlow==="이송";
+  const available=isTransfer?candidates.filter(item=>item.place===warehouse&&Number(item.qty||0)>0):candidates;
+  const equipment=available.find(item=>item.place===warehouse&&Number(item.qty||0)>0)||available[0];
+  if(!equipment){showFeedback("info",isTransfer?"출발 보관에 추가할 방제장비가 없습니다":"추가할 방제장비가 없습니다");return;}
+  draftEquipmentItems.push({id:equipment.id,name:equipment.name,cat:equipment.cat || "기타장비",qty:"",place:equipment.place,spec:equipment.spec || equipment.detail || "",model:equipment.model || ""});
+  renderEquipmentItems();
+  scheduleRegisterDraft();
+  updateRegisterDraftSummary();
+  showFeedback("success","방제장비 추가");
 }
 
 function openRegisterMaterialPicker(){
@@ -4006,7 +4022,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m92")
+      navigator.serviceWorker.register("./sw.js?v=0190m93")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
