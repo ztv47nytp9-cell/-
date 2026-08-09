@@ -1392,8 +1392,8 @@ function renderRegister(){
   if(inBtn) inBtn.addEventListener("click", () => { registerFlow = "입고"; draftEquipmentItems=[]; renderRegister(); });
   const moveBtn = document.getElementById("flowMove");
   if(moveBtn) moveBtn.addEventListener("click", () => { registerFlow = "이송"; renderRegister(); });
-  document.getElementById("addItem")?.addEventListener("click", addDraftItem);
-  document.getElementById("addEquipmentItem")?.addEventListener("click", addDraftEquipmentItem);
+  document.getElementById("addItem")?.addEventListener("click", openRegisterMaterialPicker);
+  document.getElementById("addEquipmentItem")?.addEventListener("click", openRegisterEquipmentPicker);
   document.getElementById("addHnsItem")?.addEventListener("click", openHnsRegisterGuide);
   document.getElementById("openHnsGuide")?.addEventListener("click", openHnsRegisterGuide);
   document.getElementById("saveRecord")?.addEventListener("click", saveRecord);
@@ -1474,30 +1474,146 @@ function mergeDuplicateDraftItems({notify=false}={}){
   return merged;
 }
 
-function addDraftItem(){
+function openRegisterMaterialPicker(){
   const warehouse=document.getElementById("recWarehouse")?.value || warehouses[0];
+  const isTransfer=registerMode==="normal"&&registerFlow==="이송";
   const used=new Set(draftItems.map(item=>item.name).filter(Boolean));
-  const candidates=catalog.filter(item=>!used.has(item.name));
-  const needsStock=registerMode==="normal"&&["출고","이송"].includes(registerFlow);
-  const f = (needsStock ? candidates.find(item=>Number(state.stock[warehouse]?.[item.name]||0)>0) : null) || candidates[0];
-  if(!f){ showFeedback("info","추가할 다른 자재가 없습니다"); return; }
-  draftItems.push({cat:f.cat,name:f.name,qty:"",unit:f.unit,kind:f.kind});
-  renderItems();
-  updateRegisterDraftSummary();
-  showFeedback("success","자재 1건 추가");
+  const sortedCatalog=[...catalog].filter(item=>!used.has(item.name)).sort((a,b)=>materialRecentScore(b.name)-materialRecentScore(a.name)||a.name.localeCompare(b.name,"ko"));
+  if(!sortedCatalog.length){
+    if(isTransfer){ showFeedback("info","추가할 다른 자재가 없습니다"); return; }
+    openRegisterNewMaterialForm();
+    return;
+  }
+  const sortedCats=[...new Set(sortedCatalog.map(item=>item.cat))].sort((a,b)=>Math.max(0,...sortedCatalog.filter(item=>item.cat===b).map(item=>materialRecentScore(item.name)))-Math.max(0,...sortedCatalog.filter(item=>item.cat===a).map(item=>materialRecentScore(item.name)))||a.localeCompare(b,"ko"));
+  const firstCat=sortedCats[0] || "";
+  openEntryModal(`${entryHeader("자재 추가",warehouse)}
+    <div class="form">
+      <div class="global-search-hint">기존 목록에서 먼저 고르고, 목록에 없으면 하단 신규추가를 누르세요.</div>
+      <label>분류<select id="registerMaterialCat">${sortedCats.map(cat=>`<option>${esc(cat)}</option>`).join("")}</select></label>
+      <label>자재<select id="registerMaterialName"></select></label>
+      <button class="btn primary" id="saveRegisterMaterial" type="button">추가</button>
+      ${isTransfer?"":`<button class="btn secondary" id="openNewMaterialFromRegister" type="button">+ 신규 자재 추가</button>`}
+    </div>`);
+  const renderNames=()=>{
+    const cat=document.getElementById("registerMaterialCat")?.value || firstCat;
+    const rows=sortedCatalog.filter(item=>item.cat===cat);
+    const select=document.getElementById("registerMaterialName");
+    if(select)select.innerHTML=rows.map(item=>`<option value="${esc(item.name)}">${esc(item.name)} · ${esc(item.spec||item.unit||"")}</option>`).join("");
+  };
+  document.getElementById("registerMaterialCat")?.addEventListener("change",renderNames);
+  document.getElementById("openNewMaterialFromRegister")?.addEventListener("click",openRegisterNewMaterialForm);
+  renderNames();
+  document.getElementById("saveRegisterMaterial")?.addEventListener("click",()=>{
+    const name=document.getElementById("registerMaterialName")?.value || "";
+    const f=itemOf(name);
+    if(!f){ showFeedback("error","자재를 선택해주세요"); return; }
+    draftItems.push({cat:f.cat,name:f.name,qty:"",unit:f.unit,kind:f.kind});
+    closeEntryModal();
+    renderItems();
+    scheduleRegisterDraft();
+    updateRegisterDraftSummary();
+    showFeedback("success","자재 1건 추가");
+  });
 }
 
-function addDraftEquipmentItem(){
+function openRegisterNewMaterialForm(){
+  const warehouse=document.getElementById("recWarehouse")?.value || warehouses[0];
+  openEntryModal(`${entryHeader("신규 자재 추가",warehouse)}
+    <div class="form entry-form simple-resource-form">
+      <label>품목명<input id="registerNewMaterialName" placeholder="품목명을 입력하세요"></label>
+      <label>분류<select id="registerNewMaterialCat">${cats.map(cat=>`<option>${esc(cat)}</option>`).join("")}</select></label>
+      <label>단위<input id="registerNewMaterialUnit" value="개" placeholder="예: kg, L, 개"></label>
+      <label>규격<input id="registerNewMaterialSpec" placeholder="규격·모델명을 입력하세요"></label>
+      <button class="btn primary" id="saveRegisterNewMaterial" type="button">추가</button>
+    </div>`);
+  document.getElementById("saveRegisterNewMaterial")?.addEventListener("click",()=>{
+    const name=document.getElementById("registerNewMaterialName")?.value.trim() || "";
+    const cat=document.getElementById("registerNewMaterialCat")?.value || "기타";
+    const unit=document.getElementById("registerNewMaterialUnit")?.value.trim() || "개";
+    const spec=document.getElementById("registerNewMaterialSpec")?.value.trim() || "";
+    if(!name){ showFeedback("error","품목명을 입력해주세요"); return; }
+    if(state.catalog.some(item=>item.name===name)){ showFeedback("error","이미 등록된 자재명입니다"); return; }
+    const item={cat,name,unit,spec,kind:"consume",memo:"",photo:"",updatedAt:new Date().toISOString()};
+    ensureCatalogItem(item);
+    draftItems.push({cat:item.cat,name:item.name,qty:"",unit:item.unit,kind:item.kind});
+    closeEntryModal();
+    renderItems();
+    scheduleRegisterDraft();
+    updateRegisterDraftSummary();
+    showFeedback("success","신규 자재 추가 완료");
+  });
+}
+
+function openRegisterEquipmentPicker(){
   const warehouse=document.getElementById("recWarehouse")?.value || "";
+  const isTransfer=registerMode==="normal"&&registerFlow==="이송";
   const used=new Set(draftEquipmentItems.map(item=>item.id).filter(Boolean));
   const candidates=(state.equipment || []).filter(item=>!used.has(item.id));
-  const available=registerMode==="normal"&&registerFlow==="이송"?candidates.filter(item=>item.place===warehouse&&Number(item.qty||0)>0):candidates;
-  const equipment=available.find(item=>item.place===warehouse&&Number(item.qty||0)>0) || available[0] || (registerMode==="normal"&&registerFlow==="이송"?null:candidates[0]);
-  if(!equipment){ showFeedback("info",registerFlow==="이송"?"출발 보관에 등록된 장비가 없습니다":"등록된 장비가 없습니다"); return; }
-  draftEquipmentItems.push({id:equipment.id,name:equipment.name,cat:equipment.cat || "기타장비",qty:"",place:equipment.place,spec:equipment.spec || equipment.detail || "",model:equipment.model || ""});
-  renderEquipmentItems();
-  updateRegisterDraftSummary();
-  showFeedback("success","장비 1건 추가");
+  const available=isTransfer?candidates.filter(item=>item.place===warehouse&&Number(item.qty||0)>0):candidates;
+  if(!available.length){
+    if(isTransfer){ showFeedback("info","출발 보관에 추가할 다른 장비가 없습니다"); return; }
+    openRegisterNewEquipmentForm();
+    return;
+  }
+  const templates=[...available].sort((a,b)=>equipmentRecentScore(b)-equipmentRecentScore(a)||equipmentRegisterLabel(a).localeCompare(equipmentRegisterLabel(b),"ko"));
+  const sortedCats=[...new Set(templates.map(item=>item.cat||"기타장비"))].sort((a,b)=>Math.max(0,...templates.filter(item=>(item.cat||"기타장비")===b).map(equipmentRecentScore))-Math.max(0,...templates.filter(item=>(item.cat||"기타장비")===a).map(equipmentRecentScore))||a.localeCompare(b,"ko"));
+  const firstCat=sortedCats[0] || "";
+  openEntryModal(`${entryHeader("장비 추가",warehouse||"보관 미지정")}
+    <div class="form">
+      <div class="global-search-hint">기존 목록에서 먼저 고르고, 목록에 없으면 하단 신규추가를 누르세요.</div>
+      <label>장비 분류<select id="registerEquipmentCat">${sortedCats.map(cat=>`<option ${cat===firstCat?"selected":""}>${esc(cat)}</option>`).join("")}</select></label>
+      <label>장비<select id="registerEquipmentName"></select></label>
+      <button class="btn primary" id="saveRegisterEquipment" type="button">추가</button>
+      ${isTransfer?"":`<button class="btn secondary" id="openNewEquipmentFromRegister" type="button">+ 신규 장비 추가</button>`}
+    </div>`);
+  const renderNames=()=>{
+    const cat=document.getElementById("registerEquipmentCat")?.value || firstCat;
+    const rows=templates.filter(item=>(item.cat||"기타장비")===cat);
+    const select=document.getElementById("registerEquipmentName");
+    if(select)select.innerHTML=rows.map(item=>`<option value="${esc(item.id)}">${esc(equipmentRegisterLabel(item))}</option>`).join("");
+  };
+  document.getElementById("registerEquipmentCat")?.addEventListener("change",renderNames);
+  document.getElementById("openNewEquipmentFromRegister")?.addEventListener("click",openRegisterNewEquipmentForm);
+  renderNames();
+  document.getElementById("saveRegisterEquipment")?.addEventListener("click",()=>{
+    const equipment=state.equipment.find(item=>item.id===document.getElementById("registerEquipmentName")?.value);
+    if(!equipment){ showFeedback("error","장비를 선택해주세요"); return; }
+    draftEquipmentItems.push({id:equipment.id,name:equipment.name,cat:equipment.cat || "기타장비",qty:"",place:equipment.place,spec:equipment.spec || equipment.detail || "",model:equipment.model || ""});
+    closeEntryModal();
+    renderEquipmentItems();
+    scheduleRegisterDraft();
+    updateRegisterDraftSummary();
+    showFeedback("success","장비 1건 추가");
+  });
+}
+
+function openRegisterNewEquipmentForm(){
+  const warehouse=document.getElementById("recWarehouse")?.value || warehouses[0];
+  openEntryModal(`${entryHeader("신규 장비 추가",warehouse)}
+    <div class="form entry-form simple-resource-form">
+      <label>장비명<input id="registerNewEquipmentName" placeholder="장비명을 입력하세요"></label>
+      <label>장비 분류<select id="registerNewEquipmentCat">${equipmentCategories.map(cat=>`<option>${esc(cat)}</option>`).join("")}</select></label>
+      <label>규격<input id="registerNewEquipmentSpec" placeholder="규격·모델명을 입력하세요"></label>
+      <label>보유 수량<input id="registerNewEquipmentQty" type="number" inputmode="numeric" min="1" step="1" value="1"></label>
+      <button class="btn primary" id="saveRegisterNewEquipment" type="button">추가</button>
+    </div>`);
+  document.getElementById("saveRegisterNewEquipment")?.addEventListener("click",()=>{
+    const name=document.getElementById("registerNewEquipmentName")?.value.trim() || "";
+    const cat=document.getElementById("registerNewEquipmentCat")?.value || "기타장비";
+    const spec=document.getElementById("registerNewEquipmentSpec")?.value.trim() || "";
+    const qty=Math.max(1,Math.round(Number(document.getElementById("registerNewEquipmentQty")?.value || 1)));
+    if(!name){ showFeedback("error","장비명을 입력해주세요"); return; }
+    if(state.equipment.some(item=>item.name===name&&item.place===warehouse)){ showFeedback("error","이 창고에 같은 장비명이 있습니다"); return; }
+    const equipment={id:uid(),cat,name,spec,detail:spec,model:spec,qty,place:warehouse,memo:"",etc:"",photo:"",photos:[],battery:"",fuel:"",status:"정상",maintenance:[],moves:[],updatedAt:new Date().toISOString()};
+    state.equipment.push(equipment);
+    save();
+    draftEquipmentItems.push({id:equipment.id,name:equipment.name,cat:equipment.cat,qty:"",place:equipment.place,spec:equipment.spec,model:equipment.model});
+    closeEntryModal();
+    renderEquipmentItems();
+    scheduleRegisterDraft();
+    updateRegisterDraftSummary();
+    showFeedback("success","신규 장비 추가 완료");
+  });
 }
 
 function equipmentRegisterLabel(equipment){
@@ -1509,7 +1625,7 @@ function equipmentRegisterLabel(equipment){
 function renderEquipmentItems(){
   const area=document.getElementById("equipmentItemArea");
   if(!area) return;
-  if(!draftEquipmentItems.length){ area.innerHTML=`<div class="emptybox slim-empty">추가된 장비가 없습니다.</div>`; return; }
+  if(!draftEquipmentItems.length){ area.innerHTML=`<div class="emptybox compact-empty-action">추가된 장비가 없습니다.<button class="btn secondary compact" id="emptyAddEquipment" type="button">장비 선택</button></div>`; document.getElementById("emptyAddEquipment")?.addEventListener("click",openRegisterEquipmentPicker); return; }
   const sourceWarehouse=document.getElementById("recWarehouse")?.value || "";
   const selectableEquipment=registerMode==="normal"&&registerFlow==="이송"?(state.equipment || []).filter(e=>e.place===sourceWarehouse&&Number(e.qty||0)>0):(state.equipment || []);
   area.innerHTML=`<div class="group-title">${registerMode==="normal"&&registerFlow==="입고"?"입고 장비":registerMode==="normal"&&registerFlow==="이송"?"이송 장비":"사용 장비"}</div>`+draftEquipmentItems.map((item,index) => {
@@ -1549,7 +1665,7 @@ function renderItems(){
   const area = document.getElementById("itemArea");
   if(!draftItems.length){
     area.innerHTML = `<div class="emptybox compact-empty-action">추가된 자재가 없습니다.<button class="btn secondary compact" id="emptyAddMaterial" type="button">자재 선택</button></div>`;
-    document.getElementById("emptyAddMaterial")?.addEventListener("click",addDraftItem);
+    document.getElementById("emptyAddMaterial")?.addEventListener("click",openRegisterMaterialPicker);
     return;
   }
   area.innerHTML = draftItems.map((it,idx) => {const current=registerStockInfo(it);return `

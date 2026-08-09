@@ -20,7 +20,7 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}
 .more{border:0;background:transparent;color:#07152A;font-size:26px;line-height:1;padding:0 6px}
 .content{max-width:700px;margin:0 auto;padding:16px 16px 22px;overscroll-behavior:contain}
 .card{background:var(--card);border:1px solid var(--border);border-radius:17px;padding:16px;margin-bottom:12px;box-shadow:0 1px 2px rgba(16,24,40,.04)}
-.card,.quick-action,.choice-card,.flow-btn,.stock-line,.warehouse-card,.resource-detail-card,.item-box{animation:softRise .18s ease both}
+.card,.quick-action,.choice-card,.flow-btn,.warehouse-card,.resource-detail-card{animation:softRise .18s ease both}
 button,.btn,.quick-action,.choice-card,.flow-btn,.stock-line{transition:transform .12s ease,box-shadow .16s ease,background-color .14s ease,border-color .14s ease,opacity .14s ease,filter .12s ease}
 button:active,.btn:active,.quick-action:active,.choice-card:active,.flow-btn:active{transform:scale(.985)}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
