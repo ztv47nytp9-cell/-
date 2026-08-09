@@ -1300,6 +1300,18 @@ function registerDraftSummaryHtml(){
   return `<div class="register-draft-summary"><span>자재 ${materialRows}/${draftItems.length}</span><span>장비 ${equipmentRows}/${draftEquipmentItems.length}</span>${totalQty?`<span>수량 ${Number(totalQty).toLocaleString("ko-KR")}</span>`:""}</div>`;
 }
 
+function registerPendingContinueHtml(){
+  const rows=pendingRecords().sort((a,b)=>String(b.updatedAt||b.createdAt||"").localeCompare(String(a.updatedAt||a.createdAt||""))).slice(0,2);
+  if(!rows.length) return "";
+  return `<div class="card pending-continue-card">
+    <div class="section-head"><div class="section-title">진행 중 사건</div><span class="mini-chip">${rows.length}건</span></div>
+    <div class="row-sub">종결 전 사건은 여기서 이어서 수정할 수 있습니다.</div>
+    <div class="pending-continue-list">
+      ${rows.map(record=>`<button class="list-row" data-open-pending="${record.id}" type="button"><div><div class="row-title">${esc(record.officialTitle?record.title:"제목 미정")}</div><div class="row-sub">${fmtDate(record.date||todayISO())} · 자재 ${(record.items||[]).length}건 · 장비 ${(record.equipmentItems||[]).length}건</div></div><div class="chev">›</div></button>`).join("")}
+    </div>
+  </div>`;
+}
+
 function updateRegisterDraftSummary(){
   const target=document.getElementById("registerDraftSummary");
   if(target) target.innerHTML=registerDraftSummaryHtml();
@@ -1334,6 +1346,7 @@ function renderRegister(){
   if(!registerFormDraft&&!pendingRegisterDraft) pendingRegisterDraft=readRegisterDraft();
   draftItems = draftItems.length ? draftItems : [];
   view.innerHTML = `
+    ${registerPendingContinueHtml()}
     ${pendingRegisterDraft&&!registerFormDraft ? `<div class="callout compact-draft">작성 중 기록 있음 <div class="btn-row" style="margin-top:8px"><button class="btn secondary compact" id="loadRegisterDraft" type="button">불러오기</button><button class="btn gray compact" id="discardRegisterDraft" type="button">버리기</button></div></div>` : ""}
     <div class="choice-grid">
       <button class="choice-card ${registerMode === "normal" ? "active" : ""}" id="modeNormal" type="button">
@@ -1400,6 +1413,7 @@ function renderRegister(){
   document.getElementById("saveRecord")?.addEventListener("click", saveRecord);
   document.getElementById("loadRegisterDraft")?.addEventListener("click",()=>{applyRegisterDraft(pendingRegisterDraft||readRegisterDraft());renderRegister();setHead();showSnack("작성 중 기록 불러옴");});
   document.getElementById("discardRegisterDraft")?.addEventListener("click",()=>{clearRegisterDraft();draftItems=[];draftEquipmentItems=[];renderRegister();});
+  view.querySelectorAll("[data-open-pending]").forEach(button=>button.addEventListener("click",()=>openDetail(button.dataset.openPending)));
   document.getElementById("recWarehouse")?.addEventListener("change",()=>{syncTransferTarget();renderItems();updateStockAfterPreview();});
   document.getElementById("recTargetWarehouse")?.addEventListener("change",()=>{scheduleRegisterDraft();updateStockAfterPreview();});
   document.getElementById("recType")?.addEventListener("change",updateRegisterTypeDependentUI);
@@ -2136,7 +2150,7 @@ async function savePendingEdits(id, shouldApply=false, silent=false){
     try{
       save();
       if(!silent){
-        showSnack("진행 중 사건 저장 완료");
+        showSnack("저장됨 · 종결 전까지 계속 수정 가능");
         openDetail(id,{push:false,remember:false});
       }
       return true;
@@ -4094,7 +4108,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m98")
+      navigator.serviceWorker.register("./sw.js?v=0190m99")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
