@@ -295,6 +295,12 @@ button:active{filter:brightness(.98)}
 .compact-empty-action{display:grid;gap:10px;place-items:center}
 .slim-empty{padding:14px 12px;margin-top:8px;font-size:12px}
 .warehouse-mini-stats,.register-draft-summary{display:flex;gap:7px;flex-wrap:wrap;margin:4px 0 12px}.warehouse-mini-stats span,.register-draft-summary span{background:#F1F7FC;border:1px solid #D7E7F3;color:#456A84;border-radius:999px;padding:6px 9px;font-size:12px;font-weight:900}
+.pending-fold,.danger-fold{border:1px solid var(--border);border-radius:16px;background:#fff;margin-bottom:10px;overflow:hidden}
+.pending-fold>summary,.danger-fold>summary{cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 14px;color:#234B68;font-weight:900}
+.pending-fold>summary::-webkit-details-marker,.danger-fold>summary::-webkit-details-marker{display:none}
+.pending-fold>summary::after,.danger-fold>summary::after{content:"⌄";color:#7890A3}.pending-fold[open]>summary::after,.danger-fold[open]>summary::after{content:"⌃"}
+.pending-fold summary small{color:#7B8FA0;font-size:12px}.pending-fold .card{border:0;border-top:1px solid var(--border);border-radius:0;margin-bottom:0;box-shadow:none}.danger-fold{background:#FFF8F7;border-color:#F3C7C1}.danger-fold>summary{color:#A14237}.danger-fold .detail-delete-btn{width:calc(100% - 20px);margin:0 10px 10px}
+.transfer-summary-card{background:#F7FBFF}.transfer-route{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;margin:10px 0}.transfer-route span{background:#EDF6FD;border:1px solid #CFE3F3;border-radius:12px;padding:10px;text-align:center;font-weight:900;color:#245B80}.transfer-route strong{color:#0E5A9C}
 .cloud-share-status{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;color:#6D8192;font-size:12px}.cloud-share-status span{background:#F2F7FB;border:1px solid #D8E7F2;border-radius:999px;padding:6px 9px}
 .share-status-card{border:1px solid #CFE4FA;background:linear-gradient(180deg,#F4FAFF,#EAF3FF);border-radius:16px;padding:15px;margin-bottom:2px;max-width:100%;overflow:hidden}.share-status-card.ready{background:linear-gradient(180deg,#F2FFF9,#E8F8F1);border-color:#B9E6D3}.share-status-label{font-size:12px;font-weight:900;color:#5B7084}.share-status-title{font-size:22px;font-weight:900;color:#0B3A65;letter-spacing:-.04em;margin-top:3px;overflow-wrap:anywhere}.share-status-brief{font-size:13px;color:#49677B;margin-top:4px;font-weight:800}.share-mini-summary{display:flex;gap:7px;flex-wrap:wrap;margin-top:11px}.share-mini-summary span{background:rgba(255,255,255,.72);border:1px solid rgba(191,216,235,.88);border-radius:999px;padding:7px 10px;font-size:12px;font-weight:850;color:#557086}
 .cloud-action-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;max-width:100%;overflow:hidden}.cloud-action-summary span{min-width:0;background:#F2F7FB;border:1px solid #D8E7F2;border-radius:12px;padding:10px;color:#49677B;font-size:12px;text-align:center;line-height:1.45;overflow-wrap:anywhere;word-break:keep-all}.cloud-action-summary strong{color:#173B56}
@@ -423,6 +429,15 @@ button:active{filter:brightness(.98)}
 :root[data-theme="dark"] .home-tool-grid .quiet-tool .urgent-mark{color:#8CCFBE}
 :root[data-theme="dark"] .mini-chip,:root[data-theme="dark"] .warehouse-mini-stats span,:root[data-theme="dark"] .register-draft-summary span{background:#26384B;border-color:#465B70;color:#C8DAE8}
 :root[data-theme="dark"] .mini-link,:root[data-theme="dark"] .summary-subline,:root[data-theme="dark"] .quick-action small,:root[data-theme="dark"] .home-tool-grid small{color:#9AAABC}
+:root[data-theme="dark"] .pending-fold{background:#1D2B3C;border-color:#40556A}
+:root[data-theme="dark"] .pending-fold>summary{color:#DCE7F1}
+:root[data-theme="dark"] .pending-fold summary small{color:#9AAABC}
+:root[data-theme="dark"] .pending-fold .card{border-top-color:#40556A}
+:root[data-theme="dark"] .danger-fold{background:#2B2529;border-color:#664A4D}
+:root[data-theme="dark"] .danger-fold>summary{color:#F2B8B4}
+:root[data-theme="dark"] .transfer-summary-card{background:#1D2B3C}
+:root[data-theme="dark"] .transfer-route span{background:#26384B;border-color:#465B70;color:#DCE7F1}
+:root[data-theme="dark"] .transfer-route strong{color:#8FC7F7}
 .menu,.menu-sheet,.menu-group,.menu button{background-image:none!important}
 .menu{background:#F7F9FC!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
 .menu.show,.menu.closing{background:#F7F9FC!important}

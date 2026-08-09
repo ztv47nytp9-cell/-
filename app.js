@@ -1982,7 +1982,7 @@ function renderHistoryListHtml(records){
         <button class="list-row" data-detail="${r.id}" type="button">
           <div>
             <div><span class="badge ${r.status === "pending" ? "red" : (r.flow === "입고" ? "green" : r.flow === "재고수정" ? "orange" : "blue")}">${r.status === "pending" ? "진행중" : esc(r.flow || r.type)}</span></div>
-            <div class="row-title" style="margin-top:7px">${esc(r.title)}</div>
+            <div class="row-title" style="margin-top:7px">${esc(r.title)}${r.editedAt?` <span class="today-chip">수정됨</span>`:""}</div>
             <div class="row-sub">${r.warehouse ? esc(r.warehouse) : "보관 미지정"} · ${esc(summarizeItems(r.items,r.equipmentItems,r.flow))}</div>
           </div>
           <div class="chev">›</div>
@@ -2000,10 +2000,48 @@ function recordFieldSummary(r){
   return location?`<div class="detail-grid">${location}</div>`:"";
 }
 
+function openRecordBasicEdit(id){
+  const r=state.records.find(item=>item.id===id);
+  if(!r || r.status==="pending") return;
+  const location=r.location||{};
+  openEntryModal(`${entryHeader("이력 기본정보 수정","수량과 재고는 바꾸지 않습니다")}
+    <div class="form">
+      <div class="callout">제목·날짜·메모처럼 기록 설명만 수정합니다. 자재 수량과 재고 반영값은 유지됩니다.</div>
+      <label>제목<input id="recordEditTitle" value="${esc(r.title||"")}" placeholder="기록 제목"></label>
+      <label>날짜<input id="recordEditDate" type="date" value="${esc(r.date||todayISO())}"></label>
+      <label>보관장소<select id="recordEditWarehouse"><option value="">보관 미지정</option>${warehouses.map(w=>`<option value="${esc(w)}" ${r.warehouse===w?"selected":""}>${esc(w)}</option>`).join("")}</select></label>
+      ${r.flow==="이송"?`<label>도착 보관장소<select id="recordEditTargetWarehouse"><option value="">도착 미지정</option>${warehouses.map(w=>`<option value="${esc(w)}" ${r.targetWarehouse===w?"selected":""}>${esc(w)}</option>`).join("")}</select></label>`:""}
+      <div class="location-grid"><label>위치 구분<select id="recordEditLocationType">${LOCATION_TYPES.map(type=>`<option value="${esc(type)}" ${location.type===type?"selected":""}>${esc(type)}</option>`).join("")}</select></label><label>세부 위치<input id="recordEditLocationDetail" value="${esc(location.detail||"")}" placeholder="예: 장승포항, ○○호"></label></div>
+      <label>메모<textarea id="recordEditMemo">${esc(r.memo||"")}</textarea></label>
+      <button class="btn primary" id="saveRecordBasicEdit" type="button">수정 저장</button>
+    </div>`);
+  document.getElementById("saveRecordBasicEdit")?.addEventListener("click",()=>{
+    const nextTitle=document.getElementById("recordEditTitle")?.value.trim()||"";
+    if(!nextTitle){showFeedback("error","제목을 입력해주세요");return;}
+    const before={title:r.title,date:r.date,warehouse:r.warehouse,targetWarehouse:r.targetWarehouse||"",memo:r.memo||"",location:r.location||null,editedAt:r.editedAt||""};
+    const detail=document.getElementById("recordEditLocationDetail")?.value.trim()||"";
+    r.title=nextTitle;
+    r.date=document.getElementById("recordEditDate")?.value||todayISO();
+    r.warehouse=document.getElementById("recordEditWarehouse")?.value||"";
+    if(r.flow==="이송") r.targetWarehouse=document.getElementById("recordEditTargetWarehouse")?.value||"";
+    r.memo=document.getElementById("recordEditMemo")?.value.trim()||"";
+    r.location=detail?{type:document.getElementById("recordEditLocationType")?.value||"",detail}:null;
+    r.editHistory=r.editHistory||[];
+    r.editHistory.push({id:uid(),editedAt:new Date().toISOString(),before});
+    r.editedAt=new Date().toISOString();
+    save();
+    closeEntryModal();
+    showFeedback("success","이력 기본정보 수정 완료");
+    openDetail(id,{push:false,remember:false});
+  });
+}
+
 function pendingRecordForm(r){
   const officialTitle = r.officialTitle ? r.title : "";
   const location=r.location||{};
-  return `<div class="card">
+  return `<details class="pending-fold" open>
+    <summary><span>기본정보</span><small>${esc(r.date || todayISO())}</small></summary>
+    <div class="card">
       <div><span class="badge red">진행 중</span></div>
       <div class="section-title" style="margin-top:10px">진행 중 사건</div>
       <div class="row-sub">사건이 끝나기 전까지 자재·장비·메모를 계속 추가할 수 있습니다.</div>
@@ -2015,6 +2053,9 @@ function pendingRecordForm(r){
         <label>현장 메모<textarea id="pendingMemo" placeholder="현장 상황이나 특이사항">${esc(r.memo || "")}</textarea></label>
       </div>
     </div>
+  </details>
+    <details class="pending-fold" open>
+    <summary><span>사용 자재</span><small>${r.items.length}건</small></summary>
     <div class="card">
       <div class="section-head"><div class="section-title">사용 자재</div><button class="btn secondary" id="addPendingItem" type="button">+ 자재 추가</button></div>
       <div class="form">
@@ -2027,7 +2068,11 @@ function pendingRecordForm(r){
         `).join("") || `<div class="emptybox">아직 등록한 자재가 없습니다.</div>`}
       </div>
     </div>
+  </details>
+    <details class="pending-fold">
+    <summary><span>사용 장비</span><small>${(r.equipmentItems || []).length}건</small></summary>
     <div class="card"><div class="section-head"><div class="section-title">사용 장비</div><button class="btn secondary" id="addPendingEquipment" type="button">+ 장비 추가</button></div><div class="form">${(r.equipmentItems || []).map((item,index)=>`<div class="item-box"><label>장비<select id="pendingEquipment${index}">${state.equipment.map(e=>`<option value="${e.id}" ${e.id===item.id?"selected":""}>${esc(e.name)} · ${esc(e.place)}</option>`).join("")}</select></label><label>사용 수량<input id="pendingEquipmentQty${index}" type="number" inputmode="numeric" min="1" step="1" value="${Number(item.qty || 1)}"></label><button class="btn gray" data-remove-pending-equipment="${index}" type="button">이 장비 삭제</button></div>`).join("") || `<div class="emptybox">아직 등록한 장비가 없습니다.</div>`}</div></div>
+  </details>
     <button class="btn secondary" id="savePending" type="button" style="width:100%;margin-bottom:9px">진행 내용 저장</button>
     <button class="btn primary" id="applyPending" type="button" style="width:100%;margin-bottom:9px">사건 종결</button>`;
 }
@@ -2191,16 +2236,21 @@ function openDetail(id, options={}){
     <button class="back" id="backHist" type="button">‹ 이력</button>
     <div class="card">
       <span class="badge ${r.flow === "입고" ? "green" : r.flow === "재고수정" ? "orange" : "blue"}">${r.quick ? "긴급기록 반영완료" : esc(r.flow || r.type)}</span>
+      ${r.editedAt ? `<span class="badge orange">수정됨</span>` : ""}
       <div class="section-title" style="margin-top:10px">${esc(r.title)}</div>
       <div class="row-sub">${fmtDate(r.date)} · ${r.flow==="이송"&&r.targetWarehouse ? `${esc(r.warehouse || "보관 미지정")} → ${esc(r.targetWarehouse)}` : (r.warehouse ? esc(r.warehouse) : "보관 미지정")}</div>
+      ${r.editedAt ? `<div class="row-sub">수정시각 ${esc(new Date(r.editedAt).toLocaleString("ko-KR"))}</div>` : ""}
       ${r.appliedAt ? `<div class="row-sub">반영시각 ${esc(new Date(r.appliedAt).toLocaleString("ko-KR"))}</div>` : ""}
       ${recordFieldSummary(r)}
       ${r.memo ? `<div class="callout" style="margin-top:12px">${esc(r.memo)}</div>` : ""}
     </div>
+    ${r.flow==="이송"?`<div class="card transfer-summary-card"><div class="section-title">이송 요약</div><div class="transfer-route"><span>${esc(r.warehouse || "출발 미지정")}</span><strong>→</strong><span>${esc(r.targetWarehouse || "도착 미지정")}</span></div><div class="row-sub">자재 ${r.items.length}건 · 장비 ${(r.equipmentItems || []).length}건</div></div>`:""}
     ${r.items.length ? `<div class="card"><div class="section-title">${r.flow === "입고" ? "입고 자재" : r.flow === "이송" ? "이송 자재" : "사용 자재"}</div>${r.items.map(i => `<div class="stock-line"><div><div class="stock-name">${esc(i.name)}</div><div class="stock-spec">${esc(i.cat)}${r.flow==="이송"&&i.targetBefore!==undefined ? ` · 출발 ${materialQtyText(i.before,i.unit,i)} → ${materialQtyText(i.after,i.unit,i)} · 도착 ${materialQtyText(i.targetBefore,i.unit,i)} → ${materialQtyText(i.targetAfter,i.unit,i)}` : i.before !== undefined ? " · " + materialQtyText(i.before,i.unit,i) + " → " + materialQtyText(i.after,i.unit,i) : ""}</div></div><div class="stock-qty">${r.flow==="이송" ? materialQtyText(i.qty,i.unit,i) : i.before !== undefined ? (i.diff > 0 ? "+" : "") + materialQtyText(i.diff,i.unit,i) : materialQtyText(i.qty,i.unit,i)}</div></div>`).join("")}</div>` : ""}
     ${(r.equipmentItems || []).length ? `<div class="card"><div class="section-title">${r.flow==="입고"?"입고 장비":r.flow==="이송"?"이송 장비":"사용 장비"}</div>${r.equipmentItems.map((item,index)=>{const returned=Math.min(Number(item.qty||0),Number(item.returnedQty||0)),using=Number(item.qty||0)-returned;return `<div class="stock-line"><button class="plain-button" data-used-equipment="${item.toEquipmentId || item.id}" type="button"><div class="stock-name">${esc(item.name)}</div><div class="stock-spec">${r.flow==="이송"?`${esc(item.fromPlace || item.place || r.warehouse || "보관 미지정")} → ${esc(item.toPlace || r.targetWarehouse || "보관 미지정")} · ${Number(item.qty||0)}대`:esc(item.place || "보관 미지정")+" · "+(r.flow==="입고"?`입고 ${Number(item.qty||0)}대`:`사용 중 ${using}대 · 반납 ${returned}대`)}</div></button>${r.flow==="입고"||r.flow==="이송"?"":`<button class="btn secondary compact" data-return-equipment="${index}" type="button">부분 반납</button>`}</div>`;}).join("")}</div>` : ""}
-    <button class="btn danger detail-delete-btn" id="deleteRecord" type="button">삭제</button>`;
+    <button class="btn secondary" id="editRecordBasic" type="button" style="width:100%;margin-bottom:9px">기본정보 수정</button>
+    <details class="danger-fold"><summary>기타 작업</summary><button class="btn danger detail-delete-btn" id="deleteRecord" type="button">삭제</button></details>`;
   document.getElementById("backHist")?.addEventListener("click", () => window.history.back());
+  document.getElementById("editRecordBasic")?.addEventListener("click",()=>openRecordBasicEdit(r.id));
   view.querySelectorAll("[data-used-equipment]").forEach(button=>button.addEventListener("click",()=>openEquipment(button.dataset.usedEquipment)));
   view.querySelectorAll("[data-return-equipment]").forEach(button=>button.addEventListener("click",()=>openPartialReturn(r.id,Number(button.dataset.returnEquipment))));
   document.getElementById("deleteRecord")?.addEventListener("click", async () => {
@@ -4022,7 +4072,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m93")
+      navigator.serviceWorker.register("./sw.js?v=0190m95")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
