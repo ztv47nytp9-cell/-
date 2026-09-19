@@ -11,7 +11,25 @@ button,input,select,textarea{font:inherit}
 input,textarea{user-select:text;-webkit-user-select:text;-webkit-touch-callout:default}
 img,svg{user-drag:none;-webkit-user-drag:none}
 button{cursor:pointer;-webkit-tap-highlight-color:transparent}
-.app{min-height:100vh;padding-bottom:76px}
+.app{min-height:100vh;min-height:100dvh;padding-bottom:76px}
+/* Keep input forms inside the visible area above mobile keyboards. */
+body.keyboard-open .app{padding-bottom:calc(96px + var(--keyboard-space,0px))}
+body.keyboard-open .modal{top:var(--input-viewport-top,0px);bottom:auto;height:var(--input-viewport-height,100dvh);padding-top:12px;padding-bottom:12px}
+body.keyboard-open .modal .dialog{max-height:calc(var(--input-viewport-height,100dvh) - 24px)}
+body.keyboard-open textarea{max-height:calc(var(--input-viewport-height,100dvh) * .45);overflow-y:auto}
+input,textarea,select{scroll-margin-block:20px}
+.resource-location{display:block;font-weight:400;font-size:13px;color:var(--muted);line-height:1.55;overflow-wrap:anywhere;margin-top:6px}
+.asset-history-row .row-title,.asset-history-row .row-sub,.history-memo{overflow-wrap:anywhere;white-space:pre-wrap}
+.asset-history-row .row-title{margin-top:8px}
+.asset-history-row summary,.form details>summary{min-height:44px;padding:12px 0;cursor:pointer}
+.history-fields{margin:0;font-size:13px}
+.history-fields>div{padding:8px 0;border-top:1px solid var(--border)}
+.history-fields dt{color:var(--muted)}
+.history-fields dd{margin:4px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
+#assetHistorySummary{margin:12px 0}
+#assetHistoryMore[hidden]{display:none}
+.item-box label,.history-filter-grid label{min-width:0}
+.item-box select{width:100%;min-height:44px}
 .top{position:sticky;top:0;z-index:20;background:rgba(247,249,252,.96);backdrop-filter:blur(14px);border-bottom:1px solid rgba(228,234,242,.75)}
 .top-inner{max-width:700px;margin:0 auto;padding:18px 18px 13px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 .title{font-size:31px;font-weight:850;letter-spacing:-.045em;color:var(--blue2);line-height:1}
