@@ -1,5 +1,6 @@
 const VERSION = "Alpha 0.19.0";
 const KEY = "victor_state_alpha_0_19_0e";
+let lastPersistedStateSnapshot = null;
 const MIGRATE_KEYS = [
   "victor_state_alpha_0_19_0d",
   "victor_state_alpha_0_19_0c",
@@ -677,6 +678,7 @@ function loadState(){
       const raw = localStorage.getItem(k);
       if(raw){
         const restored = normalize(JSON.parse(raw));
+        lastPersistedStateSnapshot=JSON.stringify(restored);
         if(k !== KEY){
           try{ localStorage.setItem(KEY, JSON.stringify(restored)); }
           catch(e){ console.warn("[Victor] 이전 데이터의 새 키 저장 실패", e); }
@@ -687,17 +689,30 @@ function loadState(){
       console.warn(`[Victor] 저장 데이터 복구 실패: ${k}`, e);
     }
   }
-  return defaultState();
+  const initial=defaultState();
+  lastPersistedStateSnapshot=JSON.stringify(initial);
+  return initial;
 }
 
 function save(){
-  stripStoredPhotos(state);
-  refreshGlobals(state);
   try{
-    localStorage.setItem(KEY, JSON.stringify(state));
+    stripStoredPhotos(state);
+    refreshGlobals(state);
+    const serialized=JSON.stringify(state);
+    localStorage.setItem(KEY, serialized);
+    lastPersistedStateSnapshot=serialized;
     return true;
   }catch(e){
     console.error("[Victor] 데이터 저장 실패", e);
+    if(lastPersistedStateSnapshot){
+      try{
+        state=JSON.parse(lastPersistedStateSnapshot);
+        refreshGlobals(state);
+      }catch(rollbackError){
+        console.error("[Victor] 마지막 정상 저장본 복구 실패",rollbackError);
+      }
+    }
+    try{if(typeof showFeedback==="function")showFeedback("error","저장 실패 · 변경사항을 취소했습니다. 저장공간을 확인해주세요");}catch(feedbackError){console.warn("[Victor] 저장 실패 안내 표시 실패",feedbackError);}
     throw new Error("데이터를 저장하지 못했습니다. 브라우저 저장 공간을 확인해주세요.");
   }
 }

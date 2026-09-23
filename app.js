@@ -209,13 +209,37 @@ function showSnack(msg,type="info"){
   window.__snackTimer = setTimeout(() => s.classList.remove("show"), 1800);
 }
 
+function restoreAppStateSnapshot(snapshot){
+  state=JSON.parse(snapshot);
+  refreshGlobals(state);
+}
+
+function saveStateTransaction(beforeState,errorMessage="저장에 실패했습니다. 변경을 취소했어요. 저장공간을 확인해주세요"){
+  try{
+    save();
+    return true;
+  }catch(error){
+    try{
+      restoreAppStateSnapshot(beforeState);
+    }catch(rollbackError){
+      console.error("[Victor] 저장 실패 후 상태 복원 실패",rollbackError);
+    }
+    console.error("[Victor] 상태 저장 트랜잭션 실패",error);
+    showFeedback("error",errorMessage);
+    return false;
+  }
+}
+
 function showUndoSnack(msg,stateSnapshot,onRestored){
   const snackbar=document.getElementById("snackbar"); if(!snackbar) return;
   snackbar.classList.remove("success","warning","error","info"); snackbar.classList.add("show","info");
   snackbar.innerHTML=`<span>${esc(msg)}</span><button id="undoSnack" type="button">실행 취소</button>`;
   clearTimeout(window.__snackTimer);
   document.getElementById("undoSnack")?.addEventListener("click",()=>{
-    try{ state=normalize(JSON.parse(stateSnapshot)); save(); refreshGlobals(state); snackbar.classList.remove("show"); snackbar.textContent=""; if(onRestored) onRestored(); showFeedback("success","삭제를 되돌렸습니다"); }catch(error){ showFeedback("error","되돌리지 못했습니다"); }
+    const beforeUndo=JSON.stringify(state);
+    try{state=normalize(JSON.parse(stateSnapshot));}catch(error){showFeedback("error","되돌릴 자료를 읽지 못했습니다");return;}
+    if(!saveStateTransaction(beforeUndo,"되돌리기 저장에 실패했습니다. 현재 자료는 그대로 유지됩니다"))return;
+    snackbar.classList.remove("show"); snackbar.textContent=""; if(onRestored) onRestored(); showFeedback("success","삭제를 되돌렸습니다");
   });
   window.__snackTimer=setTimeout(()=>{snackbar.classList.remove("show"); snackbar.textContent="";},5000);
 }
@@ -653,8 +677,9 @@ async function restoreCloudApplySafetyPoint(){
   const point=readCloudApplySafetyPoint();
   if(!point?.state){showFeedback("info","되돌릴 공유 적용 내역이 없습니다");return;}
   if(!await askConfirm("공유 적용 되돌리기",`${fmtDateTime(point.createdAt)} 적용 전 상태로 되돌릴까요?`,"되돌리기",true))return;
+  const beforeState=JSON.stringify(state);
   state=normalize(point.state);
-  save();
+  if(!saveStateTransaction(beforeState,"되돌리기 저장에 실패했습니다. 현재 자료는 그대로 유지됩니다"))return;
   localStorage.removeItem(CLOUD_APPLY_SAFETY_KEY);
   saveCloudShareMeta({lastAppliedAt:null,lastAppliedSource:null,lastAppliedCloudAt:null});
   refreshGlobals(state);
@@ -876,7 +901,7 @@ function bindResourceGroupControls(renderList){
 }
 
 function createBulkSafetyPoint(label){try{const copy=JSON.parse(JSON.stringify(state));if(copy.ui)delete copy.ui.bulkUndo;localStorage.setItem("victor_bulk_safety_0_19_0l",JSON.stringify({label,createdAt:new Date().toISOString(),state:copy}));return true;}catch(error){showFeedback("error","안전지점을 만들지 못했습니다");return false;}}
-async function restoreBulkSafetyPoint(){closeMenu();try{const point=JSON.parse(localStorage.getItem("victor_bulk_safety_0_19_0l")||"null");if(!point?.state){showFeedback("info","되돌릴 대량변경이 없습니다");return;}if(!await askConfirm("대량변경 되돌리기",`${point.label} 이전 상태로 되돌릴까요?`,"되돌리기",true))return;state=normalize(point.state);save();localStorage.removeItem("victor_bulk_safety_0_19_0l");showFeedback("success","대량변경을 되돌렸습니다");setPage("warehouse");}catch(error){showFeedback("error","안전지점을 복원하지 못했습니다");}}
+async function restoreBulkSafetyPoint(){closeMenu();try{const point=JSON.parse(localStorage.getItem("victor_bulk_safety_0_19_0l")||"null");if(!point?.state){showFeedback("info","되돌릴 대량변경이 없습니다");return;}if(!await askConfirm("대량변경 되돌리기",`${point.label} 이전 상태로 되돌릴까요?`,"되돌리기",true))return;const beforeState=JSON.stringify(state);state=normalize(point.state);if(!saveStateTransaction(beforeState,"되돌리기 저장에 실패했습니다. 현재 자료는 그대로 유지됩니다"))return;localStorage.removeItem("victor_bulk_safety_0_19_0l");showFeedback("success","대량변경을 되돌렸습니다");setPage("warehouse");}catch(error){showFeedback("error","안전지점을 복원하지 못했습니다");}}
 function renderBulkResourceActions(){const target=document.getElementById("bulkResourceActions");if(!target)return;const count=selectedResources.size;target.innerHTML=resourceSelectionMode?`<div class="bulk-bar"><strong>${count}개 선택</strong><button class="btn secondary compact" id="bulkCategory" type="button" ${count?"":"disabled"}>분류 변경</button><button class="btn secondary compact" id="bulkMove" type="button" ${count?"":"disabled"}>창고 이동</button></div>`:"";document.getElementById("bulkCategory")?.addEventListener("click",openBulkCategoryChange);document.getElementById("bulkMove")?.addEventListener("click",openBulkMove);}
 
 function openBulkCategoryChange(){const material=[...selectedResources].some(key=>key.startsWith("material:")),options=material?cats:equipmentCategories;openEntryModal(`${entryHeader("선택 항목 분류 변경",`${selectedResources.size}개 항목`)}<div class="form"><label>새 분류<select id="bulkCategoryTarget">${options.map(cat=>`<option>${esc(cat)}</option>`).join("")}</select></label><button class="btn primary" id="applyBulkCategory" type="button">변경</button></div>`);document.getElementById("applyBulkCategory")?.addEventListener("click",async()=>{const target=document.getElementById("bulkCategoryTarget").value;if(!await askConfirm("분류 변경",`${selectedResources.size}개 항목을 ${target}(으)로 변경할까요?`,"변경"))return;if(!createBulkSafetyPoint("분류 일괄 변경"))return;selectedResources.forEach(key=>{const [kind,id]=key.split(":");if(kind==="material"){const item=itemOf(id);if(item){item.cat=target;item.updatedAt=new Date().toISOString();state.records.forEach(record=>(record.items||[]).forEach(entry=>{if(entry.name===id)entry.cat=target;}));}}else{const item=state.equipment.find(row=>row.id===id);if(item){item.cat=target;item.updatedAt=new Date().toISOString();}}});save();selectedResources.clear();resourceSelectionMode=false;closeEntryModal();showFeedback("success","분류 변경 완료");renderWarehouse();});}
@@ -1848,6 +1873,8 @@ async function saveRecord(){
   const duplicate=[...state.records].reverse().slice(0,10).find(record=>record.date===date&&record.title===title&&(record.items||[]).map(item=>`${item.name}@${itemWarehouse(item,record.warehouse)}`).sort().join("|")+"/"+(record.equipmentItems||[]).map(item=>item.id).sort().join("|")===signature);
   if(duplicate&&!await askConfirm("중복 등록 확인","같은 날짜·제목·품목의 기록이 이미 있습니다. 그래도 저장할까요?","중복 저장"))return;
   const saveButton=document.getElementById("saveRecord");
+  const stateBefore=JSON.stringify(state);
+  const resetSaveButton=()=>{if(saveButton){saveButton.disabled=false;saveButton.textContent=registerMode==="quick"?"진행 중 사건 저장":registerFlow+" 저장";}};
 
   if(registerMode === "quick"){
     if(saveButton){saveButton.disabled=true;saveButton.textContent="저장 중";}
@@ -1855,10 +1882,10 @@ async function saveRecord(){
       flow:"긴급", type:"사고", warehouse:"", date, title:title || nowQuickTitle(), memo, status:"pending",
       quick:true, officialTitle:false, createdAt:new Date().toISOString(), items, equipmentItems, checklist
     }));
+    if(!saveStateTransaction(stateBefore,"긴급기록 저장에 실패했습니다. 입력 내용은 그대로 남아 있습니다")){resetSaveButton();return;}
     draftItems = [];
     draftEquipmentItems = [];
     clearRegisterDraft();
-    save();
     showSnack(`진행 중 사건 저장 · ${summarizeItems(items,equipmentItems,"긴급")}`);
     historyFilter = "pending";
     setPage("history");
@@ -1871,10 +1898,10 @@ async function saveRecord(){
       flow:"사고", type:"사고", warehouse, date, title, memo, status:"pending",
       quick:false, officialTitle:true, createdAt:new Date().toISOString(), items, equipmentItems, checklist, location, evidence
     }));
+    if(!saveStateTransaction(stateBefore,"사건 저장에 실패했습니다. 입력 내용은 그대로 남아 있습니다")){resetSaveButton();return;}
     draftItems = [];
     draftEquipmentItems = [];
     clearRegisterDraft();
-    save();
     showSnack(`진행 중 사건 저장 · ${summarizeItems(items,equipmentItems,"사고")}`);
     historyFilter = "pending";
     setPage("history");
@@ -1911,10 +1938,10 @@ async function saveRecord(){
     state.records.push(createFlowRecord({
       flow:"이송", type:"이송", warehouse, targetWarehouse, date, title, memo, status:"done", items:movedItems, equipmentItems:movedEquipmentItems, checklist:[]
     }));
+    if(!saveStateTransaction(stateBefore,"이송 저장에 실패했습니다. 재고와 입력 내용은 이전 상태로 복원했습니다")){resetSaveButton();return;}
     draftItems = [];
     draftEquipmentItems = [];
     clearRegisterDraft();
-    save();
     showSnack(`이송 저장 · ${[...new Set(movedItems.map(item=>item.warehouse))].join(", ")} → ${targetWarehouse} ${summarizeItems(movedItems,movedEquipmentItems,"이송")}`);
     historyFilter = "done";
     setPage("history");
@@ -1927,10 +1954,10 @@ async function saveRecord(){
     flow:registerFlow, type, warehouse, date, title, memo, status:"done", items:changedItems, equipmentItems, checklist, location, evidence
   }));
 
+  if(!saveStateTransaction(stateBefore,`${registerFlow} 저장에 실패했습니다. 재고와 입력 내용은 이전 상태로 복원했습니다`)){resetSaveButton();return;}
   draftItems = [];
   draftEquipmentItems = [];
   clearRegisterDraft();
-  save();
   showSnack(`${registerFlow} 저장 · ${summarizeItems(changedItems,equipmentItems,registerFlow)}`);
   historyFilter = "done";
   setPage("history");
@@ -2343,7 +2370,7 @@ function openDetail(id, options={}){
       const undoState=JSON.stringify(state);
       state.trash=state.trash||[];state.trash.push({id:uid(),kind:"record",data:JSON.parse(JSON.stringify(r)),deletedAt:new Date().toISOString()});
       state.records = state.records.filter(x => x.id !== id);
-      save();
+      if(!saveStateTransaction(undoState,"사건 삭제 저장에 실패했습니다. 사건은 삭제되지 않았습니다"))return;
       setPage("history");
       showUndoSnack("진행 중 사건 삭제",undoState,()=>{historyFilter="all";setPage("history");});
     });
@@ -2386,7 +2413,7 @@ function openDetail(id, options={}){
       reverseStock(r.warehouse, r.items, r.flow || "출고");
     }
     state.records = state.records.filter(x => x.id !== id);
-    save();
+    if(!saveStateTransaction(undoState,"기록 삭제 저장에 실패했습니다. 재고와 이력은 변경 전 상태로 복원했습니다"))return;
     setPage("history");
     showUndoSnack("기록 삭제",undoState,()=>setPage("history"));
   });
@@ -2395,17 +2422,42 @@ function openDetail(id, options={}){
 function openPartialReturn(recordId,index){
   const record=state.records.find(item=>item.id===recordId),entry=record?.equipmentItems?.[index];if(!entry)return;const returned=Number(entry.returnedQty||0),remaining=Math.max(0,Number(entry.qty||0)-returned);
   openEntryModal(`${entryHeader("장비 부분 반납",entry.name)}<div class="form"><div class="callout">현재 사용 중 ${remaining}대 · 기존 반납 ${returned}대</div><label>이번 반납 수량<input id="partialReturnQty" type="number" inputmode="numeric" min="0" max="${remaining}" value="${remaining}"></label><label>반납 메모<textarea id="partialReturnMemo"></textarea></label><button class="btn primary" id="savePartialReturn" type="button">반납 기록</button></div>`);
-  document.getElementById("savePartialReturn")?.addEventListener("click",()=>{const qty=Math.round(Number(document.getElementById("partialReturnQty").value||0));if(qty<=0||qty>remaining){showFeedback("error","반납 수량을 확인해주세요");return;}entry.returnedQty=returned+qty;entry.returnHistory=entry.returnHistory||[];entry.returnHistory.push({id:uid(),date:todayISO(),qty,memo:document.getElementById("partialReturnMemo").value.trim(),createdAt:new Date().toISOString()});save();closeEntryModal();showFeedback("success","장비 반납을 기록했습니다");openDetail(recordId,{push:false,remember:false});});
+  document.getElementById("savePartialReturn")?.addEventListener("click",()=>{const qty=Math.round(Number(document.getElementById("partialReturnQty").value||0));if(qty<=0||qty>remaining){showFeedback("error","반납 수량을 확인해주세요");return;}const beforeState=JSON.stringify(state);entry.returnedQty=returned+qty;entry.returnHistory=entry.returnHistory||[];entry.returnHistory.push({id:uid(),date:todayISO(),qty,memo:document.getElementById("partialReturnMemo").value.trim(),createdAt:new Date().toISOString()});if(!saveStateTransaction(beforeState,"반납 기록 저장에 실패했습니다. 반납 상태는 변경 전 그대로입니다")){closeEntryModal();openDetail(recordId,{push:false,remember:false});return;}closeEntryModal();showFeedback("success","장비 반납을 기록했습니다");openDetail(recordId,{push:false,remember:false});});
 }
 
 function openTrash(){
   closeMenu();const cutoff=Date.now()-30*86400000;state.trash=(state.trash||[]).filter(item=>new Date(item.deletedAt).getTime()>=cutoff);const items=[...state.trash].sort((a,b)=>b.deletedAt.localeCompare(a.deletedAt));
   openEntryModal(`${entryHeader("임시 보관함","삭제 자료는 이 기기의 백업에도 포함됩니다")}<div class="list-card">${items.map(item=>`<div class="list-row"><div><div class="row-title">${esc(item.data?.title||item.data?.name||"삭제 자료")}</div><div class="row-sub">${item.kind==="record"?"이력":"자료"} · ${new Date(item.deletedAt).toLocaleString("ko-KR")}</div></div><button class="btn secondary compact" data-trash-restore="${item.id}" type="button">복원</button></div>`).join("")||`<div class="emptybox">임시 보관 자료가 없습니다.</div>`}</div>`);
-  document.querySelectorAll("[data-trash-restore]").forEach(button=>button.onclick=async()=>{const entry=state.trash.find(item=>item.id===button.dataset.trashRestore);if(!entry||!await askConfirm("자료 복원","삭제했던 자료를 다시 복원할까요?","복원"))return;
-    if(entry.kind==="record"){const record=entry.data;if(record.status!=="pending"){if(record.flow==="재고수정")record.items.forEach(item=>state.stock[record.warehouse][item.name]=Number(item.after||0));else if(record.flow==="이송"&&record.targetWarehouse){applyStock(record.warehouse,record.items,"출고");applyStock(record.targetWarehouse,record.items.map(item=>({...item,warehouse:item.targetWarehouse||record.targetWarehouse})),"입고");record.equipmentItems=applyEquipmentTransfers(record.equipmentItems||[],record.warehouse,record.targetWarehouse);}else if(record.flow!=="긴급")applyStock(record.warehouse,record.items,record.flow||"출고");}state.records.push(record);}
-    else if(entry.kind==="equipment")state.equipment.push(entry.data);
-    else if(entry.kind==="material"){state.catalog.push(entry.data.item);Object.entries(entry.data.stock||{}).forEach(([warehouse,qty])=>{if(state.stock[warehouse])state.stock[warehouse][entry.data.item.name]=Number(qty||0);});}
-    state.trash=state.trash.filter(item=>item.id!==entry.id);save();closeEntryModal();showFeedback("success","자료를 복원했습니다");});
+  document.querySelectorAll("[data-trash-restore]").forEach(button=>button.onclick=async()=>{
+    const entry=state.trash.find(item=>item.id===button.dataset.trashRestore);
+    if(!entry||!await askConfirm("자료 복원","삭제했던 자료를 다시 복원할까요?","복원"))return;
+    const beforeState=JSON.stringify(state);
+    try{
+      if(entry.kind==="record"){
+        const record=entry.data;
+        if(record.status!=="pending"){
+          if(record.flow==="재고수정")record.items.forEach(item=>state.stock[record.warehouse][item.name]=Number(item.after||0));
+          else if(record.flow==="이송"&&record.targetWarehouse){
+            applyStock(record.warehouse,record.items,"출고");
+            applyStock(record.targetWarehouse,record.items.map(item=>({...item,warehouse:item.targetWarehouse||record.targetWarehouse})),"입고");
+            record.equipmentItems=applyEquipmentTransfers(record.equipmentItems||[],record.warehouse,record.targetWarehouse);
+          }else if(record.flow!=="긴급")applyStock(record.warehouse,record.items,record.flow||"출고");
+        }
+        state.records.push(record);
+      }else if(entry.kind==="equipment")state.equipment.push(entry.data);
+      else if(entry.kind==="material"){
+        state.catalog.push(entry.data.item);
+        Object.entries(entry.data.stock||{}).forEach(([warehouse,qty])=>{if(state.stock[warehouse])state.stock[warehouse][entry.data.item.name]=Number(qty||0);});
+      }
+      state.trash=state.trash.filter(item=>item.id!==entry.id);
+    }catch(error){
+      restoreAppStateSnapshot(beforeState);
+      showFeedback("error","자료 복원 중 오류가 발생해 변경을 취소했습니다");
+      return;
+    }
+    if(!saveStateTransaction(beforeState,"복원 저장에 실패했습니다. 자료와 재고는 변경 전 상태로 돌아갔습니다"))return;
+    closeEntryModal();showFeedback("success","자료를 복원했습니다");
+  });
 }
 
 function renderMemo(){
@@ -2482,8 +2534,9 @@ function restoreFile(file){
   const reader = new FileReader();
   reader.onload = () => {
     try{
+      const beforeState=JSON.stringify(state);
       state = normalize(JSON.parse(reader.result));
-      save();
+      if(!saveStateTransaction(beforeState,"복원 파일을 저장하지 못했습니다. 현재 자료는 변경 전 상태로 유지됩니다"))return;
       showSnack("복원 완료");
       render();
     }catch(e){
@@ -2496,8 +2549,9 @@ function restoreFile(file){
 async function resetAll(){
   if(!await askConfirm("전체 초기화","모든 재고, 이력, 메모가 삭제됩니다. 먼저 데이터 백업을 권장합니다.","계속",true)) return;
   if(!await askConfirm("최종 확인","정말 초기화하시겠습니까? 이 작업은 되돌릴 수 없습니다.","전체 초기화",true)) return;
+  const beforeState=JSON.stringify(state);
   state = defaultState();
-  save();
+  if(!saveStateTransaction(beforeState,"초기화 저장에 실패했습니다. 기존 자료를 그대로 유지했습니다"))return;
   showSnack("초기화 완료");
   render();
 }
@@ -3463,6 +3517,9 @@ async function applySharedSnapshot(snapshot,source="공유자료"){
   const next=resourceStateWithLocalWarehouses(resourceStateFromSnapshot(snapshot));
   if(!next?.warehouses?.length)throw new Error("적용할 보관 자료가 없습니다");
   if(!await askConfirm(`${source} 적용 미리보기`,`${shareApplyPreviewText(snapshot)}\n\n현재 앱의 보관·자재·장비 내용이 이 자료로 바뀝니다.\n계속할까요?`,"적용"))return false;
+  const beforeState=JSON.stringify(state);
+  let previousSafetyPoint=null;
+  try{previousSafetyPoint=localStorage.getItem(CLOUD_APPLY_SAFETY_KEY);}catch(_){}
   if(!createCloudApplySafetyPoint(snapshot))return false;
   state=normalize({
     ...state,
@@ -3476,7 +3533,10 @@ async function applySharedSnapshot(snapshot,source="공유자료"){
     assetOps:next.assetOps || {},
     logs:next.logs || []
   });
-  save();
+  if(!saveStateTransaction(beforeState,"공유자료 저장에 실패했습니다. 현재 기기 자료는 변경 전 상태로 복원했습니다")){
+    try{if(previousSafetyPoint===null)localStorage.removeItem(CLOUD_APPLY_SAFETY_KEY);else localStorage.setItem(CLOUD_APPLY_SAFETY_KEY,previousSafetyPoint);}catch(_){}
+    return false;
+  }
   refreshGlobals(state);
   sharedSnapshot=null;
   page="home";
@@ -4359,7 +4419,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m101")
+      navigator.serviceWorker.register("./sw.js?v=0190m102")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
