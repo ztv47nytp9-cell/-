@@ -16,10 +16,12 @@ let historyDateFilter = "all";
 let historyFlowFilter = "all";
 let historyCustomFrom = "";
 let historyCustomTo = "";
+let historySearchQuery = "";
 let homeActivityTab = "history";
 let editingMemoId = null;
 let restoringNavigation = false;
 let globalSearchQuery = "";
+let globalSearchShowAll = false;
 let maintenanceDraftParts = [];
 let sharedSnapshot = null;
 let materialSortMode = "name";
@@ -560,6 +562,18 @@ function startHomeRegister(mode,flow="출고"){
   pushNavigationState({page:"register",mode,flow});
 }
 
+function startResourceRegister(kind,item,flow,warehouse=""){
+  if(!item || !["출고","입고"].includes(flow)) return;
+  closeEntryModal();
+  const selectedWarehouse=kind==="equipment"?(item.place||warehouse||warehouses[0]||""):(warehouse||warehouses.find(place=>Number(state.stock[place]?.[item.name]||0)>0)||warehouses[0]||"");
+  const draft={mode:"normal",flow,type:types.includes(flow)?flow:"기타",warehouse:selectedWarehouse,targetWarehouse:"",date:todayISO(),title:`${item.name} ${flow}`,memo:"",locationType:"",locationDetail:"",items:[],equipmentItems:[]};
+  if(kind==="material") draft.items=[{cat:item.cat,name:item.name,qty:"",unit:item.unit,kind:item.kind,warehouse:selectedWarehouse}];
+  else draft.equipmentItems=[{id:item.id,name:item.name,cat:item.cat||"기타장비",qty:"",place:selectedWarehouse,spec:item.spec||item.detail||"",model:item.model||""}];
+  applyRegisterDraft(draft);
+  pendingRegisterDraft=null;
+  setPage("register");
+}
+
 function homeActivityHtml(){
   if(homeActivityTab === "memo"){
     const memos = recentMemos(3);
@@ -726,7 +740,9 @@ function cloudShareNoticeHtml(){
 }
 
 function renderHome(){
-  const pending = pendingRecords().length;
+  const pendingList = pendingRecords().sort((a,b)=>String(b.updatedAt||b.createdAt||"").localeCompare(String(a.updatedAt||a.createdAt||"")));
+  const pending = pendingList.length;
+  const latestPending = pendingList[0] || null;
   const recentCount = getRecent(3).length;
   const memoCount = recentMemos(3).length;
   view.innerHTML = `
@@ -748,7 +764,7 @@ function renderHome(){
       <div class="home-tool-grid">
         <button id="homeAllResources" type="button"><span>📦</span><strong>자재·장비</strong><small>전체 현황</small></button>
         <button id="homeShareResources" type="button"><span>☁️</span><strong>공유</strong><small>올리기·가져오기</small></button>
-        <button id="homePending" class="${pending ? "" : "quiet-tool"}" type="button"><span class="urgent-mark">${pending ? "🚨" : "✓"}</span><strong>${pending ? `진행중 ${pending}건` : "진행중 없음"}</strong></button>
+        <button id="homePending" class="${pending ? "" : "quiet-tool"}" type="button"><span class="urgent-mark">${pending ? "🚨" : "✓"}</span><strong>${pending ? `사건 이어하기 · ${pending}건` : "진행 중 사건 없음"}</strong>${latestPending?`<small>${esc(latestPending.officialTitle?latestPending.title:"제목 미정")} · ${esc(fmtDateTime(latestPending.updatedAt||latestPending.createdAt||latestPending.date))}</small>`:""}</button>
         <button id="homeMemoShortcut" type="button"><span>📝</span><strong>새 메모</strong><small>현장 참고</small></button>
       </div>
     </div>
@@ -758,7 +774,7 @@ function renderHome(){
     <div class="list-card">${homeActivityHtml()}</div>
   `;
   const globalSearch=document.getElementById("globalSearch");
-  globalSearch?.addEventListener("input", event => { globalSearchQuery=event.target.value; renderGlobalSearchResults(); });
+  globalSearch?.addEventListener("input", event => { globalSearchQuery=event.target.value; globalSearchShowAll=false; renderGlobalSearchResults(); });
   globalSearch?.addEventListener("keydown", event => { if(event.key==="Enter") event.currentTarget.blur(); });
   renderGlobalSearchResults();
   document.getElementById("homeQuickEmergency")?.addEventListener("click", () => startHomeRegister("quick"));
@@ -767,7 +783,10 @@ function renderHome(){
   document.getElementById("homeStorageSummary")?.addEventListener("click", () => openStorageView("materials"));
   document.getElementById("homeAllResources")?.addEventListener("click", () => openStorageView("materials"));
   document.getElementById("homeShareResources")?.addEventListener("click", openCloudShareActions);
-  document.getElementById("homePending")?.addEventListener("click", () => { historyFilter = "pending"; historyDateFilter = "all"; historyFlowFilter = "all"; setPage("history"); });
+  document.getElementById("homePending")?.addEventListener("click", () => {
+    if(latestPending){openDetail(latestPending.id);return;}
+    historyFilter = "pending"; historyDateFilter = "all"; historyFlowFilter = "all"; setPage("history");
+  });
   document.getElementById("homeMemoShortcut")?.addEventListener("click", () => { editingMemoId=null; setPage("memo"); });
   document.getElementById("homeActivityHistory")?.addEventListener("click", () => { homeActivityTab="history"; renderHome(); });
   document.getElementById("homeActivityMemo")?.addEventListener("click", () => { homeActivityTab="memo"; renderHome(); });
@@ -812,8 +831,7 @@ function globalSearchRows(){
   });
   return rows
     .map(row=>({...row,score:row.title.toLowerCase()===query?0:row.title.toLowerCase().startsWith(query)?1:2}))
-    .sort((a,b)=>a.score-b.score || a.title.localeCompare(b.title,"ko"))
-    .slice(0,8);
+    .sort((a,b)=>a.score-b.score || a.title.localeCompare(b.title,"ko"));
 }
 
 function renderGlobalSearchResults(){
@@ -824,7 +842,9 @@ function renderGlobalSearchResults(){
     target.innerHTML = `<div class="global-search-hint">이름·규격·창고명으로 빠르게 찾습니다.</div>`;
     return;
   }
-  target.innerHTML = rows.length ? `<div class="global-search-hint">${rows.length}건 표시 · 정확한 이름이 먼저 나옵니다.</div><div class="global-search-list">${rows.map(row => `<button class="list-row compact-search-row" data-global-kind="${row.kind}" data-global-id="${esc(row.id)}" type="button"><div><div class="row-title">${esc(row.title)} <span class="mini-chip">${row.kind==="warehouse"?"창고":row.kind==="material"?"자재":"장비"}</span></div><div class="row-sub">${esc(row.sub)}</div></div><div class="chev">›</div></button>`).join("")}</div>` : `<div class="global-search-hint">검색 결과가 없습니다. 이름 일부나 창고명으로 다시 찾아보세요.</div>`;
+  const shownRows=globalSearchShowAll?rows:rows.slice(0,8);
+  target.innerHTML = rows.length ? `<div class="global-search-hint">${globalSearchShowAll?`전체 ${rows.length}건 표시`:`${Math.min(rows.length,8)}건 표시`} · 정확한 이름이 먼저 나옵니다.</div><div class="global-search-list">${shownRows.map(row => `<button class="list-row compact-search-row" data-global-kind="${row.kind}" data-global-id="${esc(row.id)}" type="button"><div><div class="row-title">${esc(row.title)} <span class="mini-chip">${row.kind==="warehouse"?"창고":row.kind==="material"?"자재":"장비"}</span></div><div class="row-sub">${esc(row.sub)}</div></div><div class="chev">›</div></button>`).join("")}</div>${rows.length>8?`<button class="btn secondary compact" id="toggleGlobalSearchResults" type="button" style="width:100%;margin-top:8px">${globalSearchShowAll?"간략히 보기":`전체 ${rows.length}건 보기`}</button>`:""}` : `<div class="global-search-hint">검색 결과가 없습니다. 이름 일부나 창고명으로 다시 찾아보세요.</div>`;
+  document.getElementById("toggleGlobalSearchResults")?.addEventListener("click",()=>{globalSearchShowAll=!globalSearchShowAll;renderGlobalSearchResults();});
   target.querySelectorAll("[data-global-kind]").forEach(button => button.addEventListener("click", () => {
     const kind = button.dataset.globalKind;
     const id = button.dataset.globalId;
@@ -948,9 +968,10 @@ function openAllMaterialDetail(name){
   openEntryModal(`
     ${entryHeader(item.name,"전체 자재 상세")}
     <div class="card compact-card"><div class="row-sub">카테고리</div><div class="row-title">${esc(item.cat)}</div><div class="row-sub">규격 ${esc(item.spec || "없음")} · 단위 ${esc(item.unit)}</div>${item.memo ? `<div class="callout" style="margin-top:10px">${esc(item.memo)}</div>` : ""}</div>
-    <div class="list-card">${warehouses.map(name => `<button class="list-row" data-material-warehouse="${esc(name)}" type="button"><div><div class="row-title">${esc(name)}</div></div><div class="stock-qty">${materialQtyText(state.stock[name]?.[item.name] || 0,item.unit,item)}</div></button>`).join("")}</div>
+    <div class="list-card">${warehouses.map(name => {const quantity=Number(state.stock[name]?.[item.name]||0);return `<div class="list-row material-location-row"><button class="row-main" data-material-warehouse="${esc(name)}" type="button"><div><div class="row-title">${esc(name)}</div><div class="row-sub">보관장소 상세 보기</div></div><div class="stock-qty">${materialQtyText(quantity,item.unit,item)}</div></button><div class="btn-row"><button class="btn secondary compact" data-material-flow="출고" data-material-place="${esc(name)}" type="button" ${quantity>0?"":"disabled"}>출고</button><button class="btn secondary compact" data-material-flow="입고" data-material-place="${esc(name)}" type="button">입고</button></div></div>`;}).join("")}</div>
     <button class="btn secondary" id="editMaterialInfo" type="button" style="width:100%;margin-top:10px">자재 정보·분류 수정</button><div class="card"><div class="section-title">재고 변동 타임라인</div>${timeline.map(record=>{const entry=record.timelineItem,sign=record.flow==="입고"?"+":record.flow==="출고"||record.flow==="긴급"?"-":"";return `<div class="stock-line"><div><div class="stock-name">${fmtDate(record.date)} · ${esc(record.title)}</div><div class="stock-spec">${esc(itemWarehouse(entry,record.warehouse)||"창고 미지정")} · ${esc(record.flow)}</div></div><div class="stock-qty">${entry.before!==undefined?`${materialQtyText(entry.before,entry.unit,entry)} → ${materialQtyText(entry.after,entry.unit,entry)}`:`${sign}${materialQtyText(entry.qty,entry.unit,entry)}`}</div></div>`;}).join("")||`<div class="emptybox">변동 이력이 없습니다.</div>`}</div><button class="btn danger" id="deleteMaterial" type="button" style="width:100%">자재를 임시 보관함으로 이동</button>`);
   document.querySelectorAll("[data-material-warehouse]").forEach(button => button.addEventListener("click", () => { closeEntryModal(); warehouseViewMode="warehouses"; selectedWarehouse=button.dataset.materialWarehouse; warehouseTab="material"; renderWarehouse(); pushNavigationState({page:"warehouse",warehouse:selectedWarehouse,tab:"material"}); }));
+  document.querySelectorAll("[data-material-flow]").forEach(button=>button.addEventListener("click",()=>startResourceRegister("material",item,button.dataset.materialFlow,button.dataset.materialPlace)));
   document.getElementById("editMaterialInfo")?.addEventListener("click",()=>openMaterialInfoForm(item.name));
   document.getElementById("deleteMaterial")?.addEventListener("click",async()=>{if(!await askConfirm("자재 삭제",`${item.name}과 현재 재고를 임시 보관함으로 이동할까요?`,"이동",true))return;const stock={};warehouses.forEach(warehouse=>{stock[warehouse]=Number(state.stock[warehouse]?.[item.name]||0);delete state.stock[warehouse]?.[item.name];});state.trash=state.trash||[];state.trash.push({id:uid(),kind:"material",data:{item:JSON.parse(JSON.stringify(item)),stock},deletedAt:new Date().toISOString()});state.catalog=state.catalog.filter(row=>row.name!==item.name);save();closeEntryModal();showFeedback("success","자재를 임시 보관함으로 이동했습니다");renderAllMaterialList();});
 }
@@ -1420,12 +1441,12 @@ function renderRegister(){
       <div>
         <div class="section-head" style="margin:5px 0 8px">
           <div class="section-title" style="font-size:16px">${registerMode === "quick" ? "사용 내역" : registerFlow}</div>
-          <div class="btn-row"><button class="btn secondary compact" id="addItem" type="button">방제자재</button><button class="btn secondary compact" id="addEquipmentItem" type="button">방제장비</button><button class="btn secondary compact" id="addHnsItem" type="button">HNS</button></div>
+          <div class="btn-row"><button class="btn secondary compact" id="addItem" type="button">방제자재</button><button class="btn secondary compact" id="addEquipmentItem" type="button">방제장비</button><button class="btn gray compact" type="button" disabled title="정식 자료 검수 후 사용할 수 있습니다">HNS 준비 중</button></div>
         </div>
         <div id="itemArea"></div>
         <div id="equipmentItemArea"></div>
         <div id="resourceEmptyAction"></div>
-        <div id="hnsItemArea">${registerMode==="normal"?`<div class="hns-register-card"><div><strong>HNS</strong><span>${registerFlow} 자료 연결 준비 중</span></div><button class="btn gray compact" id="openHnsGuide" type="button">안내</button></div>`:""}</div>
+        <div id="hnsItemArea"><div class="hns-register-card"><div><strong>HNS 자료 준비 중</strong><span>정식 자료 검수 전까지 등록할 수 없습니다. 현재는 방제자재·방제장비를 이용해주세요.</span></div></div></div>
         <div id="stockAfterPreview"></div>
       </div>
       <label>메모<textarea id="recMemo" placeholder="${registerMode === "quick" ? "현장 메모를 간단히 입력하세요" : "메모를 입력하세요"}"></textarea></label>
@@ -1443,8 +1464,6 @@ function renderRegister(){
   if(moveBtn) moveBtn.addEventListener("click", () => { registerFlow = "이송"; renderRegister(); });
   document.getElementById("addItem")?.addEventListener("click", addDraftItem);
   document.getElementById("addEquipmentItem")?.addEventListener("click", addDraftEquipmentItem);
-  document.getElementById("addHnsItem")?.addEventListener("click", openHnsRegisterGuide);
-  document.getElementById("openHnsGuide")?.addEventListener("click", openHnsRegisterGuide);
   document.getElementById("saveRecord")?.addEventListener("click", saveRecord);
   document.getElementById("loadRegisterDraft")?.addEventListener("click",()=>{applyRegisterDraft(pendingRegisterDraft||readRegisterDraft());renderRegister();setHead();showSnack("작성 중 기록 불러옴");});
   document.getElementById("discardRegisterDraft")?.addEventListener("click",()=>{clearRegisterDraft();draftItems=[];draftEquipmentItems=[];renderRegister();});
@@ -2007,11 +2026,19 @@ function historyFlowMatches(record){
   return record.flow === historyFlowFilter;
 }
 
+function historySearchMatches(record,query=historySearchQuery){
+  const normalized=String(query||"").trim().toLocaleLowerCase("ko-KR");
+  if(!normalized)return true;
+  const evidenceValues=Object.values(record.evidence||{}).flatMap(value=>Array.isArray(value)?value:[value]);
+  const searchable=[record.title,record.type,record.flow,record.warehouse,record.targetWarehouse,record.memo,record.location?.type,record.location?.detail,...evidenceValues,...(record.items||[]).flatMap(item=>[item.name,item.warehouse,item.targetWarehouse]),...(record.equipmentItems||[]).flatMap(item=>[item.name,item.place])];
+  return searchable.filter(value=>value!==undefined&&value!==null).join(" ").toLocaleLowerCase("ko-KR").includes(normalized);
+}
+
 function renderHistory(){
   const all = [...state.records].sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id));
   const counts = {all:all.length,pending:all.filter(r=>r.status === "pending").length,done:all.filter(r=>r.status !== "pending").length};
   let filtered = all.filter(record => historyFilter === "all" ? true : (historyFilter === "pending" ? record.status === "pending" : record.status !== "pending"));
-  filtered = filtered.filter(record => historyDateMatches(record) && historyFlowMatches(record));
+  filtered = filtered.filter(record => historyDateMatches(record) && historyFlowMatches(record) && historySearchMatches(record));
   view.innerHTML = `
     <div class="history-tabs">
       <button class="history-tab ${historyFilter === "all" ? "active" : ""}" data-hfilter="all" type="button">전체 ${counts.all}</button>
@@ -2025,7 +2052,7 @@ function renderHistory(){
     <div class="history-filter-grid">
       <label>종류<select id="historyFlowFilter"><option value="all" ${historyFlowFilter === "all" ? "selected" : ""}>전체 종류</option><option value="출고" ${historyFlowFilter === "출고" ? "selected" : ""}>출고</option><option value="입고" ${historyFlowFilter === "입고" ? "selected" : ""}>입고</option><option value="이송" ${historyFlowFilter === "이송" ? "selected" : ""}>창고 간 이동</option><option value="재고수정" ${historyFlowFilter === "재고수정" ? "selected" : ""}>재고수정</option><option value="긴급" ${historyFlowFilter === "긴급" ? "selected" : ""}>긴급기록</option></select></label>
     </div>
-    <input class="search" id="histSearch" placeholder="이력 검색" autocomplete="off" enterkeyhint="search">
+    <input class="search" id="histSearch" value="${esc(historySearchQuery)}" placeholder="이력 검색" autocomplete="off" enterkeyhint="search">
     <div class="filter-result" id="historyResultCount">검색 결과 ${filtered.length}건 ${historyDateFilter !== "all" || historyFlowFilter !== "all" ? `<button class="link-btn" id="clearHistoryFilter" type="button">필터 초기화</button>` : ""}</div>
     <div id="histList">${renderHistoryListHtml(filtered)}</div>
   `;
@@ -2036,8 +2063,8 @@ function renderHistory(){
   document.getElementById("historyFlowFilter")?.addEventListener("change", event => { historyFlowFilter=event.target.value; renderHistory(); });
   document.getElementById("clearHistoryFilter")?.addEventListener("click", () => { historyDateFilter="all"; historyFlowFilter="all"; historyCustomFrom=""; historyCustomTo=""; renderHistory(); });
   document.getElementById("histSearch")?.addEventListener("input", () => {
-    const query = document.getElementById("histSearch").value.trim();
-    const searched = filtered.filter(record => !query || [record.title,record.type,record.flow,record.warehouse,record.memo,record.location?.type,record.location?.detail,...Object.values(record.evidence||{}),...record.items.flatMap(item=>[item.name,item.warehouse,item.targetWarehouse]),...(record.equipmentItems || []).map(item=>item.name)].join(" ").includes(query));
+    historySearchQuery = document.getElementById("histSearch").value;
+    const searched = all.filter(record => (historyFilter === "all" ? true : (historyFilter === "pending" ? record.status === "pending" : record.status !== "pending")) && historyDateMatches(record) && historyFlowMatches(record) && historySearchMatches(record));
     const count=document.getElementById("historyResultCount");
     if(count)count.innerHTML=`검색 결과 ${searched.length}건 ${historyDateFilter !== "all" || historyFlowFilter !== "all" ? `<button class="link-btn" id="clearHistoryFilter" type="button">필터 초기화</button>` : ""}`;
     document.getElementById("histList").innerHTML = renderHistoryListHtml(searched);
@@ -2999,6 +3026,7 @@ function openEquipment(id, options={}){
       </div>
       ${item.memo || item.etc ? `<div class="callout" style="margin-top:12px">${esc(item.memo || item.etc)}</div>` : ""}
       ${legacy.length ? `<div class="row-sub" style="margin-top:10px">기존 정보 · ${esc(legacy.join(" · "))}</div>` : ""}
+      <div class="btn-row resource-quick-actions"><button class="btn secondary" id="equipmentQuickOut" type="button" ${Number(item.qty||0)>0?"":"disabled"}>출고 기록</button><button class="btn secondary" id="equipmentQuickIn" type="button">입고 기록</button></div>
       <button class="btn primary" id="editSimpleEquipment" type="button" style="width:100%;margin-top:14px">정보 수정</button>
     </div>
     <div class="card"><div class="section-head" style="margin:0 0 10px"><div class="section-title">현재 부속품</div><button class="btn secondary compact" id="addAccessory" type="button">+ 부속품</button></div>
@@ -3015,6 +3043,8 @@ function openEquipment(id, options={}){
     view.append(more);
   }
   document.getElementById("openEquipmentHistory")?.addEventListener("click",()=>openAssetHistory(item.place,item.id));
+  document.getElementById("equipmentQuickOut")?.addEventListener("click",()=>startResourceRegister("equipment",item,"출고",item.place));
+  document.getElementById("equipmentQuickIn")?.addEventListener("click",()=>startResourceRegister("equipment",item,"입고",item.place));
   document.getElementById("backEquip")?.addEventListener("click", () => window.history.back());
   document.getElementById("editSimpleEquipment")?.addEventListener("click", () => simpleResourceForm("equipment",item));
   document.getElementById("addMaintenance")?.addEventListener("click",()=>openMaintenanceForm(item.id));
@@ -4472,7 +4502,7 @@ function init(){
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=0190m103")
+      navigator.serviceWorker.register("./sw.js?v=0190m104")
         .then(registration => registration.update())
         .catch(error => console.warn("[Victor] 오프라인 캐시 등록 실패", error));
     });
