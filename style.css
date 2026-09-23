@@ -345,6 +345,8 @@ button:active{filter:brightness(.98)}
 .compact-empty{border:0;border-radius:0;padding:14px 12px;background:#fff}
 .survey-fast-actions.two{grid-template-columns:1fr 1fr}
 .survey-launch{width:100%;border:1px solid #AFCBE3;background:#EAF4FA;color:#194F73;border-radius:14px;padding:11px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center}.survey-launch span{font-weight:900}.survey-launch strong{font-size:12px}.survey-fast-actions{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:12px 0}.survey-fast-actions button{padding:14px 5px}.batch-row{display:grid;grid-template-columns:1fr 110px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)}
+.survey-item-status{display:inline-flex;align-items:center;margin-top:12px;padding:5px 9px;border-radius:999px;font-size:12px;font-weight:800}.survey-item-status.confirmed{color:#176B48;background:#E7F5EE}.survey-item-status.unconfirmed{color:#805719;background:#FFF5DF}.survey-progress-note{text-align:center;margin:8px 0}.survey-skip-option{display:flex;align-items:flex-start;gap:9px;padding:12px;margin:10px 0;border:1px solid var(--border);border-radius:12px;background:var(--card);font-size:14px}.survey-skip-option input{width:20px;height:20px;margin:0;flex:0 0 auto}.survey-skip-option:has(input:checked){border-color:var(--blue)}.survey-card .survey-fast-actions{grid-template-columns:repeat(3,minmax(0,1fr))}.survey-card .survey-fast-actions button{min-height:54px;font-size:13px}
+.survey-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.callout.error-callout{background:#FFF0EF;border-color:#F3B8B4;color:#8B2620}.callout.error-callout .btn{margin-top:10px}
 .survey-fast-actions button,#fastNext,#fastPrev{touch-action:manipulation}
 .confirm-message{background:#F8FAFC;border:1px solid var(--border);border-radius:14px;padding:16px;line-height:1.55;margin:14px 0;white-space:pre-wrap}
 .sticky-save{position:sticky;bottom:0;z-index:2;box-shadow:0 -5px 18px rgba(255,255,255,.9)}
@@ -489,6 +491,8 @@ button:active{filter:brightness(.98)}
 :root[data-theme="dark"] .survey-launch{background:#1F3144;border-color:#4A637A;color:#D7E6F3}
 :root[data-theme="dark"] .survey-launch strong{color:#AFC2D2}
 :root[data-theme="dark"] .batch-row{border-bottom-color:#40556A}
+:root[data-theme="dark"] .survey-item-status.confirmed{color:#A8E3C2;background:#1C4034}:root[data-theme="dark"] .survey-item-status.unconfirmed{color:#F1D08C;background:#443A25}:root[data-theme="dark"] .survey-skip-option:has(input:checked){border-color:#6EA8E6}
+:root[data-theme="dark"] .callout.error-callout{background:#402B2A;border-color:#744B48;color:#F0C4C0}
 :root[data-theme="dark"] .confirm-message{background:#1F3144;border-color:#4A637A;color:#DCE7F1}
 :root[data-theme="dark"] .error-message{background:#3D2D2F;color:#F2B8B4;border-color:#664A4D}
 :root[data-theme="dark"] .startup-error{border-color:#664A4D}
