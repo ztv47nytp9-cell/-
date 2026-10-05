@@ -1,6 +1,29 @@
-const VERSION = "Alpha 0.19.0";
+const VERSION = "Alpha 0.20.0";
+const APP_BUILD = "105";
+const SCHEMA_VERSION = 1;
 const KEY = "victor_state_alpha_0_19_0e";
 let lastPersistedStateSnapshot = null;
+let lastDiskStateRaw = null;
+let storageLoadIssue = "";
+let pendingMigrationBackup = null;
+const SAFETY_POINTS_KEY = "victor_safety_points_v1";
+
+function readSafetyPoints(){
+  try{const points=JSON.parse(localStorage.getItem(SAFETY_POINTS_KEY)||"[]");return Array.isArray(points)?points.filter(point=>point?.state&&typeof point.state==="object"):[];}catch(_){return [];}
+}
+
+function createSafetyPoint(label, source){
+  try{
+    const copied=JSON.parse(JSON.stringify(source));
+    if(storageLoadIssue){copied.legacyData={...(copied.legacyData||{}),unreadableStateRaw:localStorage.getItem(KEY)};}
+    const points=readSafetyPoints();
+    const serialized=JSON.stringify(copied);
+    if(points[0]?.label===label&&JSON.stringify(points[0].state)===serialized)return true;
+    const point={id:uid(),label,createdAt:new Date().toISOString(),appVersion:VERSION,build:APP_BUILD,schemaVersion:SCHEMA_VERSION,state:copied};
+    localStorage.setItem(SAFETY_POINTS_KEY,JSON.stringify([point,...points].slice(0,3)));
+    return true;
+  }catch(error){console.warn("[Victor] 안전지점 저장 실패",error);return false;}
+}
 const MIGRATE_KEYS = [
   "victor_state_alpha_0_19_0d",
   "victor_state_alpha_0_19_0c",
@@ -393,6 +416,8 @@ function defaultInfos(warehouseList=defaultWarehouses){
 
 function defaultState(){
   const state = {
+    schemaVersion:SCHEMA_VERSION,
+    appBuild:APP_BUILD,
     warehouses: [...defaultWarehouses],
     catalog: defaultCatalog.map(x => ({...x})),
     stock: defaultStock(),
@@ -449,6 +474,7 @@ function normalize(raw){
   if(Array.isArray(raw.equipment)) raw.equipment.forEach(item => rememberWarehouse(item?.place || item?.warehouse));
   if(Array.isArray(raw.records)) raw.records.forEach(record => {
     rememberWarehouse(record?.warehouse);
+    (record?.items||[]).forEach(item=>{rememberWarehouse(item.warehouse);rememberWarehouse(item.targetWarehouse);});
     rememberWarehouse(record?.targetWarehouse);
     (record?.equipmentItems || []).forEach(item => rememberWarehouse(item?.place || item?.warehouse));
   });
@@ -462,13 +488,14 @@ function normalize(raw){
       const sourceName = i.name.trim();
       const nm = sourceName === "고형식 오일펜스" ? "팽창형 오일펜스" : sourceName;
       catMap.set(nm, {
+        ...i,
         cat:typeof i.cat === "string" && i.cat ? i.cat : "기타",
         name:nm,
         unit:typeof i.unit === "string" && i.unit ? i.unit : "개",
         spec:typeof i.spec === "string" ? i.spec : "",
         kind:i.kind === "returnable" ? "returnable" : "consume",
         memo:typeof i.memo === "string" ? i.memo : "",
-        photo:"",
+        photo:typeof i.photo==="string"?i.photo:"",
         updatedAt:typeof i.updatedAt === "string" ? i.updatedAt : ""
       });
     });
@@ -510,6 +537,7 @@ function normalize(raw){
   warehouseList.forEach(w => {
     const old = state.warehouseInfos[w] && typeof state.warehouseInfos[w] === "object" ? state.warehouseInfos[w] : {};
     state.warehouseInfos[w] = {
+      ...old,
       memo: typeof old.memo === "string" ? old.memo : "",
       access: typeof old.access === "string" ? old.access : "",
       keyNote: typeof old.keyNote === "string" ? old.keyNote : "",
@@ -524,6 +552,7 @@ function normalize(raw){
 
   if(!Array.isArray(state.records)) state.records = [];
   state.records = state.records.filter(r => r && typeof r === "object").map(r => ({
+    ...r,
     id: typeof r.id === "string" && r.id ? r.id : uid(),
     type: typeof r.type === "string" && r.type ? r.type : "사고",
     flow: typeof r.flow === "string" && r.flow ? r.flow : (r.status === "pending" ? "긴급" : "출고"),
@@ -536,12 +565,14 @@ function normalize(raw){
     quick: Boolean(r.quick || r.status === "pending"),
     officialTitle: Boolean(r.officialTitle),
     createdAt: typeof r.createdAt === "string" && r.createdAt ? r.createdAt : new Date().toISOString(),
+    updatedAt:typeof r.updatedAt==="string"?r.updatedAt:(r.editedAt||r.createdAt||""),
     appliedAt: typeof r.appliedAt === "string" ? r.appliedAt : null,
     targetWarehouse: oldName(r.targetWarehouse || ""),
     location: r.location && typeof r.location === "object" && !Array.isArray(r.location) ? {type:typeof r.location.type==="string"?r.location.type:"",detail:typeof r.location.detail==="string"?r.location.detail:""} : null,
     evidence: r.evidence && typeof r.evidence === "object" && !Array.isArray(r.evidence) ? {...r.evidence} : null,
     checklist: Array.isArray(r.checklist) ? r.checklist.filter(step => ["출동","회수","세척","복귀"].includes(step)) : [],
     equipmentItems: Array.isArray(r.equipmentItems) ? r.equipmentItems.filter(it => it && typeof it === "object").map(it => ({
+      ...it,
       id: typeof it.id === "string" ? it.id : "",
       name: typeof it.name === "string" && it.name ? it.name : "장비",
       qty: Number.isFinite(Number(it.qty)) && Number(it.qty) > 0 ? Number(it.qty) : 1,
@@ -555,8 +586,11 @@ function normalize(raw){
       if(nm === "고형식 오일펜스") nm = "팽창형 오일펜스";
       const f = catalogList.find(x => x.name === nm) || catalogList[0];
       return {
+        ...it,
         cat: typeof it.cat === "string" && it.cat ? it.cat : f.cat,
         name: nm,
+        warehouse:oldName(it.warehouse||r.warehouse||""),
+        targetWarehouse:oldName(it.targetWarehouse||r.targetWarehouse||""),
         qty: Number.isFinite(Number(it.qty ?? it.total ?? 0)) ? Number(it.qty ?? it.total ?? 0) : 0,
         unit: typeof it.unit === "string" && it.unit ? it.unit : f.unit,
         kind: it.kind === "returnable" ? "returnable" : f.kind,
@@ -566,11 +600,12 @@ function normalize(raw){
         after: Number.isFinite(Number(it.after)) ? Number(it.after) : undefined,
         diff: Number.isFinite(Number(it.diff)) ? Number(it.diff) : undefined
       };
-    }).filter(it => it.qty > 0) : []
+    }) : []
   }));
 
   if(!Array.isArray(state.memos)) state.memos = [];
   state.memos = state.memos.filter(m => m && typeof m === "object").map(m => ({
+    ...m,
     id:typeof m.id === "string" && m.id ? m.id : uid(),
     date:typeof m.date === "string" && m.date ? m.date : todayISO(),
     title:typeof m.title === "string" && m.title ? m.title : "메모",
@@ -617,6 +652,7 @@ function normalize(raw){
     if(!exists && !inTrash) mergedEquipment.push({...def});
   });
   state.equipment = mergedEquipment.map(e => ({
+    ...e,
     id: typeof e.id === "string" && e.id ? e.id : uid(),
     cat: typeof e.cat === "string" && e.cat ? e.cat : "기타장비",
     name: typeof e.name === "string" && e.name ? e.name : "장비",
@@ -631,9 +667,10 @@ function normalize(raw){
     qty: Number.isFinite(Number(e.qty)) && Number(e.qty) >= 0 ? Number(e.qty) : 1,
     memo: typeof e.memo === "string" ? e.memo : (typeof e.etc === "string" ? e.etc : ""),
     updatedAt: typeof e.updatedAt === "string" ? e.updatedAt : "",
-    photo:"",
-    photos:[],
+    photo:typeof e.photo==="string"?e.photo:"",
+    photos:Array.isArray(e.photos)?e.photos:[],
     accessories: Array.isArray(e.accessories) ? e.accessories.filter(part => part && typeof part === "object").map(part => ({
+      ...part,
       id: typeof part.id === "string" && part.id ? part.id : uid(),
       name: String(part.name || "").trim(),
       qty: Math.max(0, Number(part.qty || 0)),
@@ -642,16 +679,18 @@ function normalize(raw){
       updatedAt: typeof part.updatedAt === "string" ? part.updatedAt : new Date().toISOString()
     })).filter(part => part.name) : [],
     maintenance: Array.isArray(e.maintenance) ? e.maintenance.filter(log => log && typeof log === "object").map(log => ({
+      ...log,
       id: typeof log.id === "string" && log.id ? log.id : uid(),
       type: typeof log.type === "string" && log.type ? log.type : "기타",
       date: typeof log.date === "string" && log.date ? log.date : todayISO(),
       content: typeof log.content === "string" ? log.content : "",
       memo: typeof log.memo === "string" ? log.memo : "",
-      photo:"",
+      photo:typeof log.photo==="string"?log.photo:"",
       parts: Array.isArray(log.parts) ? log.parts.filter(part => part && typeof part === "object").map(part => ({name:String(part.name || ""),qty:Number(part.qty || 0)})).filter(part => part.name) : [],
       createdAt: typeof log.createdAt === "string" ? log.createdAt : new Date().toISOString()
     })) : [],
     moves: Array.isArray(e.moves) ? e.moves.filter(move => move && typeof move === "object").map(move => ({
+      ...move,
       id: typeof move.id === "string" && move.id ? move.id : uid(),
       date: typeof move.date === "string" && move.date ? move.date : todayISO(),
       from: oldName(move.from || ""),
@@ -667,7 +706,10 @@ function normalize(raw){
   if(!("survey" in state)) state.survey = null;
   if(!Array.isArray(state.trash)) state.trash = [];
   if(!Array.isArray(state.logs)) state.logs = [];
-  stripStoredPhotos(state);
+  state.schemaVersion=SCHEMA_VERSION;
+  state.legacyData=state.legacyData&&typeof state.legacyData==="object"?state.legacyData:{};
+  const hnsKeys=Object.keys(raw).filter(key=>/hns/i.test(key)&&key!=="legacyData");
+  if(hnsKeys.length&&!state.legacyData.hns){state.legacyData.hns=Object.fromEntries(hnsKeys.map(key=>[key,JSON.parse(JSON.stringify(raw[key]))]));}
   refreshGlobals(state);
   return state;
 }
@@ -677,44 +719,76 @@ function loadState(){
     try{
       const raw = localStorage.getItem(k);
       if(raw){
-        const restored = normalize(JSON.parse(raw));
+        const parsed=JSON.parse(raw);
+        if(!parsed||typeof parsed!=="object"||Array.isArray(parsed)||!["stock","catalog","records","warehouses","equipment"].some(field=>Object.prototype.hasOwnProperty.call(parsed,field)))throw new Error("저장자료 구조가 맞지 않습니다");
+        if(Number(parsed.schemaVersion||0)>SCHEMA_VERSION)throw new Error("이 자료는 더 최신 앱에서 저장되었습니다. 최신 앱으로 열어주세요");
+        if(storageLoadIssue)continue;
+        pendingMigrationBackup=String(parsed.appBuild||"")!==APP_BUILD?parsed:null;
+        const restored = normalize(parsed);
+        lastDiskStateRaw=localStorage.getItem(KEY);
         lastPersistedStateSnapshot=JSON.stringify(restored);
-        if(k !== KEY){
-          try{ localStorage.setItem(KEY, JSON.stringify(restored)); }
-          catch(e){ console.warn("[Victor] 이전 데이터의 새 키 저장 실패", e); }
-        }
         return restored;
       }
     }catch(e){
       console.warn(`[Victor] 저장 데이터 복구 실패: ${k}`, e);
+      if(k===KEY)storageLoadIssue=e.message||"저장자료를 읽지 못했습니다";
     }
   }
   const initial=defaultState();
+  lastDiskStateRaw=localStorage.getItem(KEY);
   lastPersistedStateSnapshot=JSON.stringify(initial);
   return initial;
 }
 
 function save(){
   try{
-    stripStoredPhotos(state);
+    if(storageLoadIssue)throw new Error(storageLoadIssue);
+    if(localStorage.getItem(KEY)!==lastDiskStateRaw)throw new Error("다른 창에서 자료가 변경되었습니다. 입력내용을 남겨두고 앱을 다시 열어주세요");
+    if(pendingMigrationBackup){
+      if(!createSafetyPoint("업데이트 전 자료",pendingMigrationBackup))throw new Error("업데이트 전 안전지점을 저장할 공간이 없습니다. 전체 백업 후 저장공간을 확인해주세요");
+      pendingMigrationBackup=null;
+    }
     refreshGlobals(state);
+    state.schemaVersion=SCHEMA_VERSION;
+    state.appBuild=APP_BUILD;
+    state.savedAt=new Date().toISOString();
     const serialized=JSON.stringify(state);
     localStorage.setItem(KEY, serialized);
+    lastDiskStateRaw=serialized;
     lastPersistedStateSnapshot=serialized;
     return true;
   }catch(e){
     console.error("[Victor] 데이터 저장 실패", e);
     if(lastPersistedStateSnapshot){
       try{
-        state=JSON.parse(lastPersistedStateSnapshot);
+        state=restoreObjectInPlace(state,JSON.parse(lastPersistedStateSnapshot));
         refreshGlobals(state);
       }catch(rollbackError){
         console.error("[Victor] 마지막 정상 저장본 복구 실패",rollbackError);
       }
     }
-    try{if(typeof showFeedback==="function")showFeedback("error","저장 실패 · 변경사항을 취소했습니다. 저장공간을 확인해주세요");}catch(feedbackError){console.warn("[Victor] 저장 실패 안내 표시 실패",feedbackError);}
-    throw new Error("데이터를 저장하지 못했습니다. 브라우저 저장 공간을 확인해주세요.");
+    try{if(typeof showFeedback==="function")showFeedback("error",e.message?.includes("다른 창")?e.message:"저장 실패 · 변경사항을 취소했습니다. 저장공간을 확인해주세요");}catch(feedbackError){console.warn("[Victor] 저장 실패 안내 표시 실패",feedbackError);}
+    throw new Error(e.message||"데이터를 저장하지 못했습니다. 브라우저 저장 공간을 확인해주세요.");
   }
+}
+
+// Keep active form references alive when a write fails; never replace them with
+// detached objects that could make a subsequent retry silently save nothing.
+function restoreObjectInPlace(target,source){
+  if(Array.isArray(source)){
+    const output=Array.isArray(target)?target:[];
+    const prior=[...output],identity=(value,index)=>value&&typeof value==="object"?(value.id?"id:"+value.id:value.name?"name:"+value.name+"@"+(value.warehouse||value.place||""):"index:"+index):"index:"+index;
+    const available=new Map();
+    prior.forEach((value,index)=>{const key=identity(value,index);if(!available.has(key))available.set(key,[]);available.get(key).push(value);});
+    const rows=source.map((value,index)=>restoreObjectInPlace(available.get(identity(value,index))?.shift(),value));
+    output.splice(0,output.length,...rows);return output;
+  }
+  if(source&&typeof source==="object"){
+    const output=target&&typeof target==="object"&&!Array.isArray(target)?target:{};
+    Object.keys(output).forEach(key=>{if(!Object.prototype.hasOwnProperty.call(source,key))delete output[key];});
+    Object.entries(source).forEach(([key,value])=>{output[key]=restoreObjectInPlace(output[key],value);});return output;
+  }
+  return source;
 }
 
 function uid(){
