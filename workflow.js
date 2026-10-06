@@ -24,6 +24,8 @@ function renderHistoryListHtml(records){
   return baseHistoryListHtml(records.slice(0,historyLimit))+(records.length>historyLimit?`<button class="btn secondary" id="historyMore" type="button" style="width:100%">더보기 · ${Math.min(historyLimit,records.length)} / ${records.length}건</button>`:"");
 }
 function renderHistory(){
+  const previousFold=document.getElementById("historyFilters");
+  if(previousFold)historyFiltersOpen=previousFold.open;
   renderBaseHistory();
   const grid=document.querySelector(".history-filter-grid:not(.compact-filter)");if(!grid)return;
   grid.insertAdjacentHTML("beforeend",`<label>장소<select id="historyPlaceFilter"><option value="all">전체 장소</option>${warehouses.map(place=>`<option value="${esc(place)}" ${place===historyPlaceFilter?"selected":""}>${esc(placeLabel(place))}</option>`).join("")}</select></label><label>사고·훈련<select id="historyTypeFilter"><option value="all">전체 구분</option>${["사고","훈련","작업","기타"].map(type=>`<option ${type===historyTypeFilter?"selected":""}>${type}</option>`).join("")}</select></label>`);

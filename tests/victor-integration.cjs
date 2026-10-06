@@ -189,7 +189,7 @@ const pass=label=>{passed.push(label);console.log('PASS '+label);};
 
     await page.evaluate(()=>{state.records.push(...Array.from({length:130},(_,i)=>({id:'page-'+i,date:todayISO(),title:'페이지 '+i,type:i%2?'훈련':'작업',flow:'출고',status:'done',warehouse:warehouses[1],items:[{...catalog[0],qty:1,warehouse:warehouses[1]}],equipmentItems:[],createdAt:new Date().toISOString()})));save();historyFilter='all';setPage('history',{skipGuard:true});});
     assert.equal(await page.locator('#histList [data-detail]').count(),40);await page.click('#historyMore');assert.equal(await page.locator('#histList [data-detail]').count(),80);
-    await page.selectOption('#historyTypeFilter','훈련');assert.ok(await page.evaluate(()=>historyRenderRecords.every(record=>record.type==='훈련')));
+    await page.click('#historyFilters > summary');await page.selectOption('#historyTypeFilter','훈련');assert.ok(await page.evaluate(()=>historyRenderRecords.every(record=>record.type==='훈련')));
     await page.click('#clearHistoryFilter');assert.equal(await page.locator('#historyTypeFilter').inputValue(),'all');
     pass('이력 페이지 분할·사고/훈련/장소 필터·초기화');
 
@@ -273,7 +273,7 @@ const pass=label=>{passed.push(label);console.log('PASS '+label);};
     assert.equal(await offline.page.evaluate(()=>state.stock[warehouses[0]][catalog[0].name]),0);
     assert.equal(await offline.page.evaluate(()=>state.assetOps['방제지휘차량'].logs.at(-1).diff),5);
     assert.equal(await offline.page.evaluate(()=>state.assetOps['소형방제정'].logs.at(-1).portDiff),1);
-    assert.ok((await offline.page.evaluate(()=>caches.keys())).includes('victor-alpha-0-20-cache-v105'));
+    assert.ok((await offline.page.evaluate(()=>caches.keys())).includes('victor-alpha-0-20-cache-v106'));
     await offline.context.close();pass('PWA 오프라인 조회·입출고·긴급 반영·장비·차량·방제정·재실행 유지');
     assert.deepEqual(errors,[]);console.log('\nALL PASS: '+passed.length+' groups');
   }finally{await browser.close();server.close();}

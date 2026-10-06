@@ -17,6 +17,7 @@ let historyFlowFilter = "all";
 let historyCustomFrom = "";
 let historyCustomTo = "";
 let historySearchQuery = "";
+let historyFiltersOpen = false;
 let homeActivityTab = "history";
 let editingMemoId = null;
 let restoringNavigation = false;
@@ -33,6 +34,8 @@ let modalConfirmResolver = null;
 let menuHistoryOpen = false;
 let cloudShareNotice = null;
 let cloudShareCheckInFlight = false;
+let cloudDashboardRequestId = 0;
+let entryModalRevision = 0;
 let lastCloudShareCheckAt = 0;
 let lockedMenuScrollY = 0;
 let scrollLockReasons = new Set();
@@ -754,11 +757,6 @@ function renderHome(){
   const memoCount = recentMemos(3).length;
   view.innerHTML = `
     ${storageSummaryCard(true)}
-    ${homeWorkSummaryHtml()}
-    <div class="card global-search-card">
-      <input class="search" id="globalSearch" value="${esc(globalSearchQuery)}" placeholder="자재·장비·창고 찾기" aria-label="통합 찾기" autocomplete="off" enterkeyhint="search">
-      <div id="globalSearchResults"></div>
-    </div>
     <div class="home-quick card">
       <div class="section-title">바로 등록</div>
       <div class="home-quick-grid">
@@ -767,6 +765,11 @@ function renderHome(){
         <button class="quick-action" id="homeQuickIn" type="button"><span>↙</span><strong>입고</strong><small>재고 증가</small></button>
       </div>
     </div>
+    <div class="card global-search-card">
+      <input class="search" id="globalSearch" value="${esc(globalSearchQuery)}" placeholder="자재·장비·창고 찾기" aria-label="통합 찾기" autocomplete="off" enterkeyhint="search">
+      <div id="globalSearchResults"></div>
+    </div>
+    ${homeWorkSummaryHtml()}
     <div class="card">
       <div class="section-title">자주 쓰는 기능</div>
       <div class="home-tool-grid">
@@ -1415,7 +1418,7 @@ function renderRegister(){
   view.innerHTML = `
     ${registerPendingContinueHtml()}
     ${pendingRegisterDraft&&!registerFormDraft ? `<div class="callout compact-draft">작성 중 기록 있음 <div class="btn-row" style="margin-top:8px"><button class="btn secondary compact" id="loadRegisterDraft" type="button">불러오기</button><button class="btn gray compact" id="discardRegisterDraft" type="button">버리기</button></div></div>` : ""}
-    <div class="choice-grid">
+    <div class="choice-grid register-modes">
       <button class="choice-card ${registerMode === "normal" ? "active" : ""}" id="modeNormal" type="button">
         <div><div class="choice-title">일반등록</div><div class="choice-sub">출고·입고를 바로 재고에 반영합니다.</div></div>
       </button>
@@ -2062,11 +2065,14 @@ function renderBaseHistory(){
     <div class="history-date-buttons">
       ${["all","today","yesterday","month","custom"].map(key=>`<button class="${historyDateFilter===key?"active":""}" data-history-date="${key}" type="button">${key==="all"?"전체":key==="today"?"오늘":key==="yesterday"?"어제":key==="month"?"이번 달":"직접 선택"}</button>`).join("")}
     </div>
+    <input class="search" id="histSearch" value="${esc(historySearchQuery)}" placeholder="이력 검색" autocomplete="off" enterkeyhint="search">
+    <details class="history-filter-fold" id="historyFilters" ${historyFiltersOpen||historyDateFilter==="custom"?"open":""}>
+    <summary>상세 필터${[historyFlowFilter,historyPlaceFilter,historyTypeFilter].filter(value=>value!=="all").length?` · ${[historyFlowFilter,historyPlaceFilter,historyTypeFilter].filter(value=>value!=="all").length}개 적용`:""}</summary>
     ${historyDateFilter==="custom"?`<div class="history-filter-grid compact-filter"><label>시작일<input id="historyCustomFrom" type="date" value="${esc(historyCustomFrom)}"></label><label>종료일<input id="historyCustomTo" type="date" value="${esc(historyCustomTo)}"></label></div>`:""}
     <div class="history-filter-grid">
       <label>종류<select id="historyFlowFilter"><option value="all" ${historyFlowFilter === "all" ? "selected" : ""}>전체 종류</option><option value="출고" ${historyFlowFilter === "출고" ? "selected" : ""}>출고</option><option value="입고" ${historyFlowFilter === "입고" ? "selected" : ""}>입고</option><option value="이송" ${historyFlowFilter === "이송" ? "selected" : ""}>창고 간 이동</option><option value="재고수정" ${historyFlowFilter === "재고수정" ? "selected" : ""}>재고수정</option><option value="긴급" ${historyFlowFilter === "긴급" ? "selected" : ""}>긴급기록</option></select></label>
     </div>
-    <input class="search" id="histSearch" value="${esc(historySearchQuery)}" placeholder="이력 검색" autocomplete="off" enterkeyhint="search">
+    </details>
     <div class="filter-result" id="historyResultCount">검색 결과 ${filtered.length}건 ${historyDateFilter !== "all" || historyFlowFilter !== "all" ? `<button class="link-btn" id="clearHistoryFilter" type="button">필터 초기화</button>` : ""}</div>
     <div id="histList">${renderHistoryListHtml(filtered)}</div>
   `;
@@ -2075,6 +2081,7 @@ function renderBaseHistory(){
   document.getElementById("historyCustomFrom")?.addEventListener("change",event=>{historyCustomFrom=event.target.value;renderHistory();});
   document.getElementById("historyCustomTo")?.addEventListener("change",event=>{historyCustomTo=event.target.value;renderHistory();});
   document.getElementById("historyFlowFilter")?.addEventListener("change", event => { historyFlowFilter=event.target.value; renderHistory(); });
+  document.getElementById("historyFilters")?.addEventListener("toggle",event=>{if(event.target.isConnected)historyFiltersOpen=event.target.open;});
   document.getElementById("clearHistoryFilter")?.addEventListener("click", () => { historyDateFilter="all"; historyFlowFilter="all"; historyCustomFrom=""; historyCustomTo=""; renderHistory(); });
   document.getElementById("histSearch")?.addEventListener("input", () => {
     historySearchQuery = document.getElementById("histSearch").value;
@@ -3211,6 +3218,7 @@ function addWarehouse(){
 }
 
 function openEntryModal(html){
+  entryModalRevision++;
   document.getElementById("entryDialog").innerHTML = html;
   document.getElementById("entryDialog").scrollTop = 0;
   lockPageScroll("entry");
@@ -3222,6 +3230,7 @@ function openEntryModal(html){
 }
 
 function closeEntryModal(){
+  entryModalRevision++;
   if(document.activeElement?.closest?.("#entryModal"))document.activeElement.blur();
   if(modalConfirmResolver){const resolve=modalConfirmResolver;resolve(false);if(!modalConfirmResolver)return;modalConfirmResolver=null;}
   document.getElementById("entryModal").classList.remove("show");
@@ -3825,8 +3834,9 @@ function cloudWriteReady(config=cloudShareConfig()){
 function cloudShareReady(config=cloudShareConfig()){return Boolean(config.url&&config.key&&config.siteId);}
 
 function openCloudShareSettings(){
-  const config=cloudShareConfig();
-  openEntryModal(`${entryHeader("공유 연결 설정","Supabase 읽기 전용 공유판")}
+  const config=cloudReadConfig();
+  openEntryModal(`${entryHeader("공유 연결 설정","연결값이 바뀌었을 때만 수정하세요")}
+    <button class="btn secondary cloud-back" id="cloudSettingsBack" type="button">‹ 자원 공유</button>
     <div class="form">
       <div class="callout">기본 공유 연결값은 앱에 들어 있어 바로 올리기·가져오기를 사용할 수 있습니다. 값이 바뀌었을 때만 수정하세요. Secret key는 절대 넣지 마세요.</div>
       <label>Supabase URL<input id="cloudShareUrl" inputmode="url" placeholder="https://xxxx.supabase.co" value="${esc(config.url)}"></label>
@@ -3837,6 +3847,7 @@ function openCloudShareSettings(){
     </div>`);
   document.getElementById("saveCloudShareSettings")?.addEventListener("click",()=>saveCloudShareSettings(true));
   document.getElementById("testCloudShare")?.addEventListener("click",async()=>{if(saveCloudShareSettings(false))await testCloudShareConnection();});
+  bindCloudSettingsBack();
 }
 
 function saveCloudShareSettings(close=false){
@@ -3857,6 +3868,7 @@ function saveCloudShareSettings(close=false){
 function openUploadPinSettings(){
   const hasPin=Boolean(currentCloudUploadPinHash());
   openEntryModal(`${entryHeader("올리기 PIN 설정",hasPin?"기존 PIN 확인 후 변경합니다":"최초 1회 PIN을 등록합니다")}
+    <button class="btn secondary cloud-back" id="cloudSettingsBack" type="button">‹ 자원 공유</button>
     <div class="form">
       <div class="callout">PIN은 내 자료 올리기 실수 방지용입니다. 공유자료 가져오기는 PIN 없이 가능하고, PIN 설정은 다음 내 자료 올리기 때 다른 기기에도 공유됩니다.</div>
       ${hasPin?`<label>현재 PIN<input id="currentUploadPin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" placeholder="현재 PIN 4자리"></label>`:""}
@@ -3868,6 +3880,7 @@ function openUploadPinSettings(){
   bindPinNumberInput("currentUploadPin");
   bindPinNumberInput("newUploadPin");
   bindPinNumberInput("newUploadPin2");
+  bindCloudSettingsBack();
   document.getElementById("saveUploadPin")?.addEventListener("click",async()=>{
     try{
       if(hasPin && !await verifyCloudUploadPin(document.getElementById("currentUploadPin")?.value||"")){showFeedback("error","현재 PIN이 맞지 않습니다");return;}
@@ -3892,6 +3905,13 @@ function openUploadPinSettings(){
   });
 }
 
+function bindCloudSettingsBack(){
+  document.getElementById("cloudSettingsBack")?.addEventListener("click",async()=>{
+    if(entryFormBaseline&&entryFormFingerprint()!==entryFormBaseline && !await askConfirm("작성 중 내용 있음","저장하지 않은 입력을 닫고 공유 화면으로 돌아갈까요?","돌아가기"))return;
+    openCloudShareActions();
+  });
+}
+
 function cloudDashboardHtml(latest=null,{loading=false,error=""}={}){
   const meta=readCloudShareMeta();
   const config=cloudReadConfig();
@@ -3900,36 +3920,33 @@ function cloudDashboardHtml(latest=null,{loading=false,error=""}={}){
   const cloudSummary=latest?snapshotSummary(latest):null;
   const safety=readCloudApplySafetyPoint();
   const status=loading?"클라우드 확인 중":error?"확인 실패":cloudStatusLabel(latest);
-  const statusTitle=loading?"확인 중":error?"확인 실패":status==="클라우드 자료가 최신"?"새 자료 있음":status==="내 자료가 최신"?"올리기 가능":status==="이미 최신"?"최신 상태":"확인 필요";
-  const statusHint=status==="클라우드 자료가 최신"?"가져오면 반영됩니다":status==="내 자료가 최신"?"올리면 공유됩니다":status==="이미 최신"?"할 작업 없음":statusTitle;
-  const cloudLine=cloudSummary?`공유자료 ${cloudSummary.materials}종 · 장비 ${cloudSummary.equipment}개`:(loading?"공유자료 확인 중":"공유자료 없음");
+  const statusTitle=loading?"확인 중":error?"확인 실패":!latest?"공유자료 없음":status==="클라우드 자료가 최신"?"새 자료 있음":status==="내 자료가 최신"?"올리기 가능":status==="이미 최신"?"최신 상태":"확인 필요";
+  const statusHint=loading?"최신 상태를 확인하고 있습니다":error?"최신 확인을 다시 눌러주세요":!latest?"내 자료를 올려 공유하세요":status==="클라우드 자료가 최신"?"가져오면 반영됩니다":status==="내 자료가 최신"?"올리면 공유됩니다":status==="이미 최신"?"할 작업 없음":"최신 확인을 눌러주세요";
+  const cloudLine=cloudSummary?`${loading||error?"이전 확인자료":"공유자료"} ${cloudSummary.materials}종 · 장비 ${cloudSummary.equipment}개`:(loading?"공유자료 확인 중":error?"공유자료 미확인":"공유자료 없음");
   const localLine=`내 자료 ${localSummary.materials}종 · 장비 ${localSummary.equipment}개`;
-  const lastAction=meta.lastAppliedAt&&(!meta.lastUploadedAt||dateMs(meta.lastAppliedAt)>=dateMs(meta.lastUploadedAt))?`방금 가져옴 ${fmtShareTime(meta.lastAppliedAt)}`:meta.lastUploadedAt?`마지막 올림 ${fmtShareTime(meta.lastUploadedAt)}`:"공유 기록 없음";
+  const lastAction=meta.lastAppliedAt&&(!meta.lastUploadedAt||dateMs(meta.lastAppliedAt)>=dateMs(meta.lastUploadedAt))?`마지막 가져옴 ${fmtShareTime(meta.lastAppliedAt)}`:meta.lastUploadedAt?`마지막 올림 ${fmtShareTime(meta.lastUploadedAt)}`:"공유 기록 없음";
   return `${entryHeader("자원 공유","공유자료 상태를 확인합니다")}
     <div class="form">
-      <div class="share-status-card ${latest?"ready":""}">
+      <div class="share-status-card ${latest&&!loading&&!error?"ready":""}" role="status" aria-live="polite">
         <div class="share-status-label">${esc(config.title)}</div>
         <div class="share-status-title">${esc(statusTitle)}</div>
         <div class="share-status-brief">${esc(statusHint)}</div>
         <div class="share-mini-summary"><span>${esc(localLine)}</span><span>${esc(cloudLine)}</span></div>
         <div class="share-time-note">${esc(lastAction)}</div>
       </div>
-      ${error?`<div class="callout">클라우드 확인 실패: ${esc(error)}</div>`:""}
+      ${error?`<div class="callout">${esc(error)}</div>`:""}
       <div class="cloud-main-actions">
-        <button class="btn primary" id="cloudApplyNow" type="button">가져오기</button>
-        <button class="btn secondary" id="cloudUploadNow" type="button">올리기</button>
+        <button class="btn primary" id="cloudApplyNow" type="button" ${loading||error||!latest?"disabled":""}>가져오기</button>
+        <button class="btn secondary" id="cloudUploadNow" type="button" ${loading||error?"disabled":""}>올리기</button>
       </div>
-      ${safety?`<button class="btn danger" id="cloudUndoNow" type="button">방금 적용 되돌리기</button>`:""}
       <div class="cloud-sub-actions">
-        <button class="btn gray" id="cloudRefreshNow" type="button">최신 확인</button>
-        <button class="btn gray" id="cloudPinNow" type="button">PIN</button>
-        <button class="btn gray" id="cloudSettingsNow" type="button">연결</button>
+        <button class="btn gray" id="cloudRefreshNow" type="button" ${loading?"disabled":""}>${loading?"확인 중…":"최신 확인"}</button>
       </div>
       <details class="cloud-detail-fold">
-        <summary>상세 정보</summary>
+        <summary>상세·관리</summary>
         <div class="cloud-action-summary">
           <span><strong>내 자료</strong><br>${esc(fmtShareTime(latestLocalResourceAt() || localSnapshot.createdAt))}</span>
-          <span><strong>공유 자료</strong><br>${esc(cloudSummary?fmtShareTime(cloudSummary.date):loading?"확인 중":"자료 없음")}</span>
+          <span><strong>공유 자료</strong><br>${esc(cloudSummary?fmtShareTime(cloudSummary.date):loading?"확인 중":error?"미확인":"자료 없음")}</span>
           <span><strong>올림</strong><br>${esc(fmtShareTime(meta.lastUploadedAt))}</span>
           <span><strong>가져옴</strong><br>${esc(fmtShareTime(meta.lastAppliedAt))}</span>
           <span><strong>올린 기기</strong><br>${esc(cloudSummary?.device || meta.lastUploadedDeviceName || "기록 없음")}</span>
@@ -3937,6 +3954,8 @@ function cloudDashboardHtml(latest=null,{loading=false,error=""}={}){
           <span><strong>PIN</strong><br>${currentCloudUploadPinHash()?"설정됨":"미설정"}</span>
           <span><strong>되돌리기</strong><br>${safety?`${esc(fmtShareTime(safety.createdAt))} 가능`:"없음"}</span>
         </div>
+        <div class="cloud-settings-actions"><button class="btn gray" id="cloudPinNow" type="button">PIN 설정</button><button class="btn gray" id="cloudSettingsNow" type="button">연결 설정</button></div>
+        ${safety?`<button class="btn gray cloud-restore" id="cloudUndoNow" type="button">가져오기 되돌리기</button>`:""}
       </details>
     </div>`;
 }
@@ -3950,46 +3969,45 @@ function bindCloudDashboard(){
   document.getElementById("cloudSettingsNow")?.addEventListener("click",()=>openCloudShareSettings());
 }
 
-function openCloudShareActions(force=false){
-  const known=cloudShareNotice?.snapshot || null;
-  openEntryModal(cloudDashboardHtml(known,{loading:!known}));
+function renderCloudDashboard(latest,options={},preserve=false){
+  const dialog=document.getElementById("entryDialog");
+  const scroll=preserve?dialog.scrollTop:0;
+  const expanded=preserve&&Boolean(dialog.querySelector(".cloud-detail-fold")?.open);
+  openEntryModal(cloudDashboardHtml(latest,options));
+  const fold=dialog.querySelector(".cloud-detail-fold");if(fold)fold.open=expanded;
+  dialog.scrollTop=scroll;
   bindCloudDashboard();
-  fetchLatestCloudShareSnapshot().then(snapshot=>{
-    if(snapshot){
-      cloudShareNotice={kind:isCloudSnapshotNewer(snapshot)?"new":"same",summary:snapshotSummary(snapshot),snapshot};
-    }
-    openEntryModal(cloudDashboardHtml(snapshot));
-    bindCloudDashboard();
-  }).catch(error=>{
-    console.warn("[Victor] 공유 현황 확인 실패",error);
-    openEntryModal(cloudDashboardHtml(known,{error:cloudErrorMessage(error)}));
-    bindCloudDashboard();
-  });
+}
+
+function openCloudShareActions(force=false){
+  return refreshCloudDashboard(false,false);
 }
 
 async function refreshCloudShareWithPopup(){
+  return refreshCloudDashboard(true,true);
+}
+
+async function refreshCloudDashboard(notify=false,preserve=false){
+  const requestId=++cloudDashboardRequestId;
+  const known=cloudShareNotice?.snapshot||null;
+  renderCloudDashboard(known,{loading:true},preserve);
+  const revision=entryModalRevision;
+  const isCurrent=()=>requestId===cloudDashboardRequestId&&revision===entryModalRevision&&document.getElementById("entryModal").classList.contains("show")&&Boolean(document.getElementById("cloudApplyNow"));
   try{
-    openEntryModal(cloudDashboardHtml(cloudShareNotice?.snapshot||null,{loading:true}));
-    bindCloudDashboard();
     const snapshot=await fetchLatestCloudShareSnapshot();
-    if(!snapshot){
-      cloudShareNotice=null;
-      openEntryModal(cloudDashboardHtml(null));
-      bindCloudDashboard();
-      showFeedback("info","아직 클라우드에 공유자료가 없습니다");
-      return;
+    if(requestId!==cloudDashboardRequestId)return;
+    cloudShareNotice=snapshot?{kind:isCloudSnapshotNewer(snapshot)?"new":"same",summary:snapshotSummary(snapshot),snapshot}:null;
+    if(!isCurrent())return;
+    renderCloudDashboard(snapshot,{},true);
+    if(notify){
+      const status=cloudStatusLabel(snapshot);
+      showFeedback(!snapshot?"info":status==="이미 최신"?"success":"info",!snapshot?"공유자료 없음":`${status} · ${fmtDateTime(snapshotSummary(snapshot).date)}`);
     }
-    const kind=isCloudSnapshotNewer(snapshot)?"new":"same";
-    cloudShareNotice={kind,summary:snapshotSummary(snapshot),snapshot};
-    openEntryModal(cloudDashboardHtml(snapshot));
-    bindCloudDashboard();
-    const summary=snapshotSummary(snapshot);
-    showFeedback(kind==="new"?"info":"success",kind==="new"?`새 공유자료 · ${fmtDateTime(summary.date)}`:`이미 최신 · ${fmtDateTime(summary.date)}`);
   }catch(error){
-    console.warn("[Victor] 최신자료 확인 실패",error);
-    openEntryModal(cloudDashboardHtml(cloudShareNotice?.snapshot||null,{error:cloudErrorMessage(error)}));
-    bindCloudDashboard();
-    showFeedback("error",`${cloudErrorMessage(error)} · 기존 자료는 유지됩니다`);
+    if(!isCurrent())return;
+    console.warn("[Victor] 공유 현황 확인 실패",error);
+    renderCloudDashboard(known,{error:cloudErrorMessage(error)},true);
+    if(notify)showFeedback("error","확인 실패 · 기존 자료는 유지됩니다");
   }
 }
 
@@ -4621,6 +4639,4 @@ function init(){
 }
 
 init();
-
-
 
