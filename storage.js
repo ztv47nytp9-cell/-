@@ -1,5 +1,5 @@
-const VERSION = "Alpha 0.20.1";
-const APP_BUILD = "106";
+const VERSION = "Alpha 0.20.2";
+const APP_BUILD = "107";
 const SCHEMA_VERSION = 1;
 const KEY = "victor_state_alpha_0_19_0e";
 let lastPersistedStateSnapshot = null;
@@ -461,7 +461,8 @@ function normalize(raw){
   const d = defaultState();
   if(!raw || typeof raw !== "object") return d;
 
-  const whSet = new Set(defaultWarehouses);
+  // Defaults seed a new/legacy state, not an already managed inventory.
+  const whSet = new Set(Array.isArray(raw.warehouses) ? [] : defaultWarehouses);
   const rememberWarehouse = value => {
     const name = oldName(value || "").trim();
     if(name) whSet.add(name);
@@ -481,7 +482,7 @@ function normalize(raw){
   const warehouseList = [...whSet];
 
   const deletedMaterialNames=new Set((Array.isArray(raw.trash)?raw.trash:[]).filter(entry=>entry?.kind==="material").map(entry=>entry?.data?.item?.name).filter(Boolean));
-  const catMap = new Map(defaultCatalog.filter(item=>!deletedMaterialNames.has(item.name)).map(i => [i.name, {...i}]));
+  const catMap = new Map((Array.isArray(raw.catalog)?[]:defaultCatalog).filter(item=>!deletedMaterialNames.has(item.name)).map(i => [i.name, {...i}]));
   if(Array.isArray(raw.catalog)){
     raw.catalog.forEach(i => {
       if(!i || typeof i !== "object" || typeof i.name !== "string" || !i.name.trim()) return;
@@ -582,9 +583,9 @@ function normalize(raw){
       spec: typeof it.spec === "string" ? it.spec : ""
     })) : [],
     items: Array.isArray(r.items) ? r.items.filter(it => it && typeof it === "object").map(it => {
-      let nm = typeof it.name === "string" && it.name ? it.name : (typeof it.material === "string" && it.material ? it.material : catalogList[0].name);
+      let nm = typeof it.name === "string" && it.name ? it.name : (typeof it.material === "string" && it.material ? it.material : catalogList[0]?.name||"목록에 없는 자재");
       if(nm === "고형식 오일펜스") nm = "팽창형 오일펜스";
-      const f = catalogList.find(x => x.name === nm) || catalogList[0];
+      const f = catalogList.find(x => x.name === nm) || {cat:"기타",unit:"개",kind:"consume"};
       return {
         ...it,
         cat: typeof it.cat === "string" && it.cat ? it.cat : f.cat,
@@ -614,27 +615,20 @@ function normalize(raw){
     updatedAt:typeof m.updatedAt === "string" ? m.updatedAt : null
   }));
 
-  if(!state.assetOps || typeof state.assetOps !== "object" || Array.isArray(state.assetOps)) state.assetOps = d.assetOps;
-  if(!state.assetOps["방제지휘차량"]) state.assetOps["방제지휘차량"] = {distanceBase:0, logs:[]};
-  if(!Array.isArray(state.assetOps["방제지휘차량"].logs)) state.assetOps["방제지휘차량"].logs = [];
-  if(typeof state.assetOps["방제지휘차량"].distanceBase !== "number") state.assetOps["방제지휘차량"].distanceBase = 0;
-  if(!state.assetOps["소형방제정"]) state.assetOps["소형방제정"] = {hoursBase:0, fuelBase:0, logs:[], fuelLogs:[]};
-  if(!Array.isArray(state.assetOps["소형방제정"].logs)) state.assetOps["소형방제정"].logs = [];
-  if(!Array.isArray(state.assetOps["소형방제정"].fuelLogs)) state.assetOps["소형방제정"].fuelLogs = [];
-  if(typeof state.assetOps["소형방제정"].hoursBase !== "number") state.assetOps["소형방제정"].hoursBase = 0;
-  if(typeof state.assetOps["소형방제정"].portHoursBase !== "number") state.assetOps["소형방제정"].portHoursBase = Number(state.assetOps["소형방제정"].hoursBase || 0);
-  if(typeof state.assetOps["소형방제정"].starboardHoursBase !== "number") state.assetOps["소형방제정"].starboardHoursBase = Number(state.assetOps["소형방제정"].hoursBase || 0);
-  if(typeof state.assetOps["소형방제정"].fuelBase !== "number") state.assetOps["소형방제정"].fuelBase = 0;
-  if(!Number.isFinite(Number(state.assetOps["소형방제정"].mileageBase))) state.assetOps["소형방제정"].mileageBase = 0;
-  if(state.assetOps["방제지휘차량"].counterMode !== "absolute"){
-    state.assetOps["방제지휘차량"].distanceBase += state.assetOps["방제지휘차량"].logs.reduce((sum,log)=>sum+Number(log.distance || 0),0);
-    state.assetOps["방제지휘차량"].counterMode = "absolute";
-  }
-  if(state.assetOps["소형방제정"].counterMode !== "absolute"){
-    state.assetOps["소형방제정"].hoursBase += state.assetOps["소형방제정"].logs.reduce((sum,log)=>sum+Number(log.hours || 0),0);
-    state.assetOps["소형방제정"].counterMode = "absolute";
-  }
-  if(state.assetOps["소형방제정"].engineSplitMode!=="dual"){state.assetOps["소형방제정"].portHoursBase=Number(state.assetOps["소형방제정"].hoursBase||0);state.assetOps["소형방제정"].starboardHoursBase=Number(state.assetOps["소형방제정"].hoursBase||0);state.assetOps["소형방제정"].engineSplitMode="dual";}
+  if(!raw.assetOps || typeof raw.assetOps !== "object" || Array.isArray(raw.assetOps)) state.assetOps = {};
+  warehouseList.forEach(name=>{
+    const kind=state.warehouseKinds[name];if(!["차량","함정"].includes(kind))return;
+    const op=state.assetOps[name]||(state.assetOps[name]={});
+    if(!Array.isArray(op.logs))op.logs=[];
+    if(kind==="차량"){
+      op.distanceBase=Number(op.distanceBase)||0;
+      if(op.counterMode!=="absolute")op.distanceBase+=op.logs.reduce((sum,log)=>sum+Number(log.distance||0),0);
+    }else{
+      op.hoursBase=Number(op.hoursBase)||0;
+      if(op.counterMode!=="absolute")op.hoursBase+=op.logs.reduce((sum,log)=>sum+Number(log.hours||0),0);
+    }
+    op.counterMode="absolute";
+  });
   warehouseList.forEach(name=>{const kind=state.warehouseKinds[name];if(kind==="차량"){if(!state.assetOps[name])state.assetOps[name]={distanceBase:0,logs:[],maintenance:[],counterMode:"absolute"};if(!Array.isArray(state.assetOps[name].logs))state.assetOps[name].logs=[];if(!Array.isArray(state.assetOps[name].maintenance))state.assetOps[name].maintenance=[];if(!Number.isFinite(Number(state.assetOps[name].distanceBase)))state.assetOps[name].distanceBase=0;}else if(kind==="함정"){if(!state.assetOps[name])state.assetOps[name]={mileageBase:0,hoursBase:0,portHoursBase:0,starboardHoursBase:0,engineSplitMode:"dual",fuelBase:0,logs:[],fuelLogs:[],maintenance:[],counterMode:"absolute"};if(!Array.isArray(state.assetOps[name].logs))state.assetOps[name].logs=[];if(!Array.isArray(state.assetOps[name].fuelLogs))state.assetOps[name].fuelLogs=[];if(!Array.isArray(state.assetOps[name].maintenance))state.assetOps[name].maintenance=[];if(!Number.isFinite(Number(state.assetOps[name].fuelBase)))state.assetOps[name].fuelBase=0;if(!Number.isFinite(Number(state.assetOps[name].mileageBase)))state.assetOps[name].mileageBase=0;if(!Number.isFinite(Number(state.assetOps[name].hoursBase)))state.assetOps[name].hoursBase=0;if(state.assetOps[name].engineSplitMode!=="dual"){state.assetOps[name].portHoursBase=Number(state.assetOps[name].hoursBase||0);state.assetOps[name].starboardHoursBase=Number(state.assetOps[name].hoursBase||0);state.assetOps[name].engineSplitMode="dual";}if(!Number.isFinite(Number(state.assetOps[name].portHoursBase)))state.assetOps[name].portHoursBase=Number(state.assetOps[name].hoursBase||0);if(!Number.isFinite(Number(state.assetOps[name].starboardHoursBase)))state.assetOps[name].starboardHoursBase=Number(state.assetOps[name].hoursBase||0);}});
 
   state.equipmentCategories = [...new Set([
@@ -740,7 +734,7 @@ function loadState(){
   return initial;
 }
 
-function save(){
+function save(options={}){
   try{
     if(storageLoadIssue)throw new Error(storageLoadIssue);
     if(localStorage.getItem(KEY)!==lastDiskStateRaw)throw new Error("다른 창에서 자료가 변경되었습니다. 입력내용을 남겨두고 앱을 다시 열어주세요");
@@ -749,6 +743,8 @@ function save(){
       pendingMigrationBackup=null;
     }
     refreshGlobals(state);
+    const resourceSignature=source=>JSON.stringify([source.warehouses,source.catalog,source.stock,source.equipment,source.warehouseInfos,source.warehouseKinds,source.assetOps,source.logs]);
+    if(lastPersistedStateSnapshot&&resourceSignature(state)!==resourceSignature(JSON.parse(lastPersistedStateSnapshot)))state.resourceUpdatedAt=options.resourceAt||new Date().toISOString();
     state.schemaVersion=SCHEMA_VERSION;
     state.appBuild=APP_BUILD;
     state.savedAt=new Date().toISOString();

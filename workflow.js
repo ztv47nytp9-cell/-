@@ -1,5 +1,52 @@
 /* Shared workflow helpers. Existing LocalStorage keys and records remain compatible. */
 const workflowLocks=new Set();
+const pendingRowDrafts=new Map();
+function pendingDisplayRecord(record){
+  const draft=pendingRowDrafts.get(record.id);
+  if(draft&&draft.base===JSON.stringify([record.items,record.equipmentItems]))return {...record,items:draft.items,equipmentItems:draft.equipmentItems};
+  pendingRowDrafts.delete(record.id);return record;
+}
+function pendingBalanceText(entry){
+  if(entry.locationCorrection){const change=entry.locationCorrection;return `장소 정정 시 ${materialQtyText(change.before,entry.unit,entry)} → ${materialQtyText(change.after,entry.unit,entry)}`;}
+  return entry.before!==undefined?`${materialQtyText(entry.before,entry.unit,entry)} → ${materialQtyText(entry.after,entry.unit,entry)}`:"";
+}
+// Compare business data, ignoring presentation preferences and save metadata.
+function businessFingerprint(source){
+  const data=normalize(JSON.parse(JSON.stringify(source)));
+  ["ui","savedAt","appBuild","schemaVersion"].forEach(key=>delete data[key]);
+  const ordered=value=>Array.isArray(value)?value.map(ordered):value&&typeof value==="object"?Object.fromEntries(Object.keys(value).sort().map(key=>[key,ordered(value[key])])):value;
+  return JSON.stringify(ordered(data));
+}
+function finishGuardedSafetyPoint(key){
+  try{const point=JSON.parse(localStorage.getItem(key)||"null");if(!point?.state)return;point.expected=businessFingerprint(state);localStorage.setItem(key,JSON.stringify(point));}
+  catch(_){showFeedback("info","안전 확인을 저장하지 못했습니다 · 되돌리기는 보류됩니다");}
+}
+function canRestoreGuardedPoint(point){
+  if(!point?.expected){showFeedback("info","이전 버전의 되돌리기 자료입니다 · 안전 복구에서 확인해주세요");return false;}
+  if(point.expected!==businessFingerprint(state)){
+    showFeedback("info","이후 저장한 자료가 있어 되돌리기를 막았습니다 · 현재 자료 유지");return false;
+  }
+  return true;
+}
+const memoDraftMemory=new Map();
+function memoDraftKey(id){return "victor_memo_draft_v1:"+(id||"new");}
+function memoDraftFor(id){try{return JSON.parse(sessionStorage.getItem(memoDraftKey(id))||"null")||memoDraftMemory.get(id||"new")||null;}catch(_){return memoDraftMemory.get(id||"new")||null;}}
+function captureMemoDraft(){
+  if(page!=="memo"||!document.getElementById("memoBody"))return;
+  const draft={date:document.getElementById("memoDate").value,title:document.getElementById("memoTitle").value,body:document.getElementById("memoBody").value};
+  memoDraftMemory.set(editingMemoId||"new",draft);
+  try{sessionStorage.setItem(memoDraftKey(editingMemoId),JSON.stringify(draft));}catch(_){showFeedback("info","메모 초안을 기기에 보관하지 못했습니다 · 나가기 전에 저장해주세요");}
+}
+function clearMemoDraft(id){memoDraftMemory.delete(id||"new");try{sessionStorage.removeItem(memoDraftKey(id));}catch(_){};}
+function splitResourceKey(key){const index=key.indexOf(":");return [key.slice(0,index),key.slice(index+1)];}
+function equipmentUseConflict(entries,excludeId=""){
+  const outstanding=new Map();
+  (state.records||[]).filter(record=>record.id!==excludeId&&record.status!=="pending"&&["출고","긴급","사고"].includes(record.flow)).forEach(record=>(record.equipmentItems||[]).forEach(item=>outstanding.set(item.id,(outstanding.get(item.id)||0)+Math.max(0,Number(item.qty||0)-Number(item.returnedQty||0)))));
+  const totals=new Map();entries.forEach(item=>totals.set(item.id,(totals.get(item.id)||0)+Number(item.qty||0)));
+  for(const [id,qty] of totals){const gear=state.equipment.find(item=>item.id===id),using=outstanding.get(id)||0;if(gear&&qty>Math.max(0,Number(gear.qty||0)-using))return `${gear.name} · 미반납 ${using}대, 추가 사용 가능 ${Math.max(0,Number(gear.qty||0)-using)}대 · 기존 기록의 반납을 먼저 처리해주세요`;}
+  return "";
+}
+function clearAllHistoryFilters(){historyPlaceFilter="all";historyTypeFilter="all";historySearchQuery="";historyDateFilter="all";historyFlowFilter="all";historyCustomFrom="";historyCustomTo="";renderHistory();}
 function openMaterialInfoForm(name){
   const item=itemOf(name);if(!item)return;
   openEntryModal(`${entryHeader("자재 정보·분류 수정",name)}<div class="form"><label>품목명<input id="materialEditName" value="${esc(name)}"></label><label>분류<select id="materialEditCategory">${cats.map(cat=>`<option ${cat===item.cat?"selected":""}>${esc(cat)}</option>`).join("")}</select></label><label>규격<input id="materialEditSpec" value="${esc(item.spec||"")}"></label><label>최소수량 (전체 재고 기준 · 선택)<input id="materialMinimum" type="number" inputmode="decimal" min="0" value="${Number(item.minStock||0)}"></label><label>메모<textarea id="materialEditMemo">${esc(item.memo||"")}</textarea></label><button class="btn primary" id="saveMaterialInfo" type="button">저장</button></div>`);
@@ -33,7 +80,7 @@ function renderHistory(){
   document.getElementById("historyTypeFilter").addEventListener("change",event=>{historyTypeFilter=event.target.value;renderHistory();});
   const count=document.getElementById("historyResultCount");
   if((historyPlaceFilter!=="all"||historyTypeFilter!=="all"||historySearchQuery)&&!document.getElementById("clearHistoryFilter"))count.insertAdjacentHTML("beforeend",'<button class="link-btn" id="clearHistoryFilter" type="button">필터 초기화</button>');
-  document.getElementById("clearHistoryFilter")?.addEventListener("click",()=>{historyPlaceFilter="all";historyTypeFilter="all";historySearchQuery="";historyDateFilter="all";historyFlowFilter="all";renderHistory();},true);
+  const reset=document.getElementById("clearHistoryFilter");if(reset)reset.onclick=clearAllHistoryFilters;
   if(historyDateFilter==="custom"&&historyCustomFrom&&historyCustomTo&&historyCustomFrom>historyCustomTo)count.textContent="시작일과 종료일을 확인해주세요";
 }
 let pendingFormBaseline="",pendingFormRecordId="";
@@ -122,6 +169,7 @@ function pendingFormDirty(){
 }
 function rememberPendingForm(record){pendingFormRecordId=record.id;pendingFormBaseline=JSON.stringify(collectPendingForm(record));}
 async function protectNavigation(proceed){
+  captureMemoDraft();
   if(workflowLocks.has("navigation"))return;
   if(pendingFormDirty()){
     await runWorkflow("navigation",async()=>{
@@ -193,7 +241,8 @@ function openStockAttention(){
 }
 function copyRecordToRegister(record){
   const flow=["출고","입고","이송"].includes(record.flow)?record.flow:"출고";
-  const draft={mode:record.status==="pending"?"quick":"normal",flow,type:record.type||"기타",date:todayISO(),time:localTimeNow(),title:`${record.title} (복사)`,warehouse:record.warehouse,targetWarehouse:record.targetWarehouse||"",memo:record.memo||"",locationType:record.location?.type||"",locationDetail:record.location?.detail||"",items:(record.items||[]).map(item=>({...item})),equipmentItems:(record.equipmentItems||[]).map(item=>({...item}))};
+  const freshItem=item=>{const copy={...item};["locationCorrection","returned","damaged","before","after","diff","targetBefore","targetAfter","targetDiff","returnedQty","returnHistory","sourceSnapshot","transferMode","toEquipmentId","beforeQty","afterQty","fromPlace","toPlace"].forEach(key=>delete copy[key]);return copy;};
+  const draft={mode:record.status==="pending"?"quick":"normal",flow,type:record.type||"기타",date:todayISO(),time:localTimeNow(),title:`${record.title} (복사)`,warehouse:record.warehouse,targetWarehouse:record.targetWarehouse||"",memo:record.memo||"",locationType:record.location?.type||"",locationDetail:record.location?.detail||"",items:(record.items||[]).map(freshItem),equipmentItems:(record.equipmentItems||[]).map(freshItem)};
   applyRegisterDraft(draft);pendingRegisterDraft=null;setPage("register");showFeedback("info","새 기록으로 복사됨 · 수량과 장소를 확인해주세요");
 }
 

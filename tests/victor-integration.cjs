@@ -273,7 +273,8 @@ const pass=label=>{passed.push(label);console.log('PASS '+label);};
     assert.equal(await offline.page.evaluate(()=>state.stock[warehouses[0]][catalog[0].name]),0);
     assert.equal(await offline.page.evaluate(()=>state.assetOps['방제지휘차량'].logs.at(-1).diff),5);
     assert.equal(await offline.page.evaluate(()=>state.assetOps['소형방제정'].logs.at(-1).portDiff),1);
-    assert.ok((await offline.page.evaluate(()=>caches.keys())).includes('victor-alpha-0-20-cache-v106'));
+    const activeCache=fs.readFileSync(path.join(root,'sw.js'),'utf8').match(/const CACHE_NAME="([^"]+)"/)[1];
+    assert.ok((await offline.page.evaluate(()=>caches.keys())).includes(activeCache));
     await offline.context.close();pass('PWA 오프라인 조회·입출고·긴급 반영·장비·차량·방제정·재실행 유지');
     assert.deepEqual(errors,[]);console.log('\nALL PASS: '+passed.length+' groups');
   }finally{await browser.close();server.close();}
