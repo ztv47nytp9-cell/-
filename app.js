@@ -742,7 +742,8 @@ function cloudShareStatusHtml(){
   const upload=fmtShareTime(meta.lastUploadedAt);
   const applied=fmtShareTime(meta.lastAppliedAt);
   const safety=readCloudApplySafetyPoint();
-  return `<div class="cloud-share-status"><span>올림 기록 ${esc(upload)}</span><span>가져옴 기록 ${esc(applied)}</span></div>${safety?`<button class="cloud-undo-btn" id="undoCloudApply" type="button">방금 적용 되돌리기</button>`:""}`;
+  const undo=guardedPointStatus(safety);
+  return `<div class="cloud-share-status"><span>올림 기록 ${esc(upload)}</span><span>가져옴 기록 ${esc(applied)}</span></div>${safety?`<button class="cloud-undo-btn" id="undoCloudApply" type="button" ${undo.allowed?"":"disabled"}>${undo.allowed?"방금 적용 되돌리기":esc(undo.label)}</button>`:""}`;
 }
 
 function cloudShareNoticeHtml(){
@@ -758,6 +759,7 @@ function cloudShareNoticeHtml(){
 
 function renderHome(){
   queueMicrotask(bindHomeWorkActions);
+  queueMicrotask(bindBackupReminder);
   const pendingList = pendingRecords().sort((a,b)=>String(b.updatedAt||b.createdAt||"").localeCompare(String(a.updatedAt||a.createdAt||"")));
   const pending = pendingList.length;
   const latestPending = pendingList[0] || null;
@@ -778,6 +780,7 @@ function renderHome(){
       <div id="globalSearchResults"></div>
     </div>
     ${homeWorkSummaryHtml()}
+    ${backupReminderHtml()}
     <div class="card">
       <div class="section-title">자주 쓰는 기능</div>
       <div class="home-tool-grid">
@@ -1090,6 +1093,7 @@ function renderTechniqueInfo(){
 }
 
 function renderMenuPage(){
+  queueMicrotask(updateUndoAvailability);
   view.innerHTML=`
     <button class="back" id="menuBackHome" type="button">‹ 홈</button>
     <div class="card menu-page-hero">
@@ -2631,16 +2635,18 @@ function saveMemo(){
 }
 
 function backup(){
-  const payload = {...JSON.parse(JSON.stringify(state)), backupVersion: VERSION, backupDate: new Date().toISOString()};
+  const generatedAt=new Date().toISOString();
+  const payload = {...JSON.parse(JSON.stringify(state)), lastBackup:generatedAt, backupVersion: VERSION, backupDate:generatedAt};
   const blob = new Blob([JSON.stringify(payload,null,2)], {type:"application/json"});
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = `victor_backup_${todayISO()}.json`;
   a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),30000);
-  state.lastBackup = new Date().toISOString();
+  state.lastBackup = generatedAt;
   save();
   updateBackupLabel();
+  document.getElementById("backupReminder")?.remove();
   showSnack("전체 백업 파일 생성");
 }
 
@@ -3266,6 +3272,7 @@ function addWarehouse(){
 }
 
 function openEntryModal(html){
+  entryExtraDirtyCheck=null;
   entryModalRevision++;
   document.getElementById("entryDialog").innerHTML = html;
   document.getElementById("entryDialog").scrollTop = 0;
@@ -3283,6 +3290,7 @@ function closeEntryModal(){
   if(modalConfirmResolver){const resolve=modalConfirmResolver;resolve(false);if(!modalConfirmResolver)return;modalConfirmResolver=null;}
   document.getElementById("entryModal").classList.remove("show");
   document.getElementById("entryDialog").innerHTML = "";
+  entryExtraDirtyCheck=null;
   unlockPageScroll("entry");
 }
 
@@ -3291,10 +3299,10 @@ function askConfirm(title,message,confirmText="확인",danger=false){
   return new Promise(resolve=>{
     const dialog=document.getElementById("entryDialog"),modal=document.getElementById("entryModal");
     const wasOpen=modal.classList.contains("show"),scroll=dialog.scrollTop;
-    const retainedBaseline=entryFormBaseline;
+    const retainedBaseline=entryFormBaseline,retainedDirtyCheck=entryExtraDirtyCheck;
     const retained=document.createDocumentFragment();
     if(wasOpen)while(dialog.firstChild)retained.append(dialog.firstChild);
-    const finish=value=>{modalConfirmResolver=null;dialog.replaceChildren();entryFormBaseline=retainedBaseline;if(wasOpen){dialog.append(retained);dialog.scrollTop=scroll;modal.classList.add("show");}else{modal.classList.remove("show");unlockPageScroll("entry");}resolve(value);};
+    const finish=value=>{modalConfirmResolver=null;dialog.replaceChildren();entryFormBaseline=retainedBaseline;entryExtraDirtyCheck=retainedDirtyCheck;if(wasOpen){dialog.append(retained);dialog.scrollTop=scroll;modal.classList.add("show");}else{modal.classList.remove("show");unlockPageScroll("entry");}resolve(value);};
     modalConfirmResolver=finish;
     openEntryModal(`${entryHeader(title,"내용을 확인해주세요")}<div class="confirm-message">${esc(message)}</div><div class="entry-actions"><button class="btn gray" id="cancelConfirm" type="button">취소</button><button class="btn ${danger?"solid-danger":"primary"}" id="acceptConfirm" type="button">${esc(confirmText)}</button></div>`);
     document.getElementById("cancelConfirm")?.addEventListener("click",()=>finish(false));
@@ -3977,6 +3985,7 @@ function cloudDashboardHtml(latest=null,{loading=false,error=""}={}){
   const localSummary=snapshotSummary(localSnapshot);
   const cloudSummary=latest?snapshotSummary(latest):null;
   const safety=readCloudApplySafetyPoint();
+  const undo=guardedPointStatus(safety);
   const status=loading?"클라우드 확인 중":error?"확인 실패":cloudStatusLabel(latest);
   const statusTitle=loading?"확인 중":error?"확인 실패":!latest?"공유자료 없음":status==="클라우드 자료가 최신"?"새 자료 있음":status==="내 자료가 최신"?"올리기 가능":status==="이미 최신"?"최신 상태":"확인 필요";
   const statusHint=loading?"최신 상태를 확인하고 있습니다":error?"최신 확인을 다시 눌러주세요":!latest?"내 자료를 올려 공유하세요":status==="클라우드 자료가 최신"?"가져오면 반영됩니다":status==="내 자료가 최신"?"올리면 공유됩니다":status==="이미 최신"?"할 작업 없음":"최신 확인을 눌러주세요";
@@ -4011,10 +4020,10 @@ function cloudDashboardHtml(latest=null,{loading=false,error=""}={}){
           <span><strong>올린 기기</strong><br>${esc(cloudSummary?.device || meta.lastUploadedDeviceName || "기록 없음")}</span>
           <span><strong>적용 기기</strong><br>${esc(meta.lastAppliedDeviceName || "기록 없음")}</span>
           <span><strong>PIN</strong><br>${currentCloudUploadPinHash()?"설정됨":"미설정"}</span>
-          <span><strong>되돌리기</strong><br>${safety?`${esc(fmtShareTime(safety.createdAt))} 가능`:"없음"}</span>
+          <span><strong>되돌리기</strong><br>${esc(undo.label)}${safety?.createdAt?`<br>${esc(fmtShareTime(safety.createdAt))}`:""}</span>
         </div>
         <div class="cloud-settings-actions"><button class="btn gray" id="cloudPinNow" type="button">PIN 설정</button><button class="btn gray" id="cloudSettingsNow" type="button">연결 설정</button></div>
-        ${safety?`<button class="btn gray cloud-restore" id="cloudUndoNow" type="button">가져오기 되돌리기</button>`:""}
+        ${safety?`<button class="btn gray cloud-restore" id="cloudUndoNow" type="button" ${undo.allowed?"":"disabled"} title="${esc(undo.reason)}">가져오기 되돌리기</button>`:""}
       </details>
     </div>`;
 }
@@ -4472,6 +4481,7 @@ function resetAppInfoMotion(){
 function openMenu(push=true){
   const menu=document.getElementById("moreMenu");
   if(!menu) return;
+  updateUndoAvailability();
   clearTimeout(menuCloseTimer);
   menu.classList.remove("closing");
   if(menu.classList.contains("show")) return;

@@ -572,6 +572,18 @@ body.menu-open .snackbar.undo{visibility:hidden;pointer-events:none}
 @media(min-width:768px){.home-status-grid{gap:16px}.home-work-recent{padding:16px}.form{max-width:760px;margin-inline:auto}.history-filter-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 .equipment-available,.share-scope-note{margin-top:6px;overflow-wrap:anywhere}
+.resource-management{flex:1;min-width:140px;border:1px solid var(--border);border-radius:12px;background:var(--card);padding:0 12px}
+.resource-management>summary{min-height:44px;display:flex;align-items:center;cursor:pointer;font-weight:700;color:var(--text)}
+.resource-management>summary::after{content:"⌄";margin-left:auto}
+.resource-management[open]>.btn-row{padding-bottom:10px}
+.bundle-card{padding:14px;border-bottom:1px solid var(--border);overflow-wrap:anywhere}
+.bundle-preview{margin:6px 0 10px;color:var(--muted)}
+.bundle-preview>summary{min-height:44px;display:flex;align-items:center;cursor:pointer;font-size:14px}
+.bundle-preview ul{padding-left:20px;line-height:1.7;color:var(--text)}
+.bundle-editor .item-box{display:grid;gap:10px}
+.backup-reminder{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--border);border-radius:14px;background:var(--card);padding:12px;margin:12px 0;font-size:14px}
+.undo-availability{display:block;font-size:13px;font-weight:400;margin-top:4px;color:var(--muted);line-height:1.5}
+.cloud-restore:disabled{opacity:.65;cursor:default}
 #archiveResource,#recordReport{margin:10px 0;width:100%}
 #recordReportText{min-height:260px;font-size:15px;line-height:1.6}
 #victorPrintReport{display:none}
