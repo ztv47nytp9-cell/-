@@ -135,3 +135,5 @@ button{touch-action:manipulation}
 #numericInputDone{display:flex;justify-content:flex-end;position:fixed;z-index:250;left:0;right:0;top:calc(var(--input-viewport-top,0px) + var(--input-viewport-height,100dvh) - 46px);height:46px;padding:0 12px;background:var(--card);border-top:1px solid var(--border)}
 #numericInputDone button{min-width:88px;min-height:44px;background:transparent;border:0;color:var(--blue2);font-size:15px;font-weight:650}
 @media(hover:hover) and (pointer:fine){#numericInputDone{display:none}}
+body.keyboard-open .snackbar{bottom:auto;top:calc(var(--input-viewport-top,0px) + var(--input-viewport-height,100dvh) - 110px);max-height:64px;overflow:auto}
+:root[data-theme] #entryDialog:focus{outline:none}
