@@ -106,3 +106,32 @@ button{touch-action:manipulation}
   :root[data-theme] *, :root[data-theme] *::before, :root[data-theme] *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
   :root[data-theme] button:active:not(:disabled){transform:none}
 }
+
+/* Everyday use: more content, stable quantities, and easy input controls. */
+:root[data-theme] .top{position:relative;top:auto}
+:root[data-theme] #homeShareResources{grid-column:1 / -1;min-height:88px;display:grid;grid-template-columns:auto 1fr;column-gap:14px;align-content:center;text-align:left;padding:16px 20px;background:var(--tint);border-color:var(--border)}
+#homeShareResources>span{grid-row:1 / 3;align-self:center;font-size:29px}
+#homeShareResources strong{font-size:17px}
+#homeShareResources small{grid-column:2}
+.search-control{position:relative;min-width:0;width:100%}
+.search-control input.search{padding-right:50px;width:100%;min-width:0}
+:root[data-theme] .search-clear{position:absolute;right:3px;top:50%;transform:translateY(-50%);width:44px;height:44px;padding:0;border:0;background:transparent;color:var(--muted);font-size:24px;border-radius:12px}
+:root[data-theme] .search-clear:active{transform:translateY(-50%);background:var(--surface-pressed)}
+[hidden]{display:none!important}
+.resource-filters #clearResourceFilters{margin-top:10px;min-height:44px}
+.row-main{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;width:100%}
+.row-main>div:first-child,.stock-line>div:first-child,.list-row>div:first-child,.memo-main{min-width:0}
+.row-title,.stock-name,.stock-spec,.row-sub,.memo-main{overflow-wrap:anywhere}
+.stock-line{grid-template-columns:minmax(0,1fr) auto}
+.stock-qty{max-width:clamp(90px,27vw,180px);white-space:normal;overflow-wrap:anywhere;line-height:1.45;font-variant-numeric:tabular-nums}
+.memo-preview{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:normal;line-height:1.55;margin-top:4px}
+.quantity-control{position:relative;display:block;width:100%;min-width:0}
+.quantity-control input{width:100%;padding-right:58px!important;min-width:0;font-variant-numeric:tabular-nums}
+.quantity-unit{position:absolute;right:14px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px;font-weight:600;pointer-events:none}
+.quantity-control input::-webkit-inner-spin-button{appearance:none;margin:0}
+.field-error{display:block;color:var(--danger);font-size:13px;line-height:1.5;margin-top:5px;font-weight:550}
+:root[data-theme] [aria-invalid="true"]{border-color:var(--danger)}
+.warehouse-delete{width:100%;margin-top:10px}
+#numericInputDone{display:flex;justify-content:flex-end;position:fixed;z-index:250;left:0;right:0;top:calc(var(--input-viewport-top,0px) + var(--input-viewport-height,100dvh) - 46px);height:46px;padding:0 12px;background:var(--card);border-top:1px solid var(--border)}
+#numericInputDone button{min-width:88px;min-height:44px;background:transparent;border:0;color:var(--blue2);font-size:15px;font-weight:650}
+@media(hover:hover) and (pointer:fine){#numericInputDone{display:none}}

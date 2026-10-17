@@ -1,5 +1,5 @@
-const VERSION = "Alpha 0.20.5";
-const APP_BUILD = "110";
+const VERSION = "Alpha 0.20.6";
+const APP_BUILD = "111";
 const SCHEMA_VERSION = 1;
 const KEY = "victor_state_alpha_0_19_0e";
 let lastPersistedStateSnapshot = null;
@@ -463,9 +463,10 @@ function normalize(raw){
 
   // Defaults seed a new/legacy state, not an already managed inventory.
   const whSet = new Set(Array.isArray(raw.warehouses) ? [] : defaultWarehouses);
+  const deletedWarehouses=new Set([...(Array.isArray(raw.removedWarehouses)?raw.removedWarehouses:[]),...(Array.isArray(raw.trash)?raw.trash:[]).filter(entry=>entry?.kind==="warehouse").map(entry=>entry.data?.name)].filter(name=>typeof name==="string"&&!(Array.isArray(raw.warehouses)&&raw.warehouses.includes(name))));
   const rememberWarehouse = value => {
     const name = oldName(value || "").trim();
-    if(name) whSet.add(name);
+    if(name&&!deletedWarehouses.has(name)) whSet.add(name);
   };
   if(Array.isArray(raw.warehouses)) raw.warehouses.forEach(rememberWarehouse);
   if(raw.stock && typeof raw.stock === "object") Object.keys(raw.stock).forEach(rememberWarehouse);
@@ -513,7 +514,9 @@ function normalize(raw){
     ...d,
     ...raw,
     warehouses: warehouseList,
-    catalog: catalogList
+    catalog: catalogList,
+    removedWarehouses:[...deletedWarehouses],
+    removedEquipmentIds:Array.isArray(raw.removedEquipmentIds)?raw.removedEquipmentIds.filter(id=>typeof id==="string"&&!(Array.isArray(raw.equipment)&&raw.equipment.some(item=>item?.id===id))):[]
   };
 
   const newStock = defaultStock(warehouseList, catalogList);
@@ -641,7 +644,7 @@ function normalize(raw){
     : [];
   const mergedEquipment = [...existingEquipment];
   defaultEquipment.forEach(def => {
-    const inTrash = Array.isArray(state.trash) && state.trash.some(entry => entry?.kind === "equipment" && entry?.data?.id === def.id);
+    const inTrash = state.removedEquipmentIds.includes(def.id)||deletedWarehouses.has(def.place)||(Array.isArray(state.trash) && state.trash.some(entry => entry?.kind === "equipment" && entry?.data?.id === def.id));
     const exists = mergedEquipment.some(e => e.id === def.id || (e.name === def.name && (e.detail || e.spec || "") === def.detail && oldName(e.place || e.warehouse || "") === def.place));
     if(!exists && !inTrash) mergedEquipment.push({...def});
   });

@@ -34,7 +34,7 @@ const server=http.createServer((req,res)=>{
    for(const offset of [0,80,250]){
     await page.evaluate(offset=>scrollTo(0,document.documentElement.scrollHeight-innerHeight-offset),offset);await page.waitForTimeout(80);
     await reachable('#saveRecord');const save=await page.locator('#saveRecord').boundingBox(),nav=await page.locator('.bottom').boundingBox();assert.ok(save.y+save.height<=nav.y-4,JSON.stringify({width,offset,save,nav}));checks++;
-    assert.ok(Math.abs((await page.locator('.top').boundingBox()).y)<=1);checks++;
+    assert.equal(await page.locator('.top').evaluate(e=>getComputedStyle(e).position),'relative');assert.ok((await page.locator('.top').boundingBox()).y<=1);checks++;
    }
    await screenshot('save-'+theme);
    await page.evaluate(()=>{clearRegisterDraft();registerFormDraft=null;draftItems=[];draftEquipmentItems=[];historyFiltersOpen=false;setPage('history',{skipGuard:true});});

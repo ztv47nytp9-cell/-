@@ -287,8 +287,12 @@ function attachRecordTimeTools(){
   button.addEventListener("click",()=>{date.value=todayISO();input.value=localTimeNow();scheduleRegisterDraft();});input.closest("details")?.append(button);
 }
 function validRestoreData(raw){return Boolean(raw&&typeof raw==="object"&&!Array.isArray(raw)&&Array.isArray(raw.warehouses)&&Array.isArray(raw.catalog)&&raw.stock&&typeof raw.stock==="object"&&Array.isArray(raw.records));}
+function recordResourcesPresent(record){
+  return (record.items||[]).every(item=>itemOf(item.name)&&warehouses.includes(itemWarehouse(item,record.warehouse))&&(record.flow!=="이송"||warehouses.includes(item.targetWarehouse||record.targetWarehouse)))&&(record.equipmentItems||[]).every(entry=>state.equipment.some(item=>item.id===entry.id)&&(!entry.toEquipmentId||state.equipment.some(item=>item.id===entry.toEquipmentId)));
+}
 function canReverseRecord(record){
   if(record.status==="pending")return true;
+  if(!recordResourcesPresent(record))return false;
   const items=record.items||[];
   if(record.flow==="재고수정")return items.every(item=>Number(state.stock[itemWarehouse(item,record.warehouse)]?.[item.name]||0)===Number(item.after));
   if(record.flow==="입고"&&!stockAvailable(record.warehouse,items))return false;
@@ -299,11 +303,13 @@ function canReverseRecord(record){
   return true;
 }
 function canRestoreTrashEntry(entry){
-  if(entry.kind==="equipment")return !state.equipment.some(item=>item.id===entry.data.id);
-  if(entry.kind==="material")return !itemOf(entry.data.item.name);
+  if(entry.kind==="warehouse")return !warehouses.includes(entry.data.name)&&!state.survey?.active;
+  if(entry.kind==="equipment")return !state.equipment.some(item=>item.id===entry.data.id)&&warehouses.includes(entry.data.place);
+  if(entry.kind==="material")return !itemOf(entry.data.item.name)&&Object.entries(entry.data.stock||{}).every(([place,qty])=>warehouses.includes(place)||Number(qty)===0);
   if(entry.kind!=="record")return true;
   const record=entry.data;if(state.records.some(item=>item.id===record.id))return false;
   if(record.status==="pending")return true;
+  if(!recordResourcesPresent(record))return false;
   if(record.flow==="재고수정")return (record.items||[]).every(item=>Number(state.stock[itemWarehouse(item,record.warehouse)]?.[item.name]||0)===Number(item.before));
   if(["출고","이송"].includes(record.flow)&&!stockAvailable(record.warehouse,record.items||[]))return false;
   if(record.flow==="이송")return (record.equipmentItems||[]).every(entry=>{const equipment=state.equipment.find(item=>item.id===entry.id);return equipment?.place===(entry.fromPlace||record.warehouse)&&Number(equipment.qty||0)>=Number(entry.qty||0);});
@@ -347,9 +353,10 @@ function finiteQuantity(value,unit="",allowEmpty=false){
 }
 
 function registerNumbersValid(){
-  const invalid=draftItems.some(item=>finiteQuantity(item.qty,item.unit,true)===null)||draftEquipmentItems.some(item=>finiteQuantity(item.qty,"대",true)===null);
-  if(invalid)showFeedback("error","수량은 0 이상으로 입력해주세요 · 개·대·세트는 정수만 가능합니다");
-  return !invalid;
+  const material=draftItems.findIndex(item=>finiteQuantity(item.qty,item.unit,true)===null),equipment=draftEquipmentItems.findIndex(item=>finiteQuantity(item.qty,"대",true)===null);
+  if(material>=0)return fieldError(`[data-qty="${material}"]`,"0 이상 수량을 입력해주세요 · 개·대·세트는 정수");
+  if(equipment>=0)return fieldError(`[data-equipment-qty="${equipment}"]`,"장비 수량은 0 이상의 정수로 입력해주세요");
+  return true;
 }
 
 function pendingFormDirty(){
