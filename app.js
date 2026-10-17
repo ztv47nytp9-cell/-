@@ -142,7 +142,8 @@ function applyThemeMode(mode=readThemeMode()){
   const resolved = resolveThemeMode(mode);
   document.documentElement.dataset.theme = resolved;
   document.documentElement.dataset.themeMode = mode;
-  document.getElementById("themeColorMeta")?.setAttribute("content", resolved === "dark" ? "#152232" : "#1565C0");
+  const chromeColor=getComputedStyle(document.documentElement).getPropertyValue("--light").trim();
+  document.getElementById("themeColorMeta")?.setAttribute("content",chromeColor||(resolved==="dark"?"#14202E":"#F3F5F8"));
   document.getElementById("appleStatusBarMeta")?.setAttribute("content", resolved === "dark" ? "black-translucent" : "default");
 }
 
@@ -208,6 +209,8 @@ function currentNavigationState(extra={}){
 function showSnack(msg,type="info"){
   const s = document.getElementById("snackbar");
   if(!s) return;
+  s.setAttribute("role",type==="error"?"alert":"status");
+  s.setAttribute("aria-live",type==="error"?"assertive":"polite");
   s.textContent = msg;
   s.classList.remove("success","warning","error","info","undo");
   s.classList.add("show",type);
@@ -239,6 +242,7 @@ function saveStateTransaction(beforeState,errorMessage="저장에 실패했습�
 function showUndoSnack(msg,stateSnapshot,onRestored){
   const expectedState=JSON.stringify(state);
   const snackbar=document.getElementById("snackbar"); if(!snackbar) return;
+  snackbar.setAttribute("role","status");snackbar.setAttribute("aria-live","polite");
   snackbar.classList.remove("success","warning","error","info"); snackbar.classList.add("show","info","undo");
   snackbar.innerHTML=`<span>${esc(msg)}</span><button id="undoSnack" type="button">실행 취소</button>`;
   clearTimeout(window.__snackTimer);
@@ -273,7 +277,13 @@ function scrollToTop(){
 }
 
 function updateBottomNav(){
-  document.querySelectorAll(".nav").forEach(button => button.classList.toggle("active", button.dataset.page === page));
+  document.querySelectorAll(".nav").forEach(button=>{const active=button.dataset.page===page;button.classList.toggle("active",active);if(active)button.setAttribute("aria-current","page");else button.removeAttribute("aria-current");});
+}
+let pageChangeAnimation=null;
+function animatePageChange(previous,next){
+  pageChangeAnimation?.cancel();pageChangeAnimation=null;
+  if(previous===next||window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches||typeof view.animate!=="function")return;
+  pageChangeAnimation=view.animate([{opacity:.9},{opacity:1}],{duration:150,easing:"ease-out"});
 }
 
 function pushNavigationState(nav){
@@ -291,6 +301,7 @@ function setPage(next, options={}){
   captureMemoDraft();
   if(!options.skipGuard&&(next!==page||pendingFormDirty())){captureRegisterDraft();if(pendingFormDirty()||(page==="register"&&isMeaningfulRegisterDraft(registerFormDraft)))return protectNavigation(()=>setPage(next,{...options,skipGuard:true}));}
   pendingFormBaseline="";pendingFormRecordId="";
+  const previousPage=page;
   page = next;
   selectedWarehouse = null;
   editingId = null;
@@ -299,6 +310,7 @@ function setPage(next, options={}){
   if(next !== "memo") editingMemoId = null;
   updateBottomNav();
   render();
+  animatePageChange(previousPage,next);
   scrollToTop();
   if(options.push !== false) pushNavigationState({page:next});
 }
@@ -382,6 +394,10 @@ function resourceOverview(){
   return {warehouses:warehouses.length,materialKinds,equipmentCount,emptyWarehouses};
 }
 
+function summaryMetricHtml(quantity,unit){
+  const number=Number(quantity||0),equivalent=unit==="L"&&number>0&&number%18===0?`${(number/18).toLocaleString("ko-KR")}캔`:"";
+  return `<span class="summary-primary">${number.toLocaleString("ko-KR",{maximumFractionDigits:unit==="L"?1:3})}<span class="summary-unit">${esc(unit)}</span></span>${equivalent?`<span class="summary-equivalent">${equivalent}</span>`:""}`;
+}
 function storageSummaryCard(clickable=false){
   const s = totalStorageSummary();
   const o = resourceOverview();
@@ -389,9 +405,9 @@ function storageSummaryCard(clickable=false){
   return `<${tag} class="summary-card${clickable ? " summary-link" : ""}" ${clickable ? 'id="homeStorageSummary" type="button"' : ""}>
     <div class="section-head mini-head"><div class="section-title">전체 보관량</div>${clickable?`<span class="mini-link">전체 보기 ›</span>`:""}</div>
     <div class="summary-grid">
-      <div class="summary-pill"><div class="summary-label">흡착재</div><div class="summary-value">${Number(s.absorbent).toLocaleString("ko-KR")}kg</div></div>
-      <div class="summary-pill"><div class="summary-label">오일펜스</div><div class="summary-value">${Number(s.boom).toLocaleString("ko-KR")}m</div></div>
-      <div class="summary-pill"><div class="summary-label">유처리제</div><div class="summary-value">${materialQtyText(s.dispersant,"L",{name:"유처리제"})}</div></div>
+      <div class="summary-pill"><div class="summary-label">흡착재</div><div class="summary-value">${summaryMetricHtml(s.absorbent,"kg")}</div></div>
+      <div class="summary-pill"><div class="summary-label">오일펜스</div><div class="summary-value">${summaryMetricHtml(s.boom,"m")}</div></div>
+      <div class="summary-pill"><div class="summary-label">유처리제</div><div class="summary-value">${summaryMetricHtml(s.dispersant,"L")}</div></div>
     </div>
     <div class="summary-subline">보관 ${o.warehouses}곳 · 보유 자재 ${o.materialKinds}종 · 장비 ${o.equipmentCount}대${o.emptyWarehouses?` · 빈 곳 ${o.emptyWarehouses}`:""}</div>
   </${tag}>`;
@@ -4432,7 +4448,7 @@ function closeAppInfoModal(){
     clearTimeout(appInfoCloseTimer);
     modal.classList.add("closing");
     modal.classList.remove("show");
-    appInfoCloseTimer=setTimeout(()=>{modal.classList.remove("closing");unlockPageScroll("appInfo");},340);
+    appInfoCloseTimer=setTimeout(()=>{modal.classList.remove("closing");unlockPageScroll("appInfo");},window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches?0:300);
   }else{
     unlockPageScroll("appInfo");
   }

@@ -3,13 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#1565C0" id="themeColorMeta">
+  <meta name="theme-color" content="#F3F5F8" id="themeColorMeta">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Victor">
   <meta name="apple-mobile-web-app-status-bar-style" content="default" id="appleStatusBarMeta">
   <link rel="manifest" href="./manifest.json">
   <link rel="apple-touch-icon" href="./icons/icon-180.png">
-  <link rel="stylesheet" href="./style.css?v=0204m109">
+  <link rel="stylesheet" href="./style.css?v=0205m110">
+  <link rel="stylesheet" href="./interface.css?v=0205m110">
   <title>Victor</title>
 </head>
 <body>
@@ -66,18 +67,19 @@
 
     <main class="content" id="view"></main>
 
-    <nav class="bottom">
-      <button class="nav active" data-page="home" type="button">홈</button>
-      <button class="nav" data-page="warehouse" type="button">보관</button>
-      <button class="nav" data-page="register" type="button">등록</button>
-      <button class="nav" data-page="history" type="button">이력</button>
+    <nav class="bottom" aria-label="주요 메뉴">
+      <button class="nav active" data-page="home" type="button" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m3 10 9-7 9 7M5 9v11h5v-6h4v6h5V9"/></svg><span>홈</span></button>
+      <button class="nav" data-page="warehouse" type="button"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m3 7 9-4 9 4v11l-9 4-9-4ZM3 7l9 4 9-4M12 11v11M7.5 5l9 4"/></svg><span>보관</span></button>
+      <button class="nav" data-page="register" type="button"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg><span>등록</span></button>
+      <button class="nav" data-page="history" type="button"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>이력</span></button>
     </nav>
   </div>
 
   <div class="modal sheet-modal" id="appInfoModal">
     <div class="dialog">
       <div class="dialog-title">Victor 앱 정보</div>
-      <div class="app-info-summary"><div class="logo-main">VICTOR</div><div class="row-sub">방제자원 관리 시스템</div><div class="version-chip">Alpha 0.20.4</div><div class="row-sub" style="margin-top:9px">통영해양경찰서 주무관 정홍준</div></div>
+      <div class="app-info-summary"><div class="logo-main">VICTOR</div><div class="row-sub">방제자원 관리 시스템</div><div class="version-chip">Alpha 0.20.5</div><div class="row-sub" style="margin-top:9px">통영해양경찰서 주무관 정홍준</div></div>
+      <div class="help-body latest-update"><h3>화면 디테일 · 2026.10.17</h3><ul><li>글자·여백·버튼·카드 톤과 다크모드 정리</li><li>하단 아이콘 메뉴, 선택 상태와 터치·키보드 포커스 개선</li><li>카드 들썩임 제거, 짧은 화면 전환과 자연스러운 정보창 모션</li><li>불투명 배경·상하단 안전영역·알림 표시 정돈</li></ul></div>
       <div class="help-body latest-update"><h3>사용 정리 · 2026.10.17</h3><ul><li>묶음 구성 보기·직접 수정, 중복 품목 수량 유지·합산 선택</li><li>되돌리기 가능 여부와 보관 처리 후 남는 재고 안내</li><li>보고 요약 입출고 구분·재고 변화 표시</li><li>목록 관리 기능 접기, 기기 자료가 쌓였을 때 백업 안내</li></ul></div>
       <div class="help-body latest-update"><h3>빠른 업무 · 2026.10.17</h3><ul><li>장비 보유·사용 가능 수량과 미반납 기록 바로가기</li><li>진행 중 사건 상태·중복 등록 안내 개선</li><li>자주 쓰는 품목 묶음과 보고용 요약·복사·인쇄</li><li>사용 종료 품목 보관·다시 사용, 공유 범위 안내</li></ul></div>
       <div class="help-body latest-update"><h3>자료 보호 · 2026.10.11</h3><ul><li>공유·일괄 변경 되돌리기 시 이후 작업 보호</li><li>사건 입고 방향 유지, 자재 추가·삭제와 장비 미반납 확인</li><li>이송 취소·창고명 변경·이력 장소 정정 보강</li><li>수량 입력·메모 초안·실사 안내·공유 최신 확인 수정</li></ul></div>
@@ -115,9 +117,9 @@
 
   <div class="snackbar" id="snackbar" role="status" aria-live="polite"></div>
 
-  <script src="./storage.js?v=0204m109"></script>
-  <script src="./workflow.js?v=0204m109"></script>
-  <script src="./app.js?v=0204m109"></script>
+  <script src="./storage.js?v=0205m110"></script>
+  <script src="./workflow.js?v=0205m110"></script>
+  <script src="./app.js?v=0205m110"></script>
 </body>
 </html>
 
