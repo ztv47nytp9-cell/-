@@ -287,6 +287,32 @@ function attachRecordTimeTools(){
   button.addEventListener("click",()=>{date.value=todayISO();input.value=localTimeNow();scheduleRegisterDraft();});input.closest("details")?.append(button);
 }
 function validRestoreData(raw){return Boolean(raw&&typeof raw==="object"&&!Array.isArray(raw)&&Array.isArray(raw.warehouses)&&Array.isArray(raw.catalog)&&raw.stock&&typeof raw.stock==="object"&&Array.isArray(raw.records));}
+function validateSharedSnapshot(snapshot){
+  const fail=detail=>{throw new Error(`공유자료 형식 오류 · ${detail}`);};
+  if(!snapshot||snapshot.kind!=="victor-resource-share")fail("Victor 자료가 아닙니다");
+  if(snapshot.formatVersion!==undefined&&(!Number.isInteger(snapshot.formatVersion)||snapshot.formatVersion<1||snapshot.formatVersion>1))fail("지원하지 않는 형식입니다 · 앱 업데이트를 확인해주세요");
+  const unsafe=new Set(["__proto__","constructor","prototype"]),seen=new WeakSet();
+  const walk=(value,depth=0)=>{if(!value||typeof value!=="object")return;if(depth>64||seen.has(value))fail("자료 구조를 확인해주세요");seen.add(value);Object.keys(value).forEach(key=>{if(unsafe.has(key))fail("사용할 수 없는 항목명입니다");walk(value[key],depth+1);});seen.delete(value);};walk(snapshot);
+  const object=value=>value&&typeof value==="object"&&!Array.isArray(value);
+  const name=value=>typeof value==="string"&&value.trim()===value&&value.length>0&&!unsafe.has(value);
+  const quantity=(value,unit="")=>typeof value==="number"&&Number.isFinite(value)&&value>=0&&value<=Number.MAX_SAFE_INTEGER&&(!integerUnit(unit)||Number.isSafeInteger(value));
+  if(!snapshot.resourceState){
+    if(!Array.isArray(snapshot.materials)||!Array.isArray(snapshot.equipment))fail("자재·장비 목록이 없습니다");
+    const rows=new Set();snapshot.materials.forEach(item=>{if(!object(item)||!name(item.name)||!name(item.warehouse)||!quantity(item.qty,item.unit||"개"))fail("자재 수량 또는 보관장소를 확인해주세요");const key=JSON.stringify([item.warehouse,item.name]);if(rows.has(key))fail("중복 자재가 있습니다");rows.add(key);});
+    snapshot.equipment.forEach(item=>{if(!object(item)||!name(item.name)||!name(item.warehouse)||!quantity(item.qty,"대"))fail("장비 수량 또는 보관장소를 확인해주세요");});
+  }
+  const resource=resourceStateFromSnapshot(snapshot);
+  if(!object(resource)||!Array.isArray(resource.warehouses)||!resource.warehouses.length||!resource.warehouses.every(name)||new Set(resource.warehouses).size!==resource.warehouses.length)fail("보관장소 목록을 확인해주세요");
+  if(!Array.isArray(resource.catalog)||!Array.isArray(resource.equipment)||!object(resource.stock))fail("자재·장비·재고 구조를 확인해주세요");
+  if(!resource.catalog.length&&!resource.equipment.length)fail("자재·장비 항목이 없습니다");
+  const places=new Set(resource.warehouses),names=new Set(),ids=new Set();
+  resource.catalog.forEach(item=>{if(!object(item)||!name(item.name)||names.has(item.name))fail("자재명이 없거나 중복됩니다");names.add(item.name);});
+  resource.warehouses.forEach(place=>{const bucket=resource.stock[place];if(!object(bucket))fail("창고 재고가 누락되었습니다");resource.catalog.forEach(item=>{if(!Object.prototype.hasOwnProperty.call(bucket,item.name)||!quantity(bucket[item.name],item.unit||"개"))fail(`${place} · ${item.name} 수량을 확인해주세요`);});});
+  Object.keys(resource.stock).forEach(place=>{if(!places.has(place)||Object.keys(resource.stock[place]||{}).some(key=>!names.has(key)))fail("목록과 재고 항목이 다릅니다");});
+  resource.equipment.forEach(item=>{if(!object(item)||!name(item.id)||ids.has(item.id)||!name(item.name)||!places.has(item.place)||(item.qty!==undefined&&!quantity(item.qty,"대")))fail("장비 식별값·수량·보관장소를 확인해주세요");ids.add(item.id);});
+  if(resource.assetOps!==undefined){if(!object(resource.assetOps))fail("차량·함정 관리자료를 확인해주세요");Object.values(resource.assetOps).forEach(op=>{if(!object(op))fail("차량·함정 관리자료를 확인해주세요");["distanceBase","mileageBase","hoursBase","portHoursBase","starboardHoursBase","fuelBase"].forEach(key=>{if(op[key]!==undefined&&!quantity(op[key]))fail("차량·함정 누적값을 확인해주세요");});["logs","fuelLogs","maintenance"].forEach(key=>{if(op[key]!==undefined&&!Array.isArray(op[key]))fail("차량·함정 이력을 확인해주세요");});});}
+  return resource;
+}
 function recordResourcesPresent(record){
   return (record.items||[]).every(item=>itemOf(item.name)&&warehouses.includes(itemWarehouse(item,record.warehouse))&&(record.flow!=="이송"||warehouses.includes(item.targetWarehouse||record.targetWarehouse)))&&(record.equipmentItems||[]).every(entry=>state.equipment.some(item=>item.id===entry.id)&&(!entry.toEquipmentId||state.equipment.some(item=>item.id===entry.toEquipmentId)));
 }
@@ -348,8 +374,23 @@ function stockBadge(item,place=""){const status=stockLevel(item,place);return st
 function finiteQuantity(value,unit="",allowEmpty=false){
   if(String(value??"").trim()==="")return allowEmpty?0:null;
   const quantity=Number(value);
-  if(!Number.isFinite(quantity)||quantity<0)return null;
-  return integerUnit(unit)?(Number.isInteger(quantity)?quantity:null):quantity;
+  if(!Number.isFinite(quantity)||quantity<0||quantity>Number.MAX_SAFE_INTEGER)return null;
+  return integerUnit(unit)?(Number.isSafeInteger(quantity)?quantity:null):quantity;
+}
+
+// Decimal input arithmetic without fixed decimal-place rounding. Existing IEEE
+// cancellation noise is treated as zero only at the operands' machine precision.
+function addQuantities(left,right){
+  const a=Number(left||0),b=Number(right||0);
+  if(!Number.isFinite(a)||!Number.isFinite(b))return a+b;
+  let result;
+  if(typeof BigInt!=="function")result=Number((a+b).toPrecision(15));
+  else{
+    const ten=BigInt(10),parse=value=>{const [mantissa,exp="0"]=String(value).toLowerCase().split("e"),negative=mantissa.startsWith("-"),parts=mantissa.replace(/^[+-]/,"").split("."),digits=parts.join(""),scale=(parts[1]||"").length-Number(exp);let units=BigInt(digits)*(negative?BigInt(-1):BigInt(1));if(scale<0)units*=ten**BigInt(-scale);return {units,scale:Math.max(0,scale)};};
+    const x=parse(a),y=parse(b),scale=Math.max(x.scale,y.scale),sum=x.units*ten**BigInt(scale-x.scale)+y.units*ten**BigInt(scale-y.scale),negative=sum<BigInt(0),digits=(negative?-sum:sum).toString().padStart(scale+1,"0");
+    result=Number(`${negative?"-":""}${scale?digits.slice(0,-scale)+"."+digits.slice(-scale):digits}`);
+  }
+  return a&&b&&Math.sign(a)!==Math.sign(b)&&Math.abs(result)<=Math.max(Math.abs(a),Math.abs(b))*Number.EPSILON*4?0:result;
 }
 
 function registerNumbersValid(){

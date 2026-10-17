@@ -1,5 +1,5 @@
-const VERSION = "Alpha 0.20.7";
-const APP_BUILD = "112";
+const VERSION = "Alpha 0.20.8";
+const APP_BUILD = "113";
 const SCHEMA_VERSION = 1;
 const KEY = "victor_state_alpha_0_19_0e";
 let lastPersistedStateSnapshot = null;
@@ -7,6 +7,15 @@ let lastDiskStateRaw = null;
 let storageLoadIssue = "";
 let pendingMigrationBackup = null;
 const SAFETY_POINTS_KEY = "victor_safety_points_v1";
+
+function safeInventoryKey(value){return typeof value==="string"&&value.trim().length>0&&!["__proto__","constructor","prototype"].includes(value.trim());}
+function validateInventoryKeys(raw){
+  const check=value=>{if(typeof value==="string"&&["__proto__","constructor","prototype"].includes(value.trim()))throw new Error("사용할 수 없는 자재·보관장소명이 포함되어 있습니다");};
+  (Array.isArray(raw.warehouses)?raw.warehouses:[]).forEach(check);
+  (Array.isArray(raw.catalog)?raw.catalog:[]).forEach(item=>check(item?.name));
+  ["stock","warehouseInfos","warehouseKinds","assetOps"].forEach(field=>Object.keys(raw[field]||{}).forEach(check));
+  Object.values(raw.stock||{}).forEach(bucket=>Object.keys(bucket||{}).forEach(check));
+}
 
 function readSafetyPoints(){
   try{const points=JSON.parse(localStorage.getItem(SAFETY_POINTS_KEY)||"[]");return Array.isArray(points)?points.filter(point=>point?.state&&typeof point.state==="object"):[];}catch(_){return [];}
@@ -390,8 +399,8 @@ let catalog = defaultCatalog.map(x => ({...x}));
 let cats = [...new Set(catalog.map(x => x.cat))];
 
 function refreshGlobals(state){
-  warehouses = Array.isArray(state?.warehouses) && state.warehouses.length ? [...state.warehouses] : [...defaultWarehouses];
-  catalog = Array.isArray(state?.catalog) && state.catalog.length ? state.catalog : defaultCatalog.map(x => ({...x}));
+  warehouses = Array.isArray(state?.warehouses) ? [...state.warehouses] : [...defaultWarehouses];
+  catalog = Array.isArray(state?.catalog) ? state.catalog : defaultCatalog.map(x => ({...x}));
   cats = [...new Set(catalog.map(x => x.cat))];
   const savedEquipmentCategories = Array.isArray(state?.equipmentCategories)
     ? state.equipmentCategories.filter(name => typeof name === "string" && name.trim()).map(name => name.trim())
@@ -718,6 +727,7 @@ function loadState(){
       if(raw){
         const parsed=JSON.parse(raw);
         if(!parsed||typeof parsed!=="object"||Array.isArray(parsed)||!["stock","catalog","records","warehouses","equipment"].some(field=>Object.prototype.hasOwnProperty.call(parsed,field)))throw new Error("저장자료 구조가 맞지 않습니다");
+        validateInventoryKeys(parsed);
         if(Number(parsed.schemaVersion||0)>SCHEMA_VERSION)throw new Error("이 자료는 더 최신 앱에서 저장되었습니다. 최신 앱으로 열어주세요");
         if(storageLoadIssue)continue;
         pendingMigrationBackup=String(parsed.appBuild||"")!==APP_BUILD?parsed:null;
