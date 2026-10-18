@@ -1,6 +1,6 @@
 /* Shared workflow helpers. Existing LocalStorage keys and records remain compatible. */
 const workflowLocks=new Set();
-function recordStateLabel(record){return record.status==="pending"?(record.type==="사고"?"진행 중":"재고 미반영"):(record.type==="사고"?"종결":"반영 완료");}
+function recordStateLabel(record){return record.status==="pending"?(record.stockReview?"재고 확인 필요":record.type==="사고"?"진행 중":"재고 미반영"):(record.type==="사고"?"종결":"반영 완료");}
 function outstandingEquipmentRows(id=""){
   return (state.records||[]).filter(record=>record.status!=="pending"&&["출고","긴급","사고"].includes(record.flow)).flatMap(record=>(record.equipmentItems||[]).map((item,index)=>({record,item,index,remaining:Math.max(0,Number(item.qty||0)-Number(item.returnedQty||0))}))).filter(row=>row.remaining>0&&(!id||row.item.id===id));
 }

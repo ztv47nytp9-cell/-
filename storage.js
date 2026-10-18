@@ -1,5 +1,5 @@
-const VERSION = "Alpha 0.20.11";
-const APP_BUILD = "116";
+const VERSION = "Alpha 0.20.12";
+const APP_BUILD = "117";
 const SCHEMA_VERSION = 1;
 const KEY = "victor_state_alpha_0_19_0e";
 let lastPersistedStateSnapshot = null;
@@ -574,8 +574,9 @@ function normalize(raw){
     warehouse: oldName(r.warehouse || ""),
     memo: typeof r.memo === "string" ? r.memo : "",
     status: r.status === "pending" ? "pending" : "done",
+    stockReview:r.status==="pending"&&r.stockReview===true,
     sourceId: typeof r.sourceId === "string" ? r.sourceId : null,
-    quick: Boolean(r.quick || r.status === "pending"),
+    quick: Boolean(!r.stockReview&&(r.quick || r.status === "pending")),
     officialTitle: Boolean(r.officialTitle),
     createdAt: typeof r.createdAt === "string" && r.createdAt ? r.createdAt : new Date().toISOString(),
     updatedAt:typeof r.updatedAt==="string"?r.updatedAt:(r.editedAt||r.createdAt||""),

@@ -62,10 +62,10 @@ const pass=label=>{passed.push(label);console.log('PASS '+label);};
     pass('입고 재고증가·이력 저장');
     await prepare('출고','초과 입력',100);await page.click('#saveRecord');
     assert.equal(await page.evaluate(()=>state.stock[warehouses[0]][catalog[0].name]),84);
-    assert.equal(await page.locator('#recTitle').inputValue(),'초과 입력');
+    assert.equal(await page.evaluate(()=>state.records.find(r=>r.title==='초과 입력')?.stockReview),true);assert.equal(await page.locator('#homeStockReview').count(),1);
     await prepare('출고','음수 입력',-1);await page.click('#saveRecord');
     assert.equal(await page.evaluate(()=>state.records.some(r=>r.title==='음수 입력')),false);
-    pass('재고 초과·음수 차단 및 입력내용 유지');
+    pass('재고 초과 기록 보관·기존 재고 유지·음수 차단');
 
     await prepare('출고','즉시 전환 입력 유지',1);await page.fill('#recMemo','전환 직전 메모');
     await page.click('#flowIn');assert.equal(await page.locator('#recTitle').inputValue(),'즉시 전환 입력 유지');assert.equal(await page.locator('#recMemo').inputValue(),'전환 직전 메모');
