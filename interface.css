@@ -285,3 +285,29 @@ body.keyboard-open .batch-save{bottom:0}
   .batch-card .batch-place{grid-column:1;grid-row:2}
   .batch-card .batch-input-row{grid-column:2;grid-row:1/3;margin:0}
 }
+
+/* Short, directional motion with an opaque surface and an always-reachable back action. */
+.app{overflow-x:clip}
+.sheet-grip{display:block;width:72px;height:24px;position:relative;flex-shrink:0;touch-action:none}
+.sheet-grip::after{content:"";position:absolute;width:34px;height:4px;left:50%;top:8px;transform:translateX(-50%);border-radius:999px;background:var(--muted);opacity:.45}
+.page-sheet-grip{margin:-10px auto 4px;cursor:grab}
+.entry-sheet-grip{position:absolute;left:50%;top:0;transform:translateX(-50%);cursor:grab}
+.entry-modal-head{padding-top:26px}
+#entryDialog.dragging,#view.dragging{transition:none;will-change:transform}
+.motion-dismiss-layer{position:fixed;inset:0;z-index:109;pointer-events:none;overflow:hidden}
+.modal.sheet-modal{display:flex;visibility:hidden;transition:opacity .24s ease,visibility 0s linear .28s}
+.modal.sheet-modal.show,.modal.sheet-modal.closing{visibility:visible;transition:opacity .24s ease,background-color .24s ease}
+.app-info-grip{position:sticky;top:-20px;z-index:6;margin:-12px auto 6px;background:var(--card);border-radius:12px;cursor:grab}
+#contextBack{position:fixed;left:max(16px,calc((100vw - 700px)/2 + 16px));z-index:19;min-height:44px;max-width:calc(100vw - 32px);padding:10px 16px;border:1px solid var(--border);border-radius:999px;background:var(--card);color:var(--blue2);font-size:14px;font-weight:650;box-shadow:0 3px 12px rgba(12,24,40,.10);line-height:1.4;touch-action:manipulation}
+body.keyboard-open #contextBack,body.menu-open #contextBack{display:none}
+:root[data-theme] #contextBack:active{background:var(--surface-pressed);transform:scale(.97)}
+:root[data-theme] .btn:active:not(:disabled){transform:scale(.985)}
+@media(max-width:599px){
+  #entryModal{align-items:flex-end;padding:12px 12px 0}
+  :root[data-theme] #entryDialog{width:min(520px,100%);max-height:calc(var(--input-viewport-height,100dvh) - 24px);border-radius:24px 24px 0 0;padding-bottom:calc(20px + env(safe-area-inset-bottom))}
+  body.keyboard-open #entryModal{align-items:flex-end;padding-bottom:46px}
+  :root[data-theme] body.keyboard-open #entryDialog{max-height:calc(var(--input-viewport-height,100dvh) - 70px)}
+}
+@media(prefers-reduced-motion:reduce){
+  :root[data-theme] .btn:active:not(:disabled),:root[data-theme] #contextBack:active{transform:none}
+}

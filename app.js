@@ -38,6 +38,9 @@ let cloudDashboardRequestId = 0;
 let entryModalRevision = 0;
 let entryReturnFocus = null;
 let scrollRestoreFrame = 0;
+const pagePositions = new Map();
+const navigationPositions = new Map();
+let navigationDepth = 0;
 let lastCloudShareCheckAt = 0;
 let lockedMenuScrollY = 0;
 let scrollLockReasons = new Set();
@@ -192,13 +195,26 @@ function isDispersant(item){ return String(item?.cat || "").includes("유처리�
 function collapsedGroups(){state.ui=state.ui||{};state.ui.collapsedGroups=state.ui.collapsedGroups||{};return state.ui.collapsedGroups;}
 function groupKey(scope,name){return `${scope}:${name}`;}
 function groupedSection(scope,name,count,content,forceOpen=false){const collapsed=!forceOpen&&Boolean(collapsedGroups()[groupKey(scope,name)]),id=`group-${encodeURIComponent(groupKey(scope,name))}`;return `<section class="group-section ${collapsed?"collapsed":""}"><button class="group-heading ${scope==="history"?"history-group-heading":""}" data-group-toggle="${esc(groupKey(scope,name))}" aria-expanded="${!collapsed}" aria-controls="${esc(id)}" type="button"><span>${esc(name)} <small>${count}</small></span><span aria-hidden="true">${collapsed?"›":"⌄"}</span></button><div class="group-content" id="${esc(id)}">${content}</div></section>`;}
-function bindGroupedSections(rerender){view.querySelectorAll("[data-group-toggle]").forEach(button=>button.addEventListener("click",()=>{const key=button.dataset.groupToggle;collapsedGroups()[key]=!collapsedGroups()[key];save();rerender();}));view.querySelectorAll("[data-groups-all]").forEach(button=>button.addEventListener("click",event=>{const keys=[...view.querySelectorAll("[data-group-toggle]")].map(toggle=>toggle.dataset.groupToggle),collapse=event.currentTarget.dataset.groupsAll==="collapse";keys.forEach(key=>collapsedGroups()[key]=collapse);save();rerender();}));}
+function bindGroupedSections(rerender){
+  view.querySelectorAll("[data-group-toggle]").forEach(button=>button.addEventListener("click",()=>{
+    const key=button.dataset.groupToggle,id=button.getAttribute("aria-controls"),oldHeight=document.getElementById(id)?.getBoundingClientRect().height||0;
+    collapsedGroups()[key]=!collapsedGroups()[key];save();rerender();
+    const content=document.getElementById(id);if(!content||motionReduced()||!content.animate)return;
+    const collapsed=Boolean(collapsedGroups()[key]);content.inert=collapsed;content.style.display="block";content.style.overflow="hidden";
+    const height=collapsed?oldHeight:content.scrollHeight;
+    const animation=content.animate(collapsed?[{height:`${height}px`,opacity:1},{height:"0px",opacity:0}]:[{height:"0px",opacity:.5},{height:`${height}px`,opacity:1}],{duration:180,easing:"cubic-bezier(.22,1,.36,1)"});
+    const finish=()=>{content.style.display="";content.style.overflow="";};animation.finished.then(finish,finish);
+  }));
+  view.querySelectorAll("[data-groups-all]").forEach(button=>button.addEventListener("click",event=>{const keys=[...view.querySelectorAll("[data-group-toggle]")].map(toggle=>toggle.dataset.groupToggle),collapse=event.currentTarget.dataset.groupsAll==="collapse";keys.forEach(key=>collapsedGroups()[key]=collapse);save();rerender();}));
+}
 function groupToolbar(sortMode,scope){return `<div class="group-toolbar"><label>정렬<select data-group-sort="${scope}"><option value="name" ${sortMode==="name"?"selected":""}>이름순</option><option value="qty" ${sortMode==="qty"?"selected":""}>수량순</option><option value="recent" ${sortMode==="recent"?"selected":""}>최근 수정순</option></select></label><button class="btn gray compact" data-groups-all="expand" type="button">전체 펼치기</button><button class="btn gray compact" data-groups-all="collapse" type="button">전체 접기</button></div>`;}
 function isTodayChanged(item){return String(item.updatedAt||item.updated||"").slice(0,10)===todayISO();}
 
 function currentNavigationState(extra={}){
   const nav={page};
   if(page==="history"&&pendingFormRecordId)nav.recordId=pendingFormRecordId;
+  else if(page==="history"&&history.state?.page===page&&history.state.recordId)nav.recordId=history.state.recordId;
+  if(page==="equipmentDetail"&&view.dataset.equipmentId)nav.equipmentId=view.dataset.equipmentId;
   if(page==="warehouse"){
     nav.view=warehouseViewMode;
     if(selectedWarehouse){nav.warehouse=selectedWarehouse;nav.tab=warehouseTab;}
@@ -284,20 +300,23 @@ function updateBottomNav(){
   document.querySelectorAll(".nav").forEach(button=>{const active=button.dataset.page===activePage;button.classList.toggle("active",active);if(active)button.setAttribute("aria-current","page");else button.removeAttribute("aria-current");});
 }
 let pageChangeAnimation=null;
-function animatePageChange(previous,next){
+function animatePageChange(previous,next,{direction="forward",detail=false}={}){
   pageChangeAnimation?.cancel();pageChangeAnimation=null;
-  if(previous===next||window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches||typeof view.animate!=="function")return;
-  pageChangeAnimation=view.animate([{opacity:.9},{opacity:1}],{duration:150,easing:"ease-out"});
+  surfaceAnimations.get(view)?.cancel();
+  view.style.transform="";view.classList.remove("dragging");
+  if((previous===next&&!detail)||motionReduced()||typeof view.animate!=="function")return;
+  const transform=next==="menu"?"translateY(28px)":direction==="tab"?"translateY(5px)":`translateX(${direction==="back"?-20:20}px)`;
+  pageChangeAnimation=view.animate([{opacity:.7,transform},{opacity:1,transform:"translate(0,0)"}],{duration:next==="menu"?240:210,easing:"cubic-bezier(.22,1,.36,1)"});
 }
 
 function pushNavigationState(nav){
   if(restoringNavigation) return;
-  try{ window.history.pushState({victor:true,...nav}, ""); }catch(e){}
+  try{navigationDepth=Number(history.state?.depth||0)+1;const entry={victor:true,...nav,depth:navigationDepth};window.history.pushState(entry, "");for(const depth of navigationPositions.keys())if(depth>=navigationDepth)navigationPositions.delete(depth);navigationPositions.set(navigationDepth,entry);}catch(e){}
 }
 
 function replaceNavigationState(nav){
   if(restoringNavigation) return;
-  try{ window.history.replaceState({victor:true,...nav}, ""); }catch(e){}
+  try{navigationDepth=Number(history.state?.depth||navigationDepth||0);const entry={victor:true,...nav,depth:navigationDepth};window.history.replaceState(entry, "");navigationPositions.set(navigationDepth,entry);}catch(e){}
 }
 
 
@@ -307,6 +326,9 @@ function setPage(next, options={}){
   pendingFormBaseline="";pendingFormRecordId="";
   const previousPage=page;
   rememberListPosition();
+  if(options.resume&&previousPage!==next&&next!=="register"&&pagePositions.has(next)){
+    const saved=pagePositions.get(next);restoreNavigation(saved,{direction:"tab"});pushNavigationState(saved);return;
+  }
   page = next;
   selectedWarehouse = null;
   editingId = null;
@@ -315,7 +337,7 @@ function setPage(next, options={}){
   if(next !== "memo") editingMemoId = null;
   updateBottomNav();
   render();
-  animatePageChange(previousPage,next);
+  animatePageChange(previousPage,next,{direction:options.resume?"tab":"forward"});
   scrollToTop();
   if(options.push !== false) pushNavigationState({page:next});
 }
@@ -1111,6 +1133,7 @@ function renderTechniqueInfo(){
 function renderMenuPage(){
   queueMicrotask(updateUndoAvailability);
   view.innerHTML=`
+    <div class="sheet-grip page-sheet-grip" aria-hidden="true"></div>
     <button class="back" id="menuBackHome" type="button">‹ 홈</button>
     <div class="menu-page-section">
       <div class="menu-label">데이터 관리</div>
@@ -1233,7 +1256,7 @@ function renderWarehouse(){
       renderAllEquipmentList();
     }else{
       bindGroupedSections(renderWarehouse);
-      view.querySelectorAll("[data-wh]").forEach(button => button.addEventListener("click", () => { selectedWarehouse=button.dataset.wh; warehouseTab="material"; renderWarehouse(); pushNavigationState({page:"warehouse",warehouse:selectedWarehouse,tab:warehouseTab});scrollToTop(); }));
+      view.querySelectorAll("[data-wh]").forEach(button => button.addEventListener("click", () => { selectedWarehouse=button.dataset.wh; warehouseTab="material"; renderWarehouse(); pushNavigationState({page:"warehouse",warehouse:selectedWarehouse,tab:warehouseTab});scrollToTop();animatePageChange("warehouse","warehouse",{detail:true}); }));
       document.getElementById("addWarehouseInline")?.addEventListener("click", addWarehouse);
     }
     return;
@@ -2491,7 +2514,7 @@ function openDetail(id, options={}){
   setHead();
 
   if(r.status === "pending"){
-    if(options.push!==false)scrollToTop();
+    if(options.push!==false){scrollToTop();animatePageChange("history","history",{detail:true});}
     view.innerHTML = `
       <button class="back" id="backHist" type="button">‹ 이력</button>
       ${pendingRecordForm(r)}
@@ -2521,7 +2544,7 @@ function openDetail(id, options={}){
     return;
   }
 
-  if(options.push!==false)scrollToTop();
+  if(options.push!==false){scrollToTop();animatePageChange("history","history",{detail:true});}
   view.innerHTML = `
     <button class="back" id="backHist" type="button">‹ 이력</button>
     <div class="card">
@@ -3223,7 +3246,7 @@ function openEquipment(id, options={}){
   if(options.push !== false) pushNavigationState({page:"equipmentDetail",equipmentId:item.id});
   updateBottomNav();
   document.getElementById("headTitle").innerHTML = `<div class="page-title">장비 상세</div><div class="date">${esc(item.name)}</div>`;
-  if(options.push!==false)scrollToTop();
+  if(options.push!==false){scrollToTop();animatePageChange(page,"equipmentDetail",{detail:true});}
   const legacy = [item.model ? `모델 ${item.model}` : "",item.battery ? `배터리 ${item.battery}` : "",item.fuel ? `연료 ${item.fuel}` : "",item.status && item.status !== "정상" ? `상태 ${item.status}` : ""].filter(Boolean);
   const usage=[...state.records].filter(record=>(record.equipmentItems || []).some(entry=>entry.id===item.id)).sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id));
   const maintenance=[...(item.maintenance || [])].sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id));
@@ -3343,6 +3366,7 @@ function addWarehouse(){
 }
 
 function openEntryModal(html){
+  cancelDismissal();
   const opening=!document.getElementById("entryModal").classList.contains("show");
   if(opening)entryReturnFocus=document.activeElement;
   entryExtraDirtyCheck=null;
@@ -3351,6 +3375,7 @@ function openEntryModal(html){
   document.getElementById("entryDialog").scrollTop = 0;
   lockPageScroll("entry");
   document.getElementById("entryModal").classList.add("show");
+  animateSurface(document.getElementById("entryDialog"),opening?"open":"replace");
   if(opening||!document.activeElement?.closest?.("#entryDialog"))document.getElementById("entryDialog").focus({preventScroll:true});
   refreshResourceLocations();
   scheduleInputVisibility();
@@ -3362,6 +3387,9 @@ function closeEntryModal(){
   entryModalRevision++;
   if(document.activeElement?.closest?.("#entryModal"))document.activeElement.blur();
   if(modalConfirmResolver){const resolve=modalConfirmResolver;resolve(false);if(!modalConfirmResolver)return;modalConfirmResolver=null;}
+  animateEntryDismissal();
+  surfaceAnimations.get(document.getElementById("entryDialog"))?.cancel();
+  document.getElementById("entryDialog").style.transform="";
   document.getElementById("entryModal").classList.remove("show");
   document.getElementById("entryDialog").innerHTML = "";
   entryExtraDirtyCheck=null;
@@ -3411,7 +3439,7 @@ function requestUploadPin(title="올리기 PIN 확인",subtitle="내 자료 올�
 }
 
 function entryHeader(title,subtitle){
-  return `<div class="entry-modal-head"><div><div class="dialog-title" id="entryModalTitle" style="text-align:left;margin:0">${esc(title)}</div><div class="row-sub">${esc(subtitle)}</div></div><button class="entry-close" id="closeEntryModal" type="button" aria-label="닫기">×</button></div>`;
+  return `<div class="entry-modal-head"><span class="sheet-grip entry-sheet-grip" aria-hidden="true"></span><div><div class="dialog-title" id="entryModalTitle" style="text-align:left;margin:0">${esc(title)}</div><div class="row-sub">${esc(subtitle)}</div></div><button class="entry-close" id="closeEntryModal" type="button" aria-label="닫기">×</button></div>`;
 }
 
 function simpleResourceForm(kind,existing=null){
@@ -4424,9 +4452,9 @@ function bindGlobal(){
       updateInputViewport();
     },120);
   });
-  document.querySelectorAll(".nav").forEach(b => b.addEventListener("click", () => setPage(b.dataset.page)));
+  document.querySelectorAll(".nav").forEach(b => b.addEventListener("click", () => setPage(b.dataset.page,{resume:true})));
 
-  document.getElementById("moreBtn")?.addEventListener("click", () => setPage("menu"));
+  document.getElementById("moreBtn")?.addEventListener("click", () => setPage("menu",{resume:true}));
 
   document.addEventListener("click", e => {
     const menu = document.getElementById("moreMenu");
@@ -4558,35 +4586,14 @@ function bindAppInfoDrag(){
   const dialog=modal?.querySelector(".dialog");
   if(!modal||!dialog||dialog.dataset.dragBound==="1")return;
   dialog.dataset.dragBound="1";
-  let startY=0,distance=0,dragging=false;
-  dialog.addEventListener("touchstart",event=>{
-    if(!modal.classList.contains("show")||dialog.scrollTop>0)return;
-    dragging=true;
-    startY=event.touches[0].clientY;
-    distance=0;
-    dialog.classList.add("dragging");
-  },{passive:true});
-  dialog.addEventListener("touchmove",event=>{
-    if(!dragging)return;
-    distance=Math.max(0,event.touches[0].clientY-startY);
-    if(distance>0){
-      dialog.style.transform=`translateY(${distance}px)`;
-      modal.style.backgroundColor=`rgba(16,24,40,${Math.max(.12,.32-distance/700)})`;
-    }
-  },{passive:true});
-  dialog.addEventListener("touchend",()=>{
-    if(!dragging)return;
-    dragging=false;
-    dialog.classList.remove("dragging");
-    if(distance>74)closeAppInfoModal();
-    else resetAppInfoMotion();
-  },{passive:true});
+  bindPullToDismiss(dialog,{enabled:()=>modal.classList.contains("show"),dismiss:closeAppInfoModal});
 }
 
 function resetAppInfoMotion(){
   const modal=document.getElementById("appInfoModal");
   const dialog=modal?.querySelector(".dialog");
   if(dialog){
+    surfaceAnimations.get(dialog)?.cancel();
     dialog.classList.remove("dragging");
     dialog.style.transform="";
   }
@@ -4708,10 +4715,15 @@ function resetMenuMotion(){
   if(menu) menu.style.backgroundColor="";
 }
 
-function restoreNavigation(nav){
+function restoreNavigation(nav,options={}){
+  if(Number.isFinite(nav?.depth)&&navigationPositions.get(nav.depth)?.page===nav.page)nav=navigationPositions.get(nav.depth);
+  const previousPage=page;
+  const direction=options.direction||(Number(nav?.depth||0)<navigationDepth?"back":"forward");
+  navigationDepth=Number(nav?.depth||0);
   restoringNavigation = true;
   try{
     if(typeof nav?.globalSearchQuery==="string")globalSearchQuery=nav.globalSearchQuery;
+    if(nav?.historyFilters){const f=nav.historyFilters;historyFilter=f.status||"all";historyDateFilter=f.date||"all";historyFlowFilter=f.flow||"all";historyPlaceFilter=f.place||"all";historyTypeFilter=f.type||"all";historySearchQuery=f.query||"";historyCustomFrom=f.from||"";historyCustomTo=f.to||"";historyFiltersOpen=Boolean(f.open);}
     if(nav?.menu){
       page="menu";
       updateBottomNav();
@@ -4748,9 +4760,13 @@ function restoreNavigation(nav){
     }
     updateBottomNav();
     render();
+    if(page==="warehouse"&&selectedWarehouse&&warehouseTab==="material"&&typeof nav?.stockQuery==="string"){
+      const search=document.getElementById("stockSearch");if(search){search.value=nav.stockQuery;renderStockList();}
+    }
     if(Number.isFinite(nav?.scrollY))scrollToSavedPosition(nav.scrollY);
   }finally{
     restoringNavigation = false;
+    animatePageChange(previousPage,page,{direction,detail:true});
   }
 }
 
@@ -4828,12 +4844,124 @@ function init(){
 }
 
 // Small, presentation-only helpers. Inventory mutations stay transactional below.
+function motionReduced(){return Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches);}
+const surfaceAnimations=new WeakMap();
+let dismissalLayer=null;
+function cancelDismissal(){dismissalLayer?.remove();dismissalLayer=null;}
+function animateSurface(element,kind="open"){
+  surfaceAnimations.get(element)?.cancel();
+  element.style.transform="";element.classList.remove("dragging");
+  if(motionReduced()||!element.animate)return;
+  const offset=kind==="replace"?"translateX(12px)":"translateY(32px)";
+  const animation=element.animate([{transform:offset,opacity:.65},{transform:"translate(0,0)",opacity:1}],{duration:kind==="replace"?170:260,easing:"cubic-bezier(.22,1,.36,1)"});
+  surfaceAnimations.set(element,animation);
+}
+function animateEntryDismissal(){
+  cancelDismissal();
+  const modal=document.getElementById("entryModal"),dialog=document.getElementById("entryDialog");
+  if(motionReduced()||!modal?.classList.contains("show")||!dialog?.animate)return;
+  const bounds=dialog.getBoundingClientRect(),scroll=dialog.scrollTop;
+  if(!bounds.height)return;
+  // A non-interactive paint copy lets logical close remain immediate and race-free.
+  const layer=document.createElement("div"),copy=dialog.cloneNode(true);layer.className="motion-dismiss-layer";layer.inert=true;layer.setAttribute("aria-hidden","true");
+  [copy,...copy.querySelectorAll("[id]")].forEach(element=>element.removeAttribute("id"));
+  copy.querySelectorAll("button,input,select,textarea,a,[tabindex]").forEach(element=>{element.tabIndex=-1;element.removeAttribute("autofocus");});
+  copy.style.cssText=`position:fixed;left:${bounds.left}px;top:${bounds.top}px;width:${bounds.width}px;height:${bounds.height}px;max-height:none;margin:0;transform:none;overflow:hidden;pointer-events:none`;
+  layer.style.backgroundColor=getComputedStyle(modal).backgroundColor;layer.append(copy);document.body.append(layer);copy.scrollTop=scroll;dismissalLayer=layer;
+  const distance=innerWidth<600?innerHeight-bounds.top+24:24;
+  copy.animate([{transform:"translateY(0)"},{transform:`translateY(${distance}px)`}],{duration:210,easing:"cubic-bezier(.32,0,.67,0)",fill:"forwards"});
+  const fade=layer.animate([{opacity:1},{opacity:0}],{duration:220,fill:"forwards"});
+  fade.finished.then(()=>{layer.remove();if(dismissalLayer===layer)dismissalLayer=null;}).catch(()=>layer.remove());
+}
+
+function bindPullToDismiss(element,{enabled,dismiss,atTop=()=>element.scrollTop<=0}={}){
+  if(!element||element.dataset.pullBound)return;
+  element.dataset.pullBound="true";
+  let gesture=null,settling=null;
+  const reset=()=>{
+    const transform=element.style.transform;gesture=null;element.classList.remove("dragging");element.style.transform="";
+    settling?.cancel();if(transform&&!motionReduced()){settling=element.animate([{transform},{transform:"translateY(0)"}],{duration:240,easing:"cubic-bezier(.22,1,.36,1)"});surfaceAnimations.set(element,settling);}
+  };
+  const start=(x,y,target)=>{
+    if(!enabled()||target.closest?.("input,select,textarea,button,a,summary"))return;
+    const handle=Boolean(target.closest?.(".sheet-grip,.entry-modal-head,.dialog-title"));
+    if(!handle&&!atTop())return;
+    if(!handle){for(let node=target;node&&node!==element;node=node.parentElement)if(node.scrollHeight>node.clientHeight+1&&node.scrollTop>0)return;}
+    settling?.cancel();surfaceAnimations.get(element)?.cancel();
+    gesture={x,y,lastY:y,lastTime:performance.now(),distance:0,speed:0,active:false,handle};
+  };
+  const move=(x,y,event)=>{
+    if(!gesture)return;
+    if(!enabled()){reset();return;}
+    const dx=x-gesture.x,dy=y-gesture.y;
+    if(!gesture.active){
+      if(Math.abs(dx)>10&&Math.abs(dx)>Math.abs(dy)){reset();return;}
+      if(dy<0||(!gesture.handle&&!atTop())){reset();return;}
+      if(dy<7)return;
+      gesture.active=true;element.classList.add("dragging");
+    }
+    event.preventDefault();const now=performance.now();gesture.speed=(y-gesture.lastY)/Math.max(1,now-gesture.lastTime);gesture.lastY=y;gesture.lastTime=now;
+    gesture.distance=Math.max(0,dy);element.style.transform=`translateY(${Math.min(gesture.distance,innerHeight*.9)}px)`;
+  };
+  const end=cancel=>{
+    if(!gesture)return;
+    const close=!cancel&&gesture.active&&(gesture.distance>Math.min(100,element.clientHeight*.25)||(gesture.distance>28&&gesture.speed>.65));
+    if(!close){reset();return;}
+    gesture=null;element.classList.remove("dragging");dismiss();
+  };
+  element.addEventListener("touchstart",event=>{if(event.touches.length!==1){reset();return;}const touch=event.touches[0];start(touch.clientX,touch.clientY,event.target);},{passive:true});
+  element.addEventListener("touchmove",event=>{if(event.touches.length!==1){reset();return;}move(event.touches[0].clientX,event.touches[0].clientY,event);},{passive:false});
+  element.addEventListener("touchend",()=>end(false),{passive:true});element.addEventListener("touchcancel",()=>end(true),{passive:true});
+  element.addEventListener("pointerdown",event=>{if(event.pointerType!=="mouse"||event.button!==0||!event.target.closest?.(".sheet-grip"))return;start(event.clientX,event.clientY,event.target);if(gesture)element.setPointerCapture(event.pointerId);});
+  element.addEventListener("pointermove",event=>{if(event.pointerType==="mouse")move(event.clientX,event.clientY,event);});
+  element.addEventListener("pointerup",event=>{if(event.pointerType==="mouse")end(false);});element.addEventListener("pointercancel",event=>{if(event.pointerType==="mouse")end(true);});
+}
+
+function bindContextBack(){
+  const button=document.createElement("button");button.type="button";button.id="contextBack";button.hidden=true;document.body.append(button);
+  let frame=0;
+  const source=()=>[...view.querySelectorAll(".back")].find(element=>element.getClientRects().length);
+  const sync=()=>{
+    frame=0;const back=source();
+    const blocked=scrollLockReasons.size||document.body.classList.contains("keyboard-open");
+    button.hidden=Boolean(!back||blocked||back.getBoundingClientRect().bottom>=0||window.scrollY<100);
+    if(button.hidden)return;
+    const text=back.textContent.trim();if(button.textContent!==text)button.textContent=text;
+    button.setAttribute("aria-label",`${text.replace(/^[‹←]\s*/,"")} 돌아가기`);
+    const nav=document.querySelector(".bottom").getBoundingClientRect();let top=nav.top-12;
+    for(const action of view.querySelectorAll(".sticky-action")){const box=action.getBoundingClientRect();if(box.height&&box.top<top&&box.bottom>0)top=Math.min(top,box.top-12);}
+    button.style.bottom=`${Math.max(innerHeight-top,12)}px`;
+  };
+  const schedule=()=>{if(!frame)frame=requestAnimationFrame(sync);};
+  button.addEventListener("click",()=>{const back=source();if(back&&!scrollLockReasons.size)back.click();});
+  let lastScrollCapture=0,captureTimer=0;
+  window.addEventListener("scroll",()=>{schedule();const now=performance.now();if(now-lastScrollCapture>150){rememberListPosition();lastScrollCapture=now;}clearTimeout(captureTimer);captureTimer=setTimeout(rememberListPosition,100);},{passive:true});
+  window.addEventListener("resize",schedule,{passive:true});
+  const observer=new MutationObserver(schedule);observer.observe(view,{childList:true,subtree:true});observer.observe(document.body,{attributes:true,attributeFilter:["class"]});
+  bindPullToDismiss(view,{enabled:()=>page==="menu"&&!scrollLockReasons.size,dismiss:dismissMenuPage,atTop:()=>window.scrollY<=0});
+  schedule();
+}
+
+function dismissMenuPage(){
+  const depth=navigationDepth;
+  const finish=()=>{if(page!=="menu"||navigationDepth!==depth)return;history.state?.depth>0?history.back():setPage("home");};
+  pageChangeAnimation?.cancel();
+  if(motionReduced()||!view.animate){finish();return;}
+  pageChangeAnimation=view.animate([{transform:view.style.transform||"translateY(0)"},{transform:`translateY(${innerHeight}px)`}],{duration:180,easing:"cubic-bezier(.32,0,.67,0)",fill:"forwards"});
+  pageChangeAnimation.finished.then(finish,()=>{});
+}
+
 function resourceFiltersActive(){return Boolean(allResourceQuery.trim()||allResourceCategory!=="all"||allResourceWarehouse!=="all");}
 
 function rememberListPosition(){
   const nav=window.history.state;
-  if(restoringNavigation||!nav?.victor||!["home","warehouse","history","memo","technique"].includes(page)||nav.page!==page)return;
-  try{window.history.replaceState({...nav,scrollY:scrollLockReasons.size?lockedMenuScrollY:window.scrollY,resourceFilters:{query:allResourceQuery,category:allResourceCategory,warehouse:allResourceWarehouse},globalSearchQuery},"");}catch(_){}
+  if(restoringNavigation||!nav?.victor||!["home","warehouse","equipmentDetail","history","memo","technique","menu"].includes(page)||nav.page!==page)return;
+  const saved={...nav,...currentNavigationState(),scrollY:scrollLockReasons.size?lockedMenuScrollY:window.scrollY,resourceFilters:{query:allResourceQuery,category:allResourceCategory,warehouse:allResourceWarehouse},globalSearchQuery};
+  if(page==="warehouse"&&selectedWarehouse)saved.stockQuery=document.getElementById("stockSearch")?.value||"";
+  if(page==="history")saved.historyFilters={status:historyFilter,date:historyDateFilter,flow:historyFlowFilter,place:historyPlaceFilter,type:historyTypeFilter,query:historySearchQuery,from:historyCustomFrom,to:historyCustomTo,open:historyFiltersOpen};
+  pagePositions.set(page,saved);
+  if(Number.isFinite(saved.depth))navigationPositions.set(saved.depth,saved);
+  try{window.history.replaceState(saved,"");}catch(_){}
 }
 function scrollToSavedPosition(top){
   cancelAnimationFrame(scrollRestoreFrame);
@@ -4887,6 +5015,8 @@ function enhanceDetailControls(root=document){
 function needsNumericDone(){return !window.matchMedia?.("(hover: hover) and (pointer: fine)")?.matches&&Boolean(document.activeElement?.matches?.('input[type="number"],input[inputmode="numeric"],input[inputmode="decimal"]'));}
 function bindDetailPolish(){
   if("scrollRestoration" in history)history.scrollRestoration="manual";
+  bindContextBack();
+  bindPullToDismiss(document.getElementById("entryDialog"),{enabled:()=>document.getElementById("entryModal").classList.contains("show"),dismiss:requestEntryClose});
   const toolbar=document.createElement("div");toolbar.id="numericInputDone";toolbar.hidden=true;toolbar.innerHTML='<button type="button">입력 완료</button>';document.body.append(toolbar);
   const numeric=input=>input?.matches?.('input[type="number"],input[inputmode="numeric"],input[inputmode="decimal"]');
   const sync=()=>{toolbar.hidden=!needsNumericDone();};

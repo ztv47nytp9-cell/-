@@ -17,6 +17,7 @@ const server=http.createServer((req,res)=>{
   const page=await context.newPage();page.setDefaultTimeout(7000);page.on('pageerror',e=>errors.push(e.message));
   await page.goto(url);await page.waitForFunction(()=>typeof appStarted!=='undefined'&&appStarted);await page.waitForFunction(()=>getComputedStyle(document.getElementById('splash')).opacity==='0');
   const reachable=async(selector)=>{
+   await page.evaluate(()=>Promise.all([...document.getElementById('view').getAnimations(),...document.getElementById('entryDialog').getAnimations()].map(a=>a.finished.catch(()=>{}))));
    const result=await page.locator(selector).evaluate(e=>{const b=e.getBoundingClientRect(),hit=document.elementFromPoint(b.left+b.width/2,b.top+b.height/2);return {top:b.top,bottom:b.bottom,left:b.left,right:b.right,width:innerWidth,height:innerHeight,hit:hit===e||e.contains(hit),hitName:hit?.id||hit?.className};});
    assert.ok(result.top>=-1&&result.bottom<=height+1&&result.left>=-1&&result.right<=width+1&&result.hit,`${width} ${selector}: ${JSON.stringify(result)}`);checks++;
   };
@@ -27,7 +28,7 @@ const server=http.createServer((req,res)=>{
    await page.evaluate(()=>setPage('warehouse',{skipGuard:true}));
    const tabs=await page.locator('.storage-view-switch').evaluate(e=>({columns:getComputedStyle(e).gridTemplateColumns.split(' ').length,buttons:e.querySelectorAll('button').length}));assert.equal(tabs.columns,3);assert.equal(tabs.buttons,3);checks++;
    await screenshot('warehouse-'+theme);
-   if(width>=720){const nav=await page.locator('.bottom').boundingBox(),content=await page.locator('#view').boundingBox();assert.ok(Math.abs(nav.width-content.width)<=1&&Math.abs(nav.x-content.x)<=1,JSON.stringify({nav,content}));checks++;}
+   if(width>=720){await page.evaluate(()=>Promise.all(document.getElementById('view').getAnimations().map(a=>a.finished.catch(()=>{}))));const nav=await page.locator('.bottom').boundingBox(),content=await page.locator('#view').boundingBox();assert.ok(Math.abs(nav.width-content.width)<=1&&Math.abs(nav.x-content.x)<=1,JSON.stringify({nav,content}));checks++;}
    await page.evaluate(()=>{registerMode='normal';registerFlow='입고';setPage('register',{skipGuard:true});document.getElementById('recType').value='작업';document.getElementById('recType').dispatchEvent(new Event('change'));draftItems=[{...catalog[0],qty:1,warehouse:warehouses[0]}];renderItems();});
    const flows=await page.locator('.flow-btn').evaluateAll(es=>es.map(e=>e.getBoundingClientRect().top));assert.equal(new Set(flows).size,1);checks++;
    await screenshot('register-'+theme);
