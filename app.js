@@ -300,7 +300,16 @@ function updateBottomNav(){
   document.querySelectorAll(".nav").forEach(button=>{const active=button.dataset.page===activePage;button.classList.toggle("active",active);if(active)button.setAttribute("aria-current","page");else button.removeAttribute("aria-current");});
 }
 let pageChangeAnimation=null;
+let menuDismissAnimation=null;
+function cancelMenuDismissal(){
+  if(!menuDismissAnimation)return;
+  menuDismissAnimation.cancel();
+  if(pageChangeAnimation===menuDismissAnimation)pageChangeAnimation=null;
+  menuDismissAnimation=null;
+  view.style.transform="";view.classList.remove("dragging");
+}
 function animatePageChange(previous,next,{direction="forward",detail=false}={}){
+  cancelMenuDismissal();
   pageChangeAnimation?.cancel();pageChangeAnimation=null;
   surfaceAnimations.get(view)?.cancel();
   view.style.transform="";view.classList.remove("dragging");
@@ -327,7 +336,7 @@ function setPage(next, options={}){
   const previousPage=page;
   rememberListPosition();
   if(options.resume&&previousPage!==next&&next!=="register"&&pagePositions.has(next)){
-    const saved=pagePositions.get(next);restoreNavigation(saved,{direction:"tab"});pushNavigationState(saved);return;
+    const saved=pagePositions.get(next),restored=restoreNavigation(saved,{direction:"tab"});pushNavigationState(restored||saved);return;
   }
   page = next;
   selectedWarehouse = null;
@@ -808,6 +817,7 @@ function renderHome(){
   const memoCount = recentMemos(3).length;
   view.innerHTML = `
     ${storageSummaryCard(true)}
+    <button class="home-share-entry" id="homeShareResources" type="button"><span aria-hidden="true">☁️</span><strong>자원 공유</strong><small>내 자료 올리기 · 공유자료 가져오기</small><span class="share-entry-arrow" aria-hidden="true">›</span></button>
     <div class="home-quick card">
       <div class="section-title">바로 등록</div>
       <div class="home-quick-grid">
@@ -826,7 +836,6 @@ function renderHome(){
       <div class="section-title">자주 쓰는 기능</div>
       <div class="home-tool-grid">
         <button id="homeAllResources" type="button"><span>📦</span><strong>자재·장비</strong><small>전체 현황</small></button>
-        <button id="homeShareResources" type="button"><span>☁️</span><strong>공유</strong><small>올리기·가져오기</small></button>
         <button id="homeEquipmentRecord" type="button"><span>▣</span><strong>장비 조회</strong><small>관리·사용 이력</small></button>
         <button id="homeVehicleRecord" type="button"><span>↗</span><strong>차량 기록</strong><small>주행거리</small></button>
         <button id="homeVesselRecord" type="button"><span>≈</span><strong>방제정 기록</strong><small>엔진·연료</small></button>
@@ -3366,6 +3375,7 @@ function addWarehouse(){
 }
 
 function openEntryModal(html){
+  cancelMenuDismissal();
   cancelDismissal();
   const opening=!document.getElementById("entryModal").classList.contains("show");
   if(opening)entryReturnFocus=document.activeElement;
@@ -4560,6 +4570,7 @@ function openThemeSettings(){
 function openAppInfoModal(){
   const modal=document.getElementById("appInfoModal");
   if(!modal)return;
+  cancelMenuDismissal();
   const chip=modal.querySelector(".version-chip");if(chip)chip.textContent=`${VERSION} · ${APP_BUILD} · 저장형식 ${SCHEMA_VERSION}`;
   clearTimeout(appInfoCloseTimer);
   modal.classList.remove("closing");
@@ -4717,6 +4728,22 @@ function resetMenuMotion(){
 
 function restoreNavigation(nav,options={}){
   if(Number.isFinite(nav?.depth)&&navigationPositions.get(nav.depth)?.page===nav.page)nav=navigationPositions.get(nav.depth);
+  // History entries can outlive equipment removed locally or by shared data.
+  // Replace the dead destination as well as the in-memory cache, so Forward
+  // and bottom-tab resume cannot bring an unrenderable detail page back.
+  const missingEquipment=nav?.page==="equipmentDetail"&&(!nav.equipmentId||!state.equipment.some(item=>item.id===nav.equipmentId));
+  const missingRecord=nav?.recordId&&!state.records.some(record=>record.id===nav.recordId);
+  if(missingEquipment||missingRecord){
+    const oldPage=nav.page;
+    nav={...nav,page:missingEquipment?"warehouse":"history",scrollY:0};
+    delete nav.equipmentId;delete nav.recordId;delete nav.warehouse;delete nav.stockQuery;
+    if(missingEquipment)nav.view="equipment";
+    pagePositions.delete(oldPage);
+    if(Number.isFinite(nav.depth))navigationPositions.set(nav.depth,nav);
+    if(history.state?.page===oldPage&&history.state?.depth===nav.depth){
+      try{window.history.replaceState(nav,"");}catch(_){}
+    }
+  }
   const previousPage=page;
   const direction=options.direction||(Number(nav?.depth||0)<navigationDepth?"back":"forward");
   navigationDepth=Number(nav?.depth||0);
@@ -4728,7 +4755,7 @@ function restoreNavigation(nav,options={}){
       page="menu";
       updateBottomNav();
       render();
-      return;
+      return nav;
     }
     closeMenu(true);
     document.getElementById("entryModal")?.classList.remove("show");
@@ -4736,12 +4763,12 @@ function restoreNavigation(nav,options={}){
     if(nav?.recordId && state.records.some(record => record.id === nav.recordId)){
       openDetail(nav.recordId,{push:false,remember:false});
       scrollToSavedPosition(Number(nav.scrollY)||0);
-      return;
+      return nav;
     }
     if(nav?.equipmentId && state.equipment.some(item => item.id === nav.equipmentId)){
       openEquipment(nav.equipmentId,{push:false,remember:false});
       scrollToSavedPosition(Number(nav.scrollY)||0);
-      return;
+      return nav;
     }
     page = nav?.page || "home";
     selectedWarehouse = null;
@@ -4764,6 +4791,7 @@ function restoreNavigation(nav,options={}){
       const search=document.getElementById("stockSearch");if(search){search.value=nav.stockQuery;renderStockList();}
     }
     if(Number.isFinite(nav?.scrollY))scrollToSavedPosition(nav.scrollY);
+    return nav;
   }finally{
     restoringNavigation = false;
     animatePageChange(previousPage,page,{direction,detail:true});
@@ -4943,12 +4971,14 @@ function bindContextBack(){
 }
 
 function dismissMenuPage(){
+  if(page!=="menu"||scrollLockReasons.size||menuDismissAnimation)return;
   const depth=navigationDepth;
-  const finish=()=>{if(page!=="menu"||navigationDepth!==depth)return;history.state?.depth>0?history.back():setPage("home");};
+  const finish=()=>{if(page!=="menu"||navigationDepth!==depth||scrollLockReasons.size)return;history.state?.depth>0?history.back():setPage("home");};
   pageChangeAnimation?.cancel();
   if(motionReduced()||!view.animate){finish();return;}
   pageChangeAnimation=view.animate([{transform:view.style.transform||"translateY(0)"},{transform:`translateY(${innerHeight}px)`}],{duration:180,easing:"cubic-bezier(.32,0,.67,0)",fill:"forwards"});
-  pageChangeAnimation.finished.then(finish,()=>{});
+  const animation=pageChangeAnimation;menuDismissAnimation=animation;
+  animation.finished.then(()=>{if(menuDismissAnimation===animation)finish();},()=>{});
 }
 
 function resourceFiltersActive(){return Boolean(allResourceQuery.trim()||allResourceCategory!=="all"||allResourceWarehouse!=="all");}

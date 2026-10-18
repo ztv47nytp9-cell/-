@@ -24,7 +24,8 @@ const server=http.createServer((req,res)=>{
   const screenshot=async(name)=>{if(width===390||width===320&&name.includes('share'))await page.screenshot({path:path.join(out,`${width}-${name}.png`)});};
   for(const theme of ['light','dark']){
    await page.evaluate(theme=>{clearRegisterDraft();registerFormDraft=null;pendingFormBaseline='';pendingFormRecordId='';draftItems=[];draftEquipmentItems=[];setPage('home',{skipGuard:true});applyThemeMode(theme);},theme);
-   await reachable('#homeQuickOut');await reachable('#homeQuickIn');await screenshot('home-'+theme);
+   await reachable('#homeShareResources');await screenshot('home-'+theme);
+   await page.locator('#homeQuickOut').evaluate(e=>e.scrollIntoView({block:'center',behavior:'instant'}));await reachable('#homeQuickOut');await reachable('#homeQuickIn');
    await page.evaluate(()=>setPage('warehouse',{skipGuard:true}));
    const tabs=await page.locator('.storage-view-switch').evaluate(e=>({columns:getComputedStyle(e).gridTemplateColumns.split(' ').length,buttons:e.querySelectorAll('button').length}));assert.equal(tabs.columns,3);assert.equal(tabs.buttons,3);checks++;
    await screenshot('warehouse-'+theme);

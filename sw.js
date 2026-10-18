@@ -1,7 +1,7 @@
 /* App files move together; LocalStorage is never cleared by this worker. */
-const CACHE_NAME="victor-alpha-0-20-cache-v115";
+const CACHE_NAME="victor-alpha-0-20-cache-v116";
 const SETTINGS_CACHE="victor-runtime-settings";
-const CORE_ASSETS=["./index.html","./style.css?v=02010m115","./storage.js?v=02010m115","./workflow.js?v=02010m115","./app.js?v=02010m115","./manifest.json","./icons/icon-180.png","./icons/icon-192.png","./icons/icon-512.png","./interface.css?v=02010m115"];
+const CORE_ASSETS=["./index.html","./style.css?v=02011m116","./storage.js?v=02011m116","./workflow.js?v=02011m116","./app.js?v=02011m116","./manifest.json","./icons/icon-180.png","./icons/icon-192.png","./icons/icon-512.png","./interface.css?v=02011m116"];
 const isAppCache=name=>name.startsWith("victor-")&&name.includes("-cache-v");
 let selectedCache=CACHE_NAME;
 const settingUrl=new URL("./__victor_cache_selection",self.location.href).href;
