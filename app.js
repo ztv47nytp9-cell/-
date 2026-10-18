@@ -4089,12 +4089,30 @@ function normalizeCloudUrl(url){
 function cloudErrorMessage(error){
   const raw=String(error?.message||error||"");
   const message=raw.toLowerCase();
+  if(error?.cloudKind==="offline")return "인터넷 연결이 끊겼습니다 · 기기의 저장자료는 유지됩니다";
+  if(error?.cloudUncertain)return "전송 결과를 확인하지 못했습니다 · 최신 확인 후 다시 시도해주세요";
+  if(error?.cloudKind==="timeout")return "연결 시간이 초과되었습니다 · 잠시 후 최신 확인을 눌러주세요";
+  if(error?.cloudKind==="network")return "서버에 연결할 수 없습니다 · 인터넷 연결과 Supabase 프로젝트 상태를 확인해주세요";
+  if(error?.cloudKind==="cancelled")return "연결 확인을 취소했습니다 · 기존 자료는 유지됩니다";
+  const status=Number(error?.cloudStatus)||0;
+  if(status===401)return "공유 연결 인증에 실패했습니다 · 관리자에게 연결 설정을 확인해주세요";
+  if(status===403)return "공유 권한이 없습니다 · 관리자에게 확인해주세요";
+  if(status===429)return "요청이 많습니다 · 잠시 후 최신 확인을 눌러주세요";
+  if(status===408||status>=500)return "공유 서버가 준비 중이거나 일시적으로 응답하지 않습니다 · 잠시 후 다시 확인해주세요";
+  if(status===404)return "공유 테이블 또는 연결 경로를 찾지 못했습니다 · 관리자 확인이 필요합니다";
+  if(error?.cloudKind==="response")return "서버 응답을 확인하지 못했습니다 · 잠시 후 최신 확인을 눌러주세요";
+  if(status)return "공유 요청을 처리하지 못했습니다 · 관리자에게 확인해주세요";
   if(message.includes("공유자료 형식"))return "클라우드 자료 형식이 맞지 않습니다. 다시 내 자료 올리기를 해주세요";
   if(message.includes("401")||message.includes("invalid api key")||message.includes("jwt"))return "키가 맞지 않습니다. Publishable key 전체를 다시 복사해주세요";
-  if(message.includes("404")||message.includes("resource_snapshots"))return "테이블 이름(resource_snapshots) 또는 Supabase URL을 확인해주세요";
   if(message.includes("403")||message.includes("permission")||message.includes("row-level")||message.includes("rls"))return "RLS 정책을 확인해주세요";
-  if(message.includes("failed to fetch")||message.includes("network")||message.includes("cors"))return "네트워크 또는 Supabase URL을 확인해주세요";
+  if(message.includes("404"))return "공유 테이블 또는 연결 경로를 찾지 못했습니다 · 관리자 확인이 필요합니다";
+  if(message.includes("failed to fetch")||message.includes("network")||message.includes("cors"))return "서버에 연결할 수 없습니다 · 인터넷 연결과 Supabase 프로젝트 상태를 확인해주세요";
+  if(/^\s*</.test(raw))return "공유 서버 응답을 확인하지 못했습니다 · 잠시 후 다시 확인해주세요";
   return raw ? `클라우드 오류: ${raw.slice(0,90)}` : "클라우드 요청에 실패했습니다";
+}
+
+function cloudRequestError(message,details={}){
+  return Object.assign(new Error(message),details);
 }
 
 function cloudShareConfig(){
@@ -4305,17 +4323,52 @@ async function supabaseRest(path,options={}){
   const {cloudConfig,timeoutMs=15000,signal,...fetchOptions}=options;
   const config=cloudConfig || cloudShareConfig();
   if(!cloudShareReady(config))throw new Error("공유 연결 설정이 필요합니다");
+  const method=String(fetchOptions.method||"GET").toUpperCase(),readOnly=method==="GET";
+  // A single deadline covers both attempts and the backoff; writes are never replayed.
+  const deadline=Date.now()+timeoutMs;
   const controller=new AbortController();let timedOut=false;
+  let requestStarted=false;
   const abort=()=>controller.abort();if(signal?.aborted)abort();else signal?.addEventListener("abort",abort,{once:true});
   const timer=setTimeout(()=>{timedOut=true;controller.abort();},timeoutMs);
+  const cancelled=()=>cloudRequestError(timedOut?"연결 시간이 초과되었습니다":"연결 확인을 취소했습니다",{cloudKind:timedOut?"timeout":"cancelled",cloudUncertain:!readOnly&&requestStarted});
   try{
-    const response=await fetch(`${config.url}/rest/v1/${path}`,{...fetchOptions,signal:controller.signal,headers:{apikey:config.key,...(fetchOptions.headers||{})}});
-    const text=await response.text();
-    if(!response.ok)throw new Error(`Supabase ${response.status}: ${text||response.statusText}`);
-    if(response.status===204 || !text.trim())return null;
-    try{return JSON.parse(text);}catch(error){throw new Error(`Supabase 응답 해석 실패: ${error.message}`);}
+    for(let attempt=0;attempt<2;attempt++){
+      if(controller.signal.aborted)throw cancelled();
+      if(navigator.onLine===false)throw cloudRequestError("인터넷 연결이 끊겼습니다",{cloudKind:"offline"});
+      try{
+        requestStarted=true;
+        const response=await fetch(`${config.url}/rest/v1/${path}`,{...fetchOptions,...(readOnly?{cache:"no-store"}:{}),method,signal:controller.signal,headers:{apikey:config.key,...(fetchOptions.headers||{})}});
+        const text=await response.text();
+        if(controller.signal.aborted)throw cancelled();
+        if(!response.ok){
+          let body;try{body=JSON.parse(text);}catch(_){}
+          const retryable=[408,429,500,502,503,504,520,521,522,523,524].includes(response.status);
+          const retryAfter=response.headers?.get("Retry-After");
+          const retryDelay=retryAfter?Math.max(600,/^\d+(\.\d+)?$/.test(retryAfter)?Number(retryAfter)*1000:Date.parse(retryAfter)-Date.now()):600;
+          // Never expose an HTML gateway page or arbitrary server text in the UI/log.
+          throw cloudRequestError(`Supabase ${response.status}`,{cloudKind:"http",cloudStatus:response.status,cloudCode:typeof body?.code==="string"?body.code:"",cloudRetryable:retryable,cloudRetryDelay:Number.isFinite(retryDelay)?retryDelay:600,cloudUncertain:!readOnly&&retryable});
+        }
+        if(response.status===204)return null;
+        if(!text.trim())throw cloudRequestError("서버의 응답이 비어 있습니다",{cloudKind:"response",cloudUncertain:!readOnly});
+        try{return JSON.parse(text);}catch(_){throw cloudRequestError("서버 응답 형식을 확인할 수 없습니다",{cloudKind:"response",cloudUncertain:!readOnly});}
+      }catch(error){
+        if(controller.signal.aborted)throw cancelled();
+        const network=error?.name==="TypeError"||/failed to fetch|fetch failed|networkerror|network request failed|load failed/i.test(String(error?.message||""));
+        const failure=network?cloudRequestError("서버에 연결할 수 없습니다",{cloudKind:navigator.onLine===false?"offline":"network",cloudRetryable:true,cloudUncertain:!readOnly}):error;
+        if(!readOnly||attempt>0||navigator.onLine===false||!(network||failure.cloudRetryable))throw failure;
+        const retryDelay=failure.cloudRetryDelay||600;
+        if(retryDelay>=deadline-Date.now())throw failure;
+        // Backoff is cancellable, including while the shared request deadline expires.
+        await new Promise((resolve,reject)=>{
+          if(controller.signal.aborted){reject(cancelled());return;}
+          const onAbort=()=>{clearTimeout(delay);reject(cancelled());};
+          const delay=setTimeout(()=>{controller.signal.removeEventListener("abort",onAbort);resolve();},retryDelay);
+          controller.signal.addEventListener("abort",onAbort,{once:true});
+        });
+      }
+    }
   }catch(error){
-    if(timedOut)throw new Error(fetchOptions.method?"전송 시간이 초과되어 결과를 확인하지 못했습니다 · 최신 자료 확인 후 다시 시도해주세요":"연결 시간이 초과되었습니다 · 최신 자료를 다시 확인해주세요");
+    if(controller.signal.aborted)throw cancelled();
     throw error;
   }finally{clearTimeout(timer);signal?.removeEventListener("abort",abort);}
 }
