@@ -13,7 +13,7 @@ function openOutstandingEquipment(id=""){
 }
 function activeMaterials(selected=""){return catalog.filter(item=>!item.archived||item.name===selected);}
 function activeEquipment(selected=""){return (state.equipment||[]).filter(item=>!item.archived||item.id===selected);}
-function archiveButtonHtml(kind,item){return `<button class="btn secondary" id="archiveResource" type="button">${item.archived?"다시 사용":"사용 종료 · 보관 처리"}</button><div class="row-sub">${item.archived?"신규 선택 목록에서 숨김 · 재고와 이력 유지":"보관 처리해도 재고와 과거 이력은 유지됩니다"}</div>`;}
+function archiveButtonHtml(kind,item){return `<button class="btn secondary" id="archiveResource" type="button">${item.archived?"다시 사용":"사용 종료 · 보관 처리"}</button><div class="row-sub">${item.archived?"선택 목록에서 숨김 · 재고·이력 유지":"보관 처리 후에도 재고·이력 유지"}</div>`;}
 function bindArchiveResource(kind,id,after){
   document.getElementById("archiveResource")?.addEventListener("click",()=>runWorkflow("archive-resource",async()=>{
     const item=kind==="material"?itemOf(id):state.equipment.find(row=>row.id===id);if(!item)return;

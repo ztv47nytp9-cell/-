@@ -1,5 +1,5 @@
-const VERSION = "Alpha 0.20.8";
-const APP_BUILD = "113";
+const VERSION = "Alpha 0.20.9";
+const APP_BUILD = "114";
 const SCHEMA_VERSION = 1;
 const KEY = "victor_state_alpha_0_19_0e";
 let lastPersistedStateSnapshot = null;

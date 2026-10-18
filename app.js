@@ -414,7 +414,7 @@ function storageSummaryCard(clickable=false){
       <div class="summary-pill"><div class="summary-label">오일펜스</div><div class="summary-value">${summaryMetricHtml(s.boom,"m")}</div></div>
       <div class="summary-pill"><div class="summary-label">유처리제</div><div class="summary-value">${summaryMetricHtml(s.dispersant,"L")}</div></div>
     </div>
-    <div class="summary-subline">보관 ${o.warehouses}곳 · 보유 자재 ${o.materialKinds}종 · 장비 ${o.equipmentCount}대${o.emptyWarehouses?` · 빈 곳 ${o.emptyWarehouses}`:""}</div>
+    <div class="summary-subline summary-overview"><span>보관 ${o.warehouses}곳</span><span>자재 ${o.materialKinds}종</span><span>장비 ${o.equipmentCount}대</span>${o.emptyWarehouses?`<span>빈 곳 ${o.emptyWarehouses}</span>`:""}</div>
   </${tag}>`;
 }
 
@@ -1112,16 +1112,12 @@ function renderMenuPage(){
   queueMicrotask(updateUndoAvailability);
   view.innerHTML=`
     <button class="back" id="menuBackHome" type="button">‹ 홈</button>
-    <div class="card menu-page-hero">
-      <div class="section-title">앱 관리</div>
-      <div class="row-sub">백업·공유·화면·복구 기능만 모았습니다.</div>
-    </div>
     <div class="menu-page-section">
       <div class="menu-label">데이터 관리</div>
       <div class="menu-page-grid">
         <button type="button" id="pageBackupBtn">백업</button>
         <button type="button" id="pageRestoreBtn">복원</button>
-        <button type="button" id="pageCsvBtn">CSV 내보내기</button>
+        <button type="button" id="pageCsvBtn" class="menu-wide">CSV 내보내기</button>
       </div>
     </div>
     <div class="menu-page-section">
@@ -1212,7 +1208,12 @@ function openTechniqueDetail(id){
 
 function renderWarehouseGroupList(){
   const order=["창고","파출소","함정","차량","기타"];
-  return `<div class="group-toolbar"><button class="btn gray compact" data-groups-all="expand" type="button">전체 펼치기</button><button class="btn gray compact" data-groups-all="collapse" type="button">전체 접기</button></div>`+order.map(kind=>{const names=warehouses.filter(name=>warehouseKind(name)===kind).sort((a,b)=>a.localeCompare(b,"ko"));if(!names.length)return "";const rows=names.map(name=>{const summary=warehouseSummary(name),info=state.warehouseInfos[name]||{},empty=summary.materialCount===0&&summary.equipmentCount===0;return `<button class="list-row ${empty?"zero-stock":""}" data-wh="${esc(name)}" type="button"><div><div class="row-title">${esc(name)} ${empty?`<span class="mini-chip">비어 있음</span>`:""}</div><div class="row-sub">자재 ${summary.materialCount}종 · 장비 ${summary.equipmentCount}종${info.memo?" · 메모 있음":""}${info.access||info.keyNote||info.special||info.contactMemo?" · 참고 있음":""}</div></div><div class="chev">›</div></button>`;}).join("");return groupedSection("warehouses",kind==="차량"?"지휘차량":kind,`${names.length}곳`,`<div class="list-card">${rows}</div>`);}).join("")+`<button class="btn secondary warehouse-add-bottom" id="addWarehouseInline" type="button">+ 신규 보관장소 추가</button>`;
+  return `<div class="group-toolbar group-toggle-tools"><button class="btn gray compact" data-groups-all="expand" type="button">전체 펼치기</button><button class="btn gray compact" data-groups-all="collapse" type="button">전체 접기</button></div>`+order.map(kind=>{
+    const names=warehouses.filter(name=>warehouseKind(name)===kind).sort((a,b)=>a.localeCompare(b,"ko"));if(!names.length)return "";
+    const rows=names.map(name=>{const summary=warehouseSummary(name),info=state.warehouseInfos[name]||{},empty=summary.materialCount===0&&summary.equipmentCount===0;
+      return `<button class="list-row warehouse-list-row ${empty?"zero-stock":""}" data-wh="${esc(name)}" type="button"><div class="warehouse-row-content"><div class="row-title">${esc(name)}</div><div class="row-sub">자재 ${summary.materialCount}종 · 장비 ${summary.equipmentCount}종${info.memo?" · 메모 있음":""}${info.access||info.keyNote||info.special||info.contactMemo?" · 참고 있음":""}</div></div><div class="warehouse-row-status">${empty?`<span class="mini-chip">비어 있음</span>`:""}<span class="chev">›</span></div></button>`;
+    }).join("");return groupedSection("warehouses",kind==="차량"?"지휘차량":kind,`${names.length}곳`,`<div class="list-card">${rows}</div>`);
+  }).join("")+`<button class="btn secondary warehouse-add-bottom" id="addWarehouseInline" type="button">+ 신규 보관장소 추가</button>`;
 }
 
 function renderWarehouse(){
@@ -1243,14 +1244,14 @@ function renderWarehouse(){
   const whSummary = warehouseSummary(selectedWarehouse);
   view.innerHTML = warehouseViewSwitcher() + warehouseActions(selectedWarehouse) + `
     <button class="back" id="backWh" type="button">‹ 보관</button>
-    <div class="card"><div class="section-head mini-head"><div class="section-title">${esc(selectedWarehouse)}</div><span class="mini-chip">${esc(warehouseKind(selectedWarehouse))}</span></div><div class="warehouse-mini-stats"><span>자재 ${whSummary.materialCount}종</span><span>장비 ${whSummary.equipmentCount}종</span></div><div class="row-sub">📌 중요 메모</div><div class="memo-box">${info.memo ? esc(info.memo) : "등록된 메모가 없습니다."}</div>${warehouseFieldMemoHtml(info)}<button class="btn secondary" id="editInfo" type="button" style="width:100%;margin-top:12px">메모 수정</button></div>
+    <div class="card warehouse-summary"><div class="section-head mini-head"><div class="section-title">${esc(selectedWarehouse)}</div><span class="mini-chip">${esc(warehouseKind(selectedWarehouse))}</span></div><div class="warehouse-mini-stats"><span>자재 ${whSummary.materialCount}종</span><span>장비 ${whSummary.equipmentCount}종</span></div><details class="resource-management warehouse-reference"><summary>참고·관리${info.memo?" · 메모 있음":""}</summary><div class="management-content">${info.memo?`<div class="row-sub">📌 중요 메모</div><div class="memo-box">${esc(info.memo)}</div>`:`<div class="row-sub">등록된 참고 메모 없음</div>`}${warehouseFieldMemoHtml(info)}<button class="btn secondary" id="editInfo" type="button">보관장소 정보 수정</button></div></details></div>
     ${typeof renderOps === "function" ? renderOps(selectedWarehouse) : ""}
     <div class="card"><div class="tabbar"><button class="tabbtn ${warehouseTab === "material" ? "active" : ""}" id="tabMaterial" type="button">자재</button><button class="tabbtn ${warehouseTab === "equipment" ? "active" : ""}" id="tabEquipment" type="button">장비</button></div>
     ${warehouseTab === "material" ? `${groupToolbar(materialSortMode,"warehouse-material")}<input class="search" id="stockSearch" placeholder="자재 검색"><div id="stockList"></div><button class="btn secondary" id="addMaterialInline" type="button" style="width:100%;margin-top:12px">+ 신규 추가</button>` : renderWarehouseEquipment(selectedWarehouse)}</div>`;
   bindWarehouseViewSwitcher();
   bindWarehouseActions(selectedWarehouse);
   const warehouseCard=document.getElementById("editInfo")?.closest(".card");
-  if(warehouseCard){const button=document.createElement("button");button.id="deleteWarehouse";button.type="button";button.className="btn danger warehouse-delete";button.textContent="보관장소 삭제";warehouseCard.append(button);button.addEventListener("click",()=>deleteManagedWarehouse(selectedWarehouse));}
+  if(warehouseCard){const button=document.createElement("button");button.id="deleteWarehouse";button.type="button";button.className="btn danger warehouse-delete";button.textContent="보관장소 삭제";warehouseCard.querySelector(".management-content").append(button);button.addEventListener("click",()=>deleteManagedWarehouse(selectedWarehouse));}
   document.getElementById("backWh")?.addEventListener("click", () => window.history.back());
   document.getElementById("editInfo")?.addEventListener("click", () => editWarehouseInfo(selectedWarehouse));
   document.getElementById("tabMaterial")?.addEventListener("click", () => { warehouseTab="material"; renderWarehouse(); replaceNavigationState({page:"warehouse",warehouse:selectedWarehouse,tab:warehouseTab}); });
@@ -1485,8 +1486,8 @@ function renderRegister(){
           <button class="flow-btn ${registerFlow === "이송" ? "active" : ""}" id="flowMove" type="button">이송</button>
         </div>
         ${registerFlow === "이송" ? `<input id="recType" type="hidden" value="이송">` : `<label>종류<select id="recType">${types.filter(t=>t!=="이송").map(t=>`<option value="${t}">${t}</option>`).join("")}</select></label>`}
-        <label>${registerFlow === "이송" ? "기본 출발 보관 (자재별 변경 가능)" : "기본 보관 (자재별 변경 가능)"}<select id="recWarehouse">${warehouses.map(w=>`<option value="${esc(w)}">${esc(w)}</option>`).join("")}</select></label>
-        ${registerFlow === "이송" ? `<label>도착 보관<select id="recTargetWarehouse">${transferTargetOptions(warehouses[0] || "")}</select></label>` : ""}
+        <div class="register-route ${registerFlow === "이송"?"is-transfer":""}"><label>${registerFlow === "이송" ? "기본 출발지" : "기본 보관 (자재별 변경 가능)"}<select id="recWarehouse">${warehouses.map(w=>`<option value="${esc(w)}">${esc(w)}</option>`).join("")}</select></label>
+        ${registerFlow === "이송" ? `<label>도착지<select id="recTargetWarehouse">${transferTargetOptions(warehouses[0] || "")}</select></label><div class="row-sub route-help">아래 품목의 출발지만 개별 변경할 수 있습니다.</div>` : ""}</div>
         <details class="field-card"><summary>기록 시각 · 자동 입력</summary><div class="location-grid"><label>날짜<input id="recDate" type="date" value="${todayISO()}"></label><label>시간<input id="recTime" type="time" value="${localTimeNow()}"></label></div></details>
         <label>제목<input id="recTitle" placeholder="제목을 입력하세요"></label>
       ` : `
@@ -1503,7 +1504,7 @@ function renderRegister(){
         </div>
       </div>` : ""}
       <div>
-        <div class="section-head" style="margin:5px 0 8px">
+        <div class="section-head register-resource-head" style="margin:5px 0 8px">
           <div class="section-title" style="font-size:16px">${registerMode === "quick" ? "사용 내역" : registerFlow}</div>
           <div class="btn-row"><button class="btn secondary compact" id="addItem" type="button">방제자재</button><button class="btn secondary compact" id="addEquipmentItem" type="button">방제장비</button></div>
         </div>
@@ -1817,7 +1818,7 @@ function renderEquipmentItems(){
       <label>장비 선택<select data-equipment-name="${index}">${categoryEquipment.map(e=>`<option value="${e.id}" ${e.id===item.id?"selected":""}>${esc(equipmentRegisterLabel(e))}</option>`).join("")}</select></label>
       <div class="row-sub">${esc(selected?.cat || "분류 미지정")} · 규격 ${esc(selected?.spec || selected?.detail || "미입력")} · 모델 ${esc(selected?.model || "미입력")} · ${esc(selected?.place || "보관 미지정")}${selected?.memo || selected?.etc ? ` · ${esc(selected.memo || selected.etc)}` : ""}</div>
       <div class="row-sub">${selected?esc(equipmentAvailabilityText(selected)):"장비를 선택해주세요"}</div><label>${registerMode==="normal"&&registerFlow==="입고"?"입고":registerMode==="normal"&&registerFlow==="이송"?"이송":"사용"} 수량<input type="number" inputmode="numeric" min="1" step="1" data-equipment-qty="${index}" value="${item.qty ?? ""}"></label>
-      <button class="btn gray" data-equipment-remove="${index}" type="button">삭제</button>
+      <div class="item-actions"><button class="btn gray" data-equipment-remove="${index}" type="button">장비 삭제</button></div>
     </div></div>`;
   }).join("");
   area.querySelectorAll("[data-equipment-category]").forEach(select=>select.addEventListener("change",()=>{
@@ -1859,7 +1860,7 @@ function renderItems(){
         ${current?`<div class="register-stock-now"><span>${esc(current.label)}</span><strong>${materialQtyText(current.qty,it.unit,it)}</strong></div>`:""}
         ${isDispersant(it)?`<div class="can-converter"><label>18L 캔 수<input type="number" inputmode="numeric" min="0" step="1" data-can-qty="${idx}" value="${it.qty && Number(it.qty)%18===0?Number(it.qty)/18:""}" placeholder="캔 개수"></label><div data-can-result="${idx}">${it.qty?`${Number(it.qty)/18}캔 = ${Number(it.qty)}L`:"캔 수를 입력하면 리터로 환산됩니다"}</div></div>`:""}
         <div class="qty-quick" aria-label="수량 빠른 입력"><button type="button" data-qty-add="1" data-qty-index="${idx}">+1</button><button type="button" data-qty-add="5" data-qty-index="${idx}">+5</button><button type="button" data-qty-add="10" data-qty-index="${idx}">+10</button><button type="button" data-qty-clear="${idx}">초기화</button></div>
-        <button class="btn gray" data-remove="${idx}" type="button">삭제</button>
+        <div class="item-actions"><button class="btn gray" data-remove="${idx}" type="button">자재 삭제</button></div>
       </div>
     </div>
   `;}).join("");
@@ -2471,6 +2472,13 @@ async function removePendingEquipmentFromRecord(id,index){
   openDetail(id,{push:false,remember:false});
 }
 
+function recordMaterialHtml(item,index,record){
+  const transfer=record.flow==="이송",location=itemWarehouse(item,record.warehouse)||"보관 미지정";
+  const changed=item.locationCorrection?`<div class="stock-spec">${esc(pendingBalanceText(item))}</div>`:transfer&&item.targetBefore!==undefined?`<dl class="transfer-balances"><div><dt>출발 잔량</dt><dd>${materialQtyText(item.before,item.unit,item)} → ${materialQtyText(item.after,item.unit,item)}</dd></div><div><dt>도착 잔량</dt><dd>${materialQtyText(item.targetBefore,item.unit,item)} → ${materialQtyText(item.targetAfter,item.unit,item)}</dd></div></dl>`:item.before!==undefined?`<div class="stock-spec">재고 ${materialQtyText(item.before,item.unit,item)} → ${materialQtyText(item.after,item.unit,item)}</div>`:"";
+  const quantity=transfer?materialQtyText(item.qty,item.unit,item):item.before!==undefined?(item.diff>0?"+":"")+materialQtyText(item.diff,item.unit,item):materialQtyText(item.qty,item.unit,item);
+  return `<div class="record-material-line"><div class="record-material-heading"><div class="stock-name">${esc(item.name)}</div><div class="stock-qty">${transfer?`<small>이송 수량</small>`:""}${quantity}</div></div><div class="stock-spec">${esc(item.cat||"")} · ${esc(location)}${transfer?` → ${esc(item.targetWarehouse||record.targetWarehouse||"보관 미지정")}`:""}</div>${changed}${["출고","입고","이송"].includes(record.flow)?`<div class="record-item-actions"><button class="btn secondary compact" data-edit-item-warehouse="${index}" type="button">보관장소 수정</button></div>`:""}</div>`;
+}
+
 function openDetail(id, options={}){
   if(options.push!==false)rememberListPosition();
   const r = state.records.find(x => x.id === id);
@@ -2524,10 +2532,10 @@ function openDetail(id, options={}){
       ${r.editedAt ? `<div class="row-sub">수정시각 ${esc(new Date(r.editedAt).toLocaleString("ko-KR"))}</div>` : ""}
       ${r.appliedAt ? `<div class="row-sub">반영시각 ${esc(new Date(r.appliedAt).toLocaleString("ko-KR"))}</div>` : ""}
       ${recordFieldSummary(r)}
-      ${r.memo ? `<div class="callout" style="margin-top:12px">${esc(r.memo)}</div>` : ""}
+      ${r.memo ? `<div class="plain-note">${esc(r.memo)}</div>` : ""}
     </div>
-    ${r.flow==="이송"?`<div class="card transfer-summary-card"><div class="section-title">이송 요약</div><div class="transfer-route"><span>${esc([...new Set(r.items.map(item=>itemWarehouse(item,r.warehouse)))].filter(Boolean).join(", ")||r.warehouse||"출발 미지정")}</span><strong>→</strong><span>${esc(r.targetWarehouse || "도착 미지정")}</span></div><div class="row-sub">자재 ${r.items.length}건 · 장비 ${(r.equipmentItems || []).length}건</div></div>`:""}
-    ${r.items.length ? `<div class="card"><div class="section-title">${r.flow === "입고" ? "입고 자재" : r.flow === "이송" ? "이송 자재" : "사용 자재"}</div>${r.items.map((i,index) => `<div class="stock-line"><div><div class="stock-name">${esc(i.name)}</div><div class="stock-spec">${esc(i.cat)} · ${esc(itemWarehouse(i,r.warehouse)||"보관 미지정")}${i.locationCorrection ? " · "+pendingBalanceText(i) : r.flow==="이송"&&i.targetBefore!==undefined ? ` → ${esc(i.targetWarehouse||r.targetWarehouse||"보관 미지정")} · 출발 ${materialQtyText(i.before,i.unit,i)} → ${materialQtyText(i.after,i.unit,i)} · 도착 ${materialQtyText(i.targetBefore,i.unit,i)} → ${materialQtyText(i.targetAfter,i.unit,i)}` : i.before !== undefined ? " · " + materialQtyText(i.before,i.unit,i) + " → " + materialQtyText(i.after,i.unit,i) : ""}</div>${["출고","입고","이송"].includes(r.flow)?`<button class="btn secondary compact" data-edit-item-warehouse="${index}" type="button">보관장소 수정</button>`:""}</div><div class="stock-qty">${r.flow==="이송" ? materialQtyText(i.qty,i.unit,i) : i.before !== undefined ? (i.diff > 0 ? "+" : "") + materialQtyText(i.diff,i.unit,i) : materialQtyText(i.qty,i.unit,i)}</div></div>`).join("")}</div>` : ""}
+    ${r.flow==="이송"?`<div class="card transfer-summary-card"><div class="section-title">이송 요약</div><div class="transfer-route"><span><small>출발</small>${esc([...new Set(r.items.map(item=>itemWarehouse(item,r.warehouse)))].filter(Boolean).join(", ")||r.warehouse||"출발 미지정")}</span><strong aria-hidden="true">→</strong><span><small>도착</small>${esc(r.targetWarehouse || "도착 미지정")}</span></div><div class="row-sub">자재 ${r.items.length}건 · 장비 ${(r.equipmentItems || []).length}건</div></div>`:""}
+    ${r.items.length ? `<div class="card"><div class="section-title">${r.flow === "입고" ? "입고 자재" : r.flow === "이송" ? "이송 자재" : "사용 자재"}</div>${r.items.map((item,index)=>recordMaterialHtml(item,index,r)).join("")}</div>` : ""}
     ${(r.equipmentItems || []).length ? `<div class="card"><div class="section-title">${r.flow==="입고"?"입고 장비":r.flow==="이송"?"이송 장비":"사용 장비"}</div>${r.equipmentItems.map((item,index)=>{const returned=Math.min(Number(item.qty||0),Number(item.returnedQty||0)),using=Number(item.qty||0)-returned;return `<div class="stock-line"><button class="plain-button" data-used-equipment="${item.toEquipmentId || item.id}" type="button"><div class="stock-name">${esc(item.name)}</div><div class="stock-spec">${r.flow==="이송"?`${esc(item.fromPlace || item.place || r.warehouse || "보관 미지정")} → ${esc(item.toPlace || r.targetWarehouse || "보관 미지정")} · ${Number(item.qty||0)}대`:esc(item.place || "보관 미지정")+" · "+(r.flow==="입고"?`입고 ${Number(item.qty||0)}대`:`사용 중 ${using}대 · 반납 ${returned}대`)}</div></button>${r.flow==="입고"||r.flow==="이송"?"":`<button class="btn secondary compact" data-return-equipment="${index}" type="button">부분 반납</button>`}</div>`;}).join("")}</div>` : ""}
     <button class="btn secondary" id="editRecordBasic" type="button" style="width:100%;margin-bottom:9px">기본정보 수정</button>
     <button class="btn secondary" id="copyRecord" type="button" style="width:100%;margin-bottom:9px">새 기록으로 복사</button>
@@ -2898,7 +2906,16 @@ function renderFastSurvey(){
   if(!it){showFeedback("info","선택 범위에 품목이 없습니다");setPage("home");return;}
   const key=`${it.warehouse}|${it.name}`,cur=Number(state.stock[it.warehouse]?.[it.name]||0),baseline=Number(survey.baseline[key]||0),checked=survey.checked[key]===true,confirmed=fastSurveyConfirmedCount(items),saved=survey.values[key];
   document.getElementById("headTitle").innerHTML=`<div class="page-title">초기 재고실사</div><div class="date">확인 ${confirmed} / ${items.length} · ${idx+1}번째</div>`;
-  view.innerHTML=`<button class="back" id="exitFastSurvey" type="button">‹ 홈</button><div class="card survey-card"><span class="badge blue">${esc(it.warehouse)}</span><div class="survey-item-status ${checked?"confirmed":"unconfirmed"}">${checked?"✓ 확인 완료":"미확인"}</div><div class="section-title" style="margin-top:10px">${esc(it.name)}</div><div class="row-sub">${esc(it.cat)} · 실사 시작 수량 ${qtyText(baseline,it.unit)}${cur!==baseline?` · 현재 수량 ${qtyText(cur,it.unit)} (변경됨)`:""}</div><label>실사 수량<input class="big-input" id="fastSurveyQty" type="number" inputmode="decimal" min="0" value="${checked?saved??"":""}" placeholder="세어 본 수량 입력"></label><div class="survey-fast-actions"><button class="btn gray" id="surveyZero" type="button">실제 수량 0</button><button class="btn secondary" id="surveyKeepCurrent" type="button">현재 수량 확인</button><button class="btn primary" id="surveyDirect" type="button">수량 직접 입력</button></div></div><div class="entry-actions"><button class="btn gray" id="fastPrev" type="button" ${idx===0?"disabled":""}>이전</button><button class="btn primary" id="fastNext" type="button">${idx===items.length-1?"확인 현황 보기":"다음 · 건너뛰기"}</button></div><div class="row-sub survey-progress-note">확인 ${confirmed}개 · 미확인 ${items.length-confirmed}개</div><button class="btn secondary" id="fastBatch" type="button" style="width:100%;margin-top:9px">여러 품목 한 번에 입력</button><button class="btn secondary" id="fastReview" type="button" style="width:100%;margin-top:9px">확인 현황 보기</button>`;
+  updateBottomNav();
+  view.innerHTML=`<button class="back" id="exitFastSurvey" type="button">‹ 홈</button>
+    <div class="card survey-card"><div class="survey-item-heading"><span class="badge blue">${esc(it.warehouse)}</span><span class="survey-item-status ${checked?"confirmed":"unconfirmed"}">${checked?"✓ 확인 완료":"미확인"}</span></div>
+      <div class="section-title" style="margin-top:10px">${esc(it.name)}</div><div class="row-sub">${esc(it.cat)} · 시작 수량 ${qtyText(baseline,it.unit)}${cur!==baseline?` · 현재 ${qtyText(cur,it.unit)} (변경됨)`:""}</div>
+      <label class="survey-quantity-label">실사 수량 (${esc(it.unit)})<span class="quantity-control"><input class="big-input" id="fastSurveyQty" type="number" inputmode="${integerUnit(it.unit)?"numeric":"decimal"}" min="0" value="${checked?saved??"":""}" placeholder="세어 본 수량"><span class="quantity-unit" aria-hidden="true">${esc(it.unit)}</span></span></label>
+      <div class="survey-fast-actions"><button class="btn gray" id="surveyZero" type="button">0으로 확인</button><button class="btn secondary" id="surveyKeepCurrent" type="button">현재 수량 확인</button><button class="btn gray" id="surveyDirect" type="button">직접 입력</button></div>
+    </div><div class="entry-actions survey-navigation"><button class="btn gray" id="fastPrev" type="button" ${idx===0?"disabled":""}>이전</button><button class="btn primary" id="fastNext" type="button"></button></div>
+    <div class="row-sub survey-progress-note">확인 ${confirmed}개 · 미확인 ${items.length-confirmed}개</div><div class="survey-secondary-actions"><button class="btn secondary" id="fastBatch" type="button">여러 품목 입력</button><button class="btn secondary" id="fastReview" type="button">확인 현황</button></div>`;
+  const syncNext=()=>{const entered=document.getElementById("fastSurveyQty").value!=="";document.getElementById("fastNext").textContent=idx===items.length-1?(entered?"확인 · 검토":"미확인 · 검토"):(entered?"확인 · 다음":"건너뛰기");};
+  syncNext();document.getElementById("fastSurveyQty").addEventListener("input",syncNext);
   const commit=async(value)=>{const beforeState=JSON.stringify(state);survey.values[key]=Number(value);survey.checked[key]=true;if(!saveStateTransaction(beforeState,"실사 수량을 저장하지 못했습니다. 다시 저장해주세요"))return;const next=Math.min(idx+1,items.length-1);if(next===idx)renderFastSurveyReview();else{const beforeMove=JSON.stringify(state);survey.index=next;if(saveStateTransaction(beforeMove,"실사 진행 위치를 저장하지 못했습니다"))renderFastSurvey();}};
   document.getElementById("surveyZero").onclick=()=>commit(0);document.getElementById("surveyKeepCurrent").onclick=()=>commit(cur);document.getElementById("surveyDirect").onclick=()=>document.getElementById("fastSurveyQty").focus();
   document.getElementById("fastNext").onclick=async()=>{const input=document.getElementById("fastSurveyQty");if(input.value!==""){commit(input.value);return;}const beforeState=JSON.stringify(state);survey.checked[key]=false;delete survey.values[key];if(idx===items.length-1){if(saveStateTransaction(beforeState,"실사 진행 정보를 저장하지 못했습니다"))renderFastSurveyReview();return;}survey.index=idx+1;if(saveStateTransaction(beforeState,"실사 진행 정보를 저장하지 못했습니다"))renderFastSurvey();};
@@ -2907,7 +2924,7 @@ function renderFastSurvey(){
 }
 function renderFastSurveyBatch(){
   const survey=ensureFastSurveyState(),items=fastSurveyItems(),start=Math.floor((survey.index||0)/12)*12,rows=items.slice(start,start+12);
-  view.innerHTML=`<button class="back" id="batchBack" type="button">‹ 한 품목씩</button><div class="card"><div class="section-title">일괄 재고입력</div><div class="row-sub">빈칸은 미확인으로 남고, 0도 확인 수량으로 처리합니다.</div>${rows.map((it,n)=>{const key=`${it.warehouse}|${it.name}`,checked=survey.checked[key]===true;return `<div class="batch-row"><div><strong>${esc(it.name)}</strong><div class="row-sub">${esc(it.warehouse)} · 시작 수량 ${qtyText(survey.baseline[key]||0,it.unit)} · ${checked?"확인 완료":"미확인"}</div><button class="link-btn" type="button" data-batch-current="${n}">현재 수량 확인</button></div><input data-batch="${n}" type="number" inputmode="decimal" min="0" value="${checked?survey.values[key]??"":""}" placeholder="미확인"></div>`;}).join("")}</div><button class="btn primary" id="batchSave" type="button" style="width:100%">확인 저장 · 다음 묶음</button>`;
+  view.innerHTML=`<button class="back" id="batchBack" type="button">‹ 한 품목씩</button><div class="card batch-card"><div class="section-title">일괄 재고입력</div><div class="row-sub">빈칸은 미확인 · 0도 확인 수량으로 저장</div>${rows.map((it,n)=>{const key=`${it.warehouse}|${it.name}`,checked=survey.checked[key]===true;return `<div class="batch-row"><strong class="batch-item-name">${esc(it.name)}</strong><div class="row-sub batch-place">${esc(it.warehouse)} · 시작 ${qtyText(survey.baseline[key]||0,it.unit)}</div><div class="batch-input-row"><button class="btn gray compact" type="button" data-batch-current="${n}">현재 수량</button><label class="batch-quantity"><span class="batch-state">${checked?"확인 수량":"실사 수량"}</span><span class="quantity-control"><input data-batch="${n}" aria-label="${esc(it.name)} 실사 수량 (${esc(it.unit)})" type="number" inputmode="${integerUnit(it.unit)?"numeric":"decimal"}" min="0" value="${checked?survey.values[key]??"":""}" placeholder="미확인"><span class="quantity-unit" aria-hidden="true">${esc(it.unit)}</span></span></label></div></div>`;}).join("")}</div><button class="btn primary sticky-action batch-save" id="batchSave" type="button">${start+12>=items.length?"확인 저장 · 검토":"확인 저장 · 다음 묶음"}</button>`;
   document.getElementById("batchBack").onclick=renderFastSurvey;
   document.querySelectorAll("[data-batch-current]").forEach(button=>button.onclick=()=>{const n=Number(button.dataset.batchCurrent),item=rows[n],input=document.querySelector(`[data-batch="${n}"]`);input.value=Number(state.stock[item.warehouse]?.[item.name]||0);});
   document.getElementById("batchSave").onclick=()=>{const beforeState=JSON.stringify(state);rows.forEach((it,n)=>{const key=`${it.warehouse}|${it.name}`,input=document.querySelector(`[data-batch="${n}"]`);if(input.value!==""){survey.values[key]=Number(input.value);survey.checked[key]=true;}else{delete survey.values[key];survey.checked[key]=false;}});survey.index=Math.min(start+12,items.length-1);if(!saveStateTransaction(beforeState,"일괄 실사 입력을 저장하지 못했습니다. 입력을 확인하고 다시 시도해주세요"))return;start+12>=items.length?renderFastSurveyReview():renderFastSurveyBatch();};
@@ -3217,27 +3234,31 @@ function openEquipment(id, options={}){
     <button class="back" id="backEquip" type="button">‹ 장비</button>
     <div class="card resource-detail-card">
       <div><span class="badge blue">${esc(item.cat || "기타장비")}</span></div>
-      <div class="section-title" style="margin-top:10px">${esc(item.name)}</div><button class="btn secondary" id="openEquipmentHistory" type="button">전체 이력 보기</button>
-      <div class="detail-grid">
-        <div><span>규격</span><strong>${esc(item.spec || item.detail || "미입력")}</strong></div>
+      <div class="section-title" style="margin-top:10px">${esc(item.name)}</div>
+      <div class="equipment-metrics">
         <div><span>보유</span><strong>${equipmentAvailability(item).total}대</strong></div>
         <div><span>사용 중</span><strong>${equipmentAvailability(item).using}대</strong></div>
         <div><span>사용 가능</span><strong>${equipmentAvailability(item).available}대</strong></div>
+      </div>
+      <div class="detail-grid equipment-info-grid">
+        <div><span>규격</span><strong>${esc(item.spec || item.detail || "미입력")}</strong></div>
         <div><span>보관창고</span><strong>${esc(item.place || "미지정")}</strong></div>
       </div>
-      ${item.memo || item.etc ? `<div class="callout" style="margin-top:12px">${esc(item.memo || item.etc)}</div>` : ""}
+      ${item.memo || item.etc ? `<div class="plain-note">${esc(item.memo || item.etc)}</div>` : ""}
       ${legacy.length ? `<div class="row-sub" style="margin-top:10px">기존 정보 · ${esc(legacy.join(" · "))}</div>` : ""}
-      <div class="btn-row resource-quick-actions"><button class="btn secondary" id="equipmentQuickOut" type="button" ${Number(item.qty||0)>0?"":"disabled"}>출고 기록</button><button class="btn secondary" id="equipmentQuickIn" type="button">입고 기록</button></div>
-      <div class="row-sub">사용·반납 수량은 이 기기 기록 기준입니다.</div><button class="btn secondary" id="equipmentOutstanding" type="button" style="width:100%;margin-top:10px">미반납 기록 보기</button><button class="btn primary" id="editSimpleEquipment" type="button" style="width:100%;margin-top:14px">정보 수정</button>
+      <div class="btn-row resource-quick-actions"><button class="btn primary" id="equipmentQuickOut" type="button" ${Number(item.qty||0)>0?"":"disabled"}>출고 기록</button><button class="btn secondary" id="equipmentQuickIn" type="button">입고 기록</button></div>
+      <div class="row-sub equipment-local-note">사용·반납 수량은 이 기기 기록 기준</div>
+      <div class="equipment-query-actions"><button class="btn gray" id="openEquipmentHistory" type="button">전체 이력</button><button class="btn gray" id="equipmentOutstanding" type="button">미반납 기록</button></div>
+      <details class="resource-management equipment-management"><summary>장비 관리</summary><div class="management-content"><button class="btn secondary" id="editSimpleEquipment" type="button">정보 수정</button></div></details>
     </div>
     <div class="card"><div class="section-head" style="margin:0 0 10px"><div class="section-title">현재 부속품</div><button class="btn secondary compact" id="addAccessory" type="button">+ 부속품</button></div>
-      ${accessories.length ? accessories.map(part=>`<div class="stock-line"><div><div class="stock-name">${esc(part.name)}</div><div class="stock-spec"><span class="badge blue">${esc(part.status||"예비 보유")}</span> · ${esc(part.memo || "메모 없음")}</div></div><div><div class="stock-qty">${Number(part.qty)}개</div><div class="btn-row" style="margin-top:6px"><button class="btn gray compact" data-accessory-edit="${part.id}" type="button">수정</button><button class="btn danger compact" data-accessory-delete="${part.id}" type="button">삭제</button></div></div></div>`).join("") : `<div class="emptybox">현재 등록된 부속품이 없습니다.</div>`}
+      ${accessories.length ? accessories.map(part=>`<div class="accessory-row"><div class="accessory-heading"><div class="stock-name">${esc(part.name)}</div><div class="stock-qty">${Number(part.qty)}개</div></div><div class="stock-spec"><span class="badge blue">${esc(part.status||"예비 보유")}</span>${part.memo?` · ${esc(part.memo)}`:""}</div><div class="btn-row accessory-actions"><button class="btn gray compact" data-accessory-edit="${part.id}" type="button">수정</button><button class="btn danger compact" data-accessory-delete="${part.id}" type="button">삭제</button></div></div>`).join("") : `<div class="empty-inline">등록된 부속품 없음</div>`}
     </div>
     <div class="card"><div class="section-head" style="margin:0 0 10px"><div class="section-title">관리이력</div><button class="btn secondary compact" id="addMaintenance" type="button">+ 이력 추가</button></div>
-      ${maintenance.length ? maintenance.slice(0,historyLimit).map(log=>`<div class="history-box"><div><span class="badge orange">${esc(log.type)}</span></div><div class="row-title" style="margin-top:7px">${esc(log.content || "관리 기록")}</div><div class="row-sub">${fmtDate(log.date)}${log.parts?.length ? ` · ${esc(log.parts.map(part=>`${part.name} ${part.qty}개`).join(", "))}` : ""}</div>${log.memo?`<div class="row-sub">${esc(log.memo)}</div>`:""}<div class="btn-row" style="margin-top:9px"><button class="btn gray compact" data-maint-edit="${log.id}" type="button">수정</button><button class="btn danger compact" data-maint-delete="${log.id}" type="button">삭제</button></div></div>`).join("") : `<div class="emptybox">등록된 관리이력이 없습니다.</div>`}
+      ${maintenance.length ? maintenance.slice(0,historyLimit).map(log=>`<div class="history-box"><div><span class="badge orange">${esc(log.type)}</span></div><div class="row-title" style="margin-top:7px">${esc(log.content || "관리 기록")}</div><div class="row-sub">${fmtDate(log.date)}${log.parts?.length ? ` · ${esc(log.parts.map(part=>`${part.name} ${part.qty}개`).join(", "))}` : ""}</div>${log.memo?`<div class="row-sub">${esc(log.memo)}</div>`:""}<div class="btn-row" style="margin-top:9px"><button class="btn gray compact" data-maint-edit="${log.id}" type="button">수정</button><button class="btn danger compact" data-maint-delete="${log.id}" type="button">삭제</button></div></div>`).join("") : `<div class="empty-inline">등록된 관리이력 없음</div>`}
     </div>
-    <div class="card"><div class="section-title">사용이력</div>${usage.length ? usage.slice(0,historyLimit).map(record=>{const entry=record.equipmentItems.find(e=>e.id===item.id);return `<button class="stock-line" data-usage-record="${record.id}" type="button"><div><div class="stock-name">${esc(record.title)}</div><div class="stock-spec">${fmtDate(record.date)} · ${esc(record.type)}</div></div><div class="stock-qty">${Number(entry.qty)}대</div></button>`;}).join("") : `<div class="emptybox">등록된 사용이력이 없습니다.</div>`}</div>
-    <div class="card"><div class="section-title">이동이력</div>${moves.length ? moves.slice(0,historyLimit).map(move=>`<div class="stock-line"><div><div class="stock-name">${esc(move.from)} → ${esc(move.to)}</div><div class="stock-spec">${fmtDate(move.date)}${move.memo?` · ${esc(move.memo)}`:""}</div></div></div>`).join("") : `<div class="emptybox">등록된 이동이력이 없습니다.</div>`}</div>`;
+    <div class="card"><div class="section-title">사용이력</div>${usage.length ? usage.slice(0,historyLimit).map(record=>{const entry=record.equipmentItems.find(e=>e.id===item.id);return `<button class="stock-line" data-usage-record="${record.id}" type="button"><div><div class="stock-name">${esc(record.title)}</div><div class="stock-spec">${fmtDate(record.date)} · ${esc(record.type)}</div></div><div class="stock-qty">${Number(entry.qty)}대</div></button>`;}).join("") : `<div class="empty-inline">등록된 사용이력 없음</div>`}</div>
+    <div class="card"><div class="section-title">이동이력</div>${moves.length ? moves.slice(0,historyLimit).map(move=>`<div class="stock-line"><div><div class="stock-name">${esc(move.from)} → ${esc(move.to)}</div><div class="stock-spec">${fmtDate(move.date)}${move.memo?` · ${esc(move.memo)}`:""}</div></div></div>`).join("") : `<div class="empty-inline">등록된 이동이력 없음</div>`}</div>`;
   document.getElementById("equipmentOutstanding")?.addEventListener("click",()=>openOutstandingEquipment(item.id));
   if(Math.max(maintenance.length,usage.length,moves.length)>historyLimit){
     const more=document.createElement("button");more.type="button";more.className="btn secondary";more.textContent="이력 더보기";more.style.width="100%";
@@ -3249,7 +3270,7 @@ function openEquipment(id, options={}){
   document.getElementById("equipmentQuickIn")?.addEventListener("click",()=>startResourceRegister("equipment",item,"입고",item.place));
   document.getElementById("backEquip")?.addEventListener("click", () => window.history.back());
   document.getElementById("editSimpleEquipment")?.addEventListener("click", () => simpleResourceForm("equipment",item));
-  const deleteButton=document.createElement("button");deleteButton.id="deleteEquipment";deleteButton.type="button";deleteButton.className="btn danger";deleteButton.textContent="장비 삭제";view.append(deleteButton);deleteButton.addEventListener("click",()=>deleteManagedResource("equipment",item.id));
+  const deleteButton=document.createElement("button");deleteButton.id="deleteEquipment";deleteButton.type="button";deleteButton.className="btn danger";deleteButton.textContent="장비 삭제";view.querySelector(".equipment-management .management-content").append(deleteButton);deleteButton.addEventListener("click",()=>deleteManagedResource("equipment",item.id));
   document.getElementById("addMaintenance")?.addEventListener("click",()=>openMaintenanceForm(item.id));
   document.getElementById("addAccessory")?.addEventListener("click",()=>openAccessoryForm(item.id));
   view.querySelectorAll("[data-accessory-edit]").forEach(button=>button.addEventListener("click",()=>openAccessoryForm(item.id,button.dataset.accessoryEdit)));
@@ -4054,16 +4075,17 @@ function cloudDashboardHtml(latest=null,{loading=false,error=""}={}){
   const status=loading?"클라우드 확인 중":error?"확인 실패":cloudStatusLabel(latest);
   const statusTitle=loading?"확인 중":error?"확인 실패":!latest?"공유자료 없음":status==="클라우드 자료가 최신"?"새 자료 있음":status==="내 자료가 최신"?"올리기 가능":status==="이미 최신"?"최신 상태":"확인 필요";
   const statusHint=loading?"최신 상태를 확인하고 있습니다":error?"최신 확인을 다시 눌러주세요":!latest?"내 자료를 올려 공유하세요":status==="클라우드 자료가 최신"?"가져오면 반영됩니다":status==="내 자료가 최신"?"올리면 공유됩니다":status==="이미 최신"?"할 작업 없음":"최신 확인을 눌러주세요";
-  const cloudLine=cloudSummary?`${loading||error?"이전 확인자료":"공유자료"} ${cloudSummary.materials}종 · 장비 ${cloudSummary.equipment}개`:(loading?"공유자료 확인 중":error?"공유자료 미확인":"공유자료 없음");
-  const localLine=`내 자료 ${localSummary.materials}종 · 장비 ${localSummary.equipment}개`;
+  const cloudLabel=loading||error?"이전 확인자료":"공유자료";
+  const cloudLine=cloudSummary?`자재 ${cloudSummary.materials}종 · 장비 ${cloudSummary.equipment}개`:(loading?"확인 중":error?"미확인":"자료 없음");
+  const localLine=`자재 ${localSummary.materials}종 · 장비 ${localSummary.equipment}개`;
   const lastAction=meta.lastAppliedAt&&(!meta.lastUploadedAt||dateMs(meta.lastAppliedAt)>=dateMs(meta.lastUploadedAt))?`마지막 가져옴 ${fmtShareTime(meta.lastAppliedAt)}`:meta.lastUploadedAt?`마지막 올림 ${fmtShareTime(meta.lastUploadedAt)}`:"공유 기록 없음";
   return `${entryHeader("자원 공유","공유자료 상태를 확인합니다")}
-    <div class="form">
+    <div class="form cloud-share-form">
       <div class="share-status-card ${latest&&!loading&&!error?"ready":""}" role="status" aria-live="polite">
         <div class="share-status-label">${esc(config.title)}</div>
         <div class="share-status-title">${esc(statusTitle)}</div>
         <div class="share-status-brief">${esc(statusHint)}</div>
-        <div class="share-mini-summary"><span>${esc(localLine)}</span><span>${esc(cloudLine)}</span></div>
+        <div class="share-mini-summary"><span><strong>내 자료</strong><small>${esc(localLine)}</small></span><span><strong>${esc(cloudSummary?cloudLabel:"공유자료")}</strong><small>${esc(cloudLine)}</small></span></div>
         <div class="share-time-note">${esc(lastAction)}</div>
       </div>
       ${error?`<div class="callout">${esc(error)}</div>`:""}
@@ -4074,19 +4096,21 @@ function cloudDashboardHtml(latest=null,{loading=false,error=""}={}){
       <div class="cloud-sub-actions">
         <button class="btn gray" id="cloudRefreshNow" type="button" ${loading?"disabled":""}>${loading?"확인 중…":"최신 확인"}</button>
       </div>
-      <div class="row-sub share-scope-note">자원만 공유 · 사건 이력과 메모는 이 기기에 보관</div>
+      <div class="row-sub share-scope-note">자원만 공유 · 이력·메모는 이 기기에 보관</div>
       <details class="cloud-detail-fold">
         <summary>상세·관리</summary>
-        <div class="cloud-action-summary">
+        <div class="share-detail-group"><h4>자료 기준시각</h4><div class="cloud-action-summary">
           <span><strong>내 자료</strong><br>${esc(fmtShareTime(latestLocalResourceAt() || localSnapshot.createdAt))}</span>
           <span><strong>공유 자료</strong><br>${esc(cloudSummary?fmtShareTime(cloudSummary.date):loading?"확인 중":error?"미확인":"자료 없음")}</span>
+        </div></div><div class="share-detail-group"><h4>최근 공유 작업</h4><div class="cloud-action-summary">
           <span><strong>올림</strong><br>${esc(fmtShareTime(meta.lastUploadedAt))}</span>
           <span><strong>가져옴</strong><br>${esc(fmtShareTime(meta.lastAppliedAt))}</span>
           <span><strong>올린 기기</strong><br>${esc(cloudSummary?.device || meta.lastUploadedDeviceName || "기록 없음")}</span>
           <span><strong>적용 기기</strong><br>${esc(meta.lastAppliedDeviceName || "기록 없음")}</span>
+        </div></div><div class="share-detail-group"><h4>관리</h4><div class="cloud-action-summary">
           <span><strong>PIN</strong><br>${currentCloudUploadPinHash()?"설정됨":"미설정"}</span>
           <span><strong>되돌리기</strong><br>${esc(undo.label)}${safety?.createdAt?`<br>${esc(fmtShareTime(safety.createdAt))}`:""}</span>
-        </div>
+        </div></div>
         <div class="cloud-settings-actions"><button class="btn gray" id="cloudPinNow" type="button">PIN 설정</button><button class="btn gray" id="cloudSettingsNow" type="button">연결 설정</button></div>
         ${safety?`<button class="btn gray cloud-restore" id="cloudUndoNow" type="button" ${undo.allowed?"":"disabled"} title="${esc(undo.reason)}">가져오기 되돌리기</button>`:""}
       </details>
