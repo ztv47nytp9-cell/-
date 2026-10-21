@@ -61,7 +61,7 @@ function resourceBundles(){
 }
 function attachBundleButton(){
   const summary=document.getElementById("registerDraftSummary");if(!summary||document.getElementById("resourceBundles"))return;
-  const button=document.createElement("button");button.id="resourceBundles";button.className="btn secondary";button.type="button";button.textContent="자주 쓰는 품목 묶음";button.onclick=openResourceBundles;summary.before(button);
+  const button=document.createElement("button");button.id="resourceBundles";button.className="btn secondary";button.type="button";button.textContent="자주 쓰는 품목 묶음";button.onclick=openResourceBundles;(summary.closest(".register-save-dock")||summary).before(button);
 }
 function bundlePreviewRows(bundle){
   const materials=bundle.items.map(row=>{const item=itemOf(row.name);return `<li>${esc(row.name)} · ${esc(item?materialQtyText(row.qty,item.unit,item):Number(row.qty))}${!item?" · 목록에 없음":item.archived?" · 보관 처리":""}</li>`;});

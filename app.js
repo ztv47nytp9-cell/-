@@ -1481,12 +1481,38 @@ function quickRecordCard(){
   return `<div class="callout compact-draft">사용 내역과 메모만 남기고, 재고 반영은 나중에 합니다.</div>`;
 }
 
-function registerDraftSummaryHtml(){
+function registerDraftProgress(){
   const materialRows=draftItems.filter(item=>Number(item.qty)>0).length;
   const equipmentRows=draftEquipmentItems.filter(item=>Number(item.qty)>0).length;
-  const totalQty=draftItems.reduce((sum,item)=>sum+Number(item.qty||0),0);
-  if(!draftItems.length&&!draftEquipmentItems.length) return "";
-  return `<div class="register-draft-summary"><span>자재 ${materialRows}/${draftItems.length}</span><span>장비 ${equipmentRows}/${draftEquipmentItems.length}</span>${totalQty?`<span>수량 ${Number(totalQty).toLocaleString("ko-KR")}</span>`:""}</div>`;
+  const total=draftItems.length+draftEquipmentItems.length,ready=materialRows+equipmentRows;
+  return {materialRows,equipmentRows,total,ready,remaining:total-ready};
+}
+
+function registerDraftSummaryHtml(){
+  const {materialRows,equipmentRows,total,ready,remaining}=registerDraftProgress();
+  if(!total)return "";
+  return `<div class="register-draft-summary"><strong>수량 입력 ${ready}/${total}품목</strong><span>자재 ${materialRows} · 장비 ${equipmentRows}</span>${remaining?`<span class="draft-incomplete">수량 없는 ${remaining}품목은 저장 제외</span>`:""}</div>`;
+}
+
+function revealRegisterRow(selector){
+  const row=document.querySelector(selector)?.closest(".item-box");
+  if(!row)return;
+  requestAnimationFrame(()=>{
+    if(page!=="register"||!row.isConnected)return;
+    row.tabIndex=-1;row.focus({preventScroll:true});
+    row.scrollIntoView({block:"nearest",behavior:motionReduced()?"instant":"smooth"});
+  });
+}
+
+function syncRegisterItemQuantity(index,{preserveInput=false}={}){
+  const item=draftItems[index],area=document.getElementById("itemArea");
+  if(!item||!area)return;
+  const input=area.querySelector(`[data-qty="${index}"]`);
+  if(input&&!preserveInput)input.value=item.qty??"";
+  const cans=area.querySelector(`[data-can-qty="${index}"]`),result=area.querySelector(`[data-can-result="${index}"]`);
+  if(cans)cans.value=Number(item.qty)>0&&Number(item.qty)%18===0?Number(item.qty)/18:"";
+  if(result)result.textContent=Number(item.qty)>0?`${Number(item.qty)/18}캔 = ${Number(item.qty)}L`:"캔 수를 입력하면 리터로 환산됩니다";
+  scheduleRegisterDraft();updateRegisterDraftSummary();updateStockAfterPreview();
 }
 
 function registerPendingContinueHtml(){
@@ -1559,7 +1585,7 @@ function renderRegister(){
         <div class="register-route ${registerFlow === "이송"?"is-transfer":""}"><label>${registerFlow === "이송" ? "기본 출발지" : "기본 보관 (자재별 변경 가능)"}<select id="recWarehouse">${warehouses.map(w=>`<option value="${esc(w)}">${esc(w)}</option>`).join("")}</select></label>
         ${registerFlow === "이송" ? `<label>도착지<select id="recTargetWarehouse">${transferTargetOptions(warehouses[0] || "")}</select></label><div class="row-sub route-help">아래 품목의 출발지만 개별 변경할 수 있습니다.</div>` : ""}</div>
         <details class="field-card"><summary>기록 시각 · 자동 입력</summary><div class="location-grid"><label>날짜<input id="recDate" type="date" value="${todayISO()}"></label><label>시간<input id="recTime" type="time" value="${localTimeNow()}"></label></div></details>
-        <label>제목<input id="recTitle" placeholder="제목을 입력하세요"></label>
+        <label>제목 · 필수<input id="recTitle" placeholder="예: 항만 순찰, 방제 훈련" aria-required="true"></label>
       ` : `
         <label>종류<select id="recType"><option>사고</option><option>훈련</option></select></label>
         <label>기본 보관<select id="recWarehouse">${warehouses.map(w=>`<option value="${esc(w)}">${esc(placeLabel(w))}</option>`).join("")}</select></label>
@@ -1584,8 +1610,10 @@ function renderRegister(){
         <div id="stockAfterPreview"></div>
       </div>
       <label>메모<textarea id="recMemo" placeholder="${registerMode === "quick" ? "현장 메모를 간단히 입력하세요" : "메모를 입력하세요"}"></textarea></label>
-      <div id="registerDraftSummary">${registerDraftSummaryHtml()}</div>
-      <button class="btn primary sticky-action" id="saveRecord" type="button">${registerMode === "quick" ? "진행 중 사건 저장" : registerFlow + " 저장"}</button>
+      <div class="register-save-dock sticky-action">
+        <div id="registerDraftSummary" role="status" aria-live="polite">${registerDraftSummaryHtml()}</div>
+        <button class="btn primary" id="saveRecord" type="button">${registerMode === "quick" ? "진행 중 사건 저장" : registerFlow + " 저장"}</button>
+      </div>
     </div>
   `;
   const switchRegister=(mode,flow)=>{captureRegisterDraft();registerMode=mode;registerFlow=flow;if(registerFormDraft){registerFormDraft.mode=mode;registerFormDraft.flow=flow;}renderRegister();setHead();};
@@ -1699,6 +1727,7 @@ function addDraftItem(){
   scheduleRegisterDraft();
   updateRegisterDraftSummary();
   updateStockAfterPreview();
+  revealRegisterRow(`[data-name="${draftItems.length-1}"]`);
   showFeedback("success","방제자재 추가");
 }
 
@@ -1714,6 +1743,8 @@ function addDraftEquipmentItem(){
   renderEquipmentItems();
   scheduleRegisterDraft();
   updateRegisterDraftSummary();
+  updateStockAfterPreview();
+  revealRegisterRow(`[data-equipment-name="${draftEquipmentItems.length-1}"]`);
   showFeedback("success","방제장비 추가");
 }
 
@@ -1873,7 +1904,7 @@ function equipmentRegisterLabel(equipment){
 function renderEquipmentItems(){
   const area=document.getElementById("equipmentItemArea");
   if(!area) return;
-  if(!draftEquipmentItems.length){ area.innerHTML=""; renderResourceEmptyAction(); return; }
+  if(!draftEquipmentItems.length){ area.innerHTML=""; renderResourceEmptyAction();updateRegisterDraftSummary();updateStockAfterPreview(); return; }
   const sourceWarehouse=document.getElementById("recWarehouse")?.value || "";
   const selectableEquipment=registerMode==="normal"&&registerFlow==="이송"?activeEquipment().filter(e=>e.place===sourceWarehouse):activeEquipment();
   area.innerHTML=`<div class="group-title">${registerMode==="normal"&&registerFlow==="입고"?"입고 장비":registerMode==="normal"&&registerFlow==="이송"?"이송 장비":"사용 장비"}</div>`+draftEquipmentItems.map((item,index) => {
@@ -1884,26 +1915,27 @@ function renderEquipmentItems(){
     const categoryEquipment=equipmentSource.filter(e=>(e.cat || "기타장비")===selectedCategory).sort((a,b)=>equipmentRegisterLabel(a).localeCompare(equipmentRegisterLabel(b),"ko"));
     if(selected&&!categoryEquipment.some(e=>e.id===selected.id))categoryEquipment.unshift(selected);
     return `<div class="item-box"><div class="form">
+      <div class="register-item-heading"><strong>장비 ${index+1}</strong><button class="btn gray compact" data-equipment-remove="${index}" type="button" aria-label="등록에서 ${esc(item.name)} 줄 빼기">이 줄 빼기</button></div>
       <label>장비 종류<select data-equipment-category="${index}">${categories.map(cat=>`<option value="${esc(cat)}" ${cat===selectedCategory?"selected":""}>${esc(cat)}</option>`).join("")}</select></label>
       <label>장비 선택<select data-equipment-name="${index}">${categoryEquipment.map(e=>`<option value="${e.id}" ${e.id===item.id?"selected":""}>${esc(equipmentRegisterLabel(e))}</option>`).join("")}</select></label>
       <div class="row-sub">${esc(selected?.cat || "분류 미지정")} · 규격 ${esc(selected?.spec || selected?.detail || "미입력")} · 모델 ${esc(selected?.model || "미입력")} · ${esc(selected?.place || "보관 미지정")}${selected?.memo || selected?.etc ? ` · ${esc(selected.memo || selected.etc)}` : ""}</div>
-      <div class="row-sub">${selected?esc(equipmentAvailabilityText(selected)):"장비를 선택해주세요"}</div><label>${registerMode==="normal"&&registerFlow==="입고"?"입고":registerMode==="normal"&&registerFlow==="이송"?"이송":"사용"} 수량<input type="number" inputmode="numeric" min="1" step="1" data-equipment-qty="${index}" value="${item.qty ?? ""}"></label>
-      <div class="item-actions"><button class="btn gray" data-equipment-remove="${index}" type="button">장비 삭제</button></div>
+      <div class="row-sub">${selected?esc(equipmentAvailabilityText(selected)):"장비를 선택해주세요"}</div><label>${registerMode==="normal"&&registerFlow==="입고"?"입고":registerMode==="normal"&&registerFlow==="이송"?"이송":"사용"} 수량<input type="number" inputmode="numeric" min="1" step="1" data-equipment-qty="${index}" value="${item.qty ?? ""}" placeholder="수량 입력" aria-label="${esc(item.name)} 수량"></label>
     </div></div>`;
   }).join("");
   area.querySelectorAll("[data-equipment-category]").forEach(select=>select.addEventListener("change",()=>{
     const index=Number(select.dataset.equipmentCategory);const equipment=(selectableEquipment.length?selectableEquipment:(state.equipment || [])).filter(e=>(e.cat || "기타장비")===select.value).sort((a,b)=>equipmentRegisterLabel(a).localeCompare(equipmentRegisterLabel(b),"ko"))[0];if(!equipment)return;
-    draftEquipmentItems[index]={id:equipment.id,name:equipment.name,cat:equipment.cat || "기타장비",qty:draftEquipmentItems[index].qty || "",place:equipment.place,spec:equipment.spec || equipment.detail || "",model:equipment.model || ""};renderEquipmentItems();
+    draftEquipmentItems[index]={id:equipment.id,name:equipment.name,cat:equipment.cat || "기타장비",qty:draftEquipmentItems[index].qty || "",place:equipment.place,spec:equipment.spec || equipment.detail || "",model:equipment.model || ""};scheduleRegisterDraft();renderEquipmentItems();
   }));
   area.querySelectorAll("[data-equipment-name]").forEach(select=>select.addEventListener("change",()=>{
     const index=Number(select.dataset.equipmentName); const equipment=state.equipment.find(e=>e.id===select.value);
     if(!equipment) return;
-    draftEquipmentItems[index]={id:equipment.id,name:equipment.name,cat:equipment.cat || "기타장비",qty:draftEquipmentItems[index].qty || "",place:equipment.place,spec:equipment.spec || equipment.detail || "",model:equipment.model || ""}; renderEquipmentItems();
+    draftEquipmentItems[index]={id:equipment.id,name:equipment.name,cat:equipment.cat || "기타장비",qty:draftEquipmentItems[index].qty || "",place:equipment.place,spec:equipment.spec || equipment.detail || "",model:equipment.model || ""};scheduleRegisterDraft();renderEquipmentItems();
   }));
-  area.querySelectorAll("[data-equipment-qty]").forEach(input=>input.addEventListener("input",()=>{ draftEquipmentItems[Number(input.dataset.equipmentQty)].qty=input.value;scheduleRegisterDraft();updateRegisterDraftSummary(); }));
+  area.querySelectorAll("[data-equipment-qty]").forEach(input=>input.addEventListener("input",()=>{ draftEquipmentItems[Number(input.dataset.equipmentQty)].qty=input.value;scheduleRegisterDraft();updateRegisterDraftSummary();updateStockAfterPreview(); }));
   area.querySelectorAll("[data-equipment-remove]").forEach(button=>button.addEventListener("click",()=>{ draftEquipmentItems.splice(Number(button.dataset.equipmentRemove),1);scheduleRegisterDraft();renderEquipmentItems();updateRegisterDraftSummary();showFeedback("info","장비 줄 삭제"); }));
   renderResourceEmptyAction();
   refreshResourceLocations();
+  updateRegisterDraftSummary();updateStockAfterPreview();
 }
 
 function registerStockInfo(item){
@@ -1918,19 +1950,20 @@ function renderItems(){
     area.innerHTML = "";
     renderResourceEmptyAction();
     refreshResourceLocations();
+    updateRegisterDraftSummary();updateStockAfterPreview();
     return;
   }
   area.innerHTML = draftItems.map((it,idx) => {const current=registerStockInfo(it);return `
     <div class="item-box">
       <div class="form">
+        <div class="register-item-heading"><strong>자재 ${idx+1}</strong><button class="btn gray compact" data-remove="${idx}" type="button" aria-label="등록에서 ${esc(it.name)} 줄 빼기">이 줄 빼기</button></div>
         <label>분류<select data-cat="${idx}">${cats.map(c=>`<option value="${c}" ${it.cat===c?"selected":""}>${c}</option>`).join("")}</select></label>
         <label>자재<select data-name="${idx}">${activeMaterials(it.name).filter(x=>x.cat===it.cat).map(x=>`<option value="${esc(x.name)}" ${it.name===x.name?"selected":""}>${esc(x.name)}${x.archived?" · 보관 처리":""}</option>`).join("")}</select></label>
         <label>${registerMode==="quick"?"사용 보관장소":registerFlow==="입고"?"입고 보관장소":registerFlow==="이송"?"출발 보관장소":"자재 보관장소"}<select data-item-warehouse="${idx}">${warehouses.map(place=>`<option value="${esc(place)}" ${itemWarehouse(it,document.getElementById("recWarehouse")?.value||warehouses[0])===place?"selected":""}>${esc(place)} · ${Number(state.stock[place]?.[it.name]||0)}${esc(it.unit||"")}</option>`).join("")}</select></label>
-        <label>수량 (${esc(it.unit)})<input type="number" inputmode="${integerUnit(it.unit)?"numeric":"decimal"}" min="0" step="${integerUnit(it.unit)?"1":"0.1"}" data-qty="${idx}" value="${it.qty ?? ""}"></label>
+        <label>수량 (${esc(it.unit)})<input type="number" inputmode="${integerUnit(it.unit)?"numeric":"decimal"}" min="0" step="${integerUnit(it.unit)?"1":"0.1"}" data-qty="${idx}" value="${it.qty ?? ""}" placeholder="수량 입력" aria-label="${esc(it.name)} 수량 (${esc(it.unit)})"></label>
         ${current?`<div class="register-stock-now"><span>${esc(current.label)}</span><strong>${materialQtyText(current.qty,it.unit,it)}</strong></div>`:""}
         ${isDispersant(it)?`<div class="can-converter"><label>18L 캔 수<input type="number" inputmode="numeric" min="0" step="1" data-can-qty="${idx}" value="${it.qty && Number(it.qty)%18===0?Number(it.qty)/18:""}" placeholder="캔 개수"></label><div data-can-result="${idx}">${it.qty?`${Number(it.qty)/18}캔 = ${Number(it.qty)}L`:"캔 수를 입력하면 리터로 환산됩니다"}</div></div>`:""}
         <div class="qty-quick" aria-label="수량 빠른 입력"><button type="button" data-qty-add="1" data-qty-index="${idx}">+1</button><button type="button" data-qty-add="5" data-qty-index="${idx}">+5</button><button type="button" data-qty-add="10" data-qty-index="${idx}">+10</button><button type="button" data-qty-clear="${idx}">초기화</button></div>
-        <div class="item-actions"><button class="btn gray" data-remove="${idx}" type="button">자재 삭제</button></div>
       </div>
     </div>
   `;}).join("");
@@ -1939,6 +1972,7 @@ function renderItems(){
     const f = activeMaterials().find(x => x.cat === s.value);
     if(!f){showFeedback("info","이 분류에 사용 중인 자재가 없습니다");renderItems();return;}
     draftItems[idx] = {cat:f.cat,name:f.name,qty:draftItems[idx].qty || "",unit:f.unit,kind:f.kind,warehouse:itemWarehouse(draftItems[idx],document.getElementById("recWarehouse")?.value||warehouses[0])};
+    scheduleRegisterDraft();
     renderItems();
   }));
   area.querySelectorAll("[data-name]").forEach(s => s.addEventListener("change", () => {
@@ -1950,6 +1984,7 @@ function renderItems(){
     draftItems[idx].kind = f.kind;
     draftItems[idx].warehouse = itemWarehouse(draftItems[idx],document.getElementById("recWarehouse")?.value||warehouses[0]);
     mergeDuplicateDraftItems({notify:true});
+    scheduleRegisterDraft();
     renderItems();
   }));
   area.querySelectorAll("[data-item-warehouse]").forEach(select=>select.addEventListener("change",()=>{
@@ -1968,9 +2003,7 @@ function renderItems(){
     if(val.length > 1 && val[0] === "0" && val[1] !== ".") val = String(Number(val));
     i.value = val;
     draftItems[Number(i.dataset.qty)].qty = val === "" ? "" : Number(val);
-    scheduleRegisterDraft();
-    updateRegisterDraftSummary();
-    updateStockAfterPreview();
+    syncRegisterItemQuantity(Number(i.dataset.qty),{preserveInput:true});
   }));
   area.querySelectorAll("[data-can-qty]").forEach(input=>input.addEventListener("input",()=>{const index=Number(input.dataset.canQty),cans=Math.max(0,Math.round(Number(input.value||0))),liters=cans*18;draftItems[index].qty=liters;const qtyInput=area.querySelector(`[data-qty="${index}"]`);if(qtyInput)qtyInput.value=liters||"";const result=area.querySelector(`[data-can-result="${index}"]`);if(result)result.textContent=`${cans}캔 = ${liters}L`;scheduleRegisterDraft();updateRegisterDraftSummary();updateStockAfterPreview();}));
   area.querySelectorAll("[data-remove]").forEach(b => b.addEventListener("click", () => {
@@ -1982,19 +2015,17 @@ function renderItems(){
   }));
   area.querySelectorAll("[data-qty-add]").forEach(button => button.addEventListener("click", () => {
     const idx = Number(button.dataset.qtyIndex);
-    draftItems[idx].qty = Number(draftItems[idx].qty || 0) + Number(button.dataset.qtyAdd || 0);
-    scheduleRegisterDraft();
-    renderItems();
-    updateRegisterDraftSummary();
+    draftItems[idx].qty = addQuantities(draftItems[idx].qty || 0,button.dataset.qtyAdd || 0);
+    syncRegisterItemQuantity(idx);
   }));
   area.querySelectorAll("[data-qty-clear]").forEach(button => button.addEventListener("click", () => {
-    draftItems[Number(button.dataset.qtyClear)].qty = "";
-    scheduleRegisterDraft();
-    renderItems();
-    updateRegisterDraftSummary();
+    const index=Number(button.dataset.qtyClear);
+    draftItems[index].qty = "";
+    syncRegisterItemQuantity(index);
   }));
   renderResourceEmptyAction();
   refreshResourceLocations();
+  updateRegisterDraftSummary();updateStockAfterPreview();
 }
 
 async function saveRecord(){return runWorkflow("register",performSaveRecord);}
@@ -2016,7 +2047,12 @@ async function performSaveRecord(){
   if(equipmentItems.some(item=>!state.equipment.some(equipment=>equipment.id===item.id))){showFeedback("error","현재 목록에 없는 장비입니다 · 다시 선택해주세요");return;}
 
   if(registerMode === "normal" && !title){fieldError("#recTitle","제목을 입력해주세요");return;}
-  if(registerMode === "normal" && !items.length && !equipmentItems.length){ showSnack(registerFlow==="이송"?"이송할 자재 또는 장비를 추가해주세요":"자재 또는 장비를 추가해주세요"); return; }
+  if(registerMode === "normal" && !items.length && !equipmentItems.length){
+    const quantity=document.querySelector("#itemArea [data-qty],#equipmentItemArea [data-equipment-qty]");
+    if(quantity)fieldError(quantity,"수량을 입력해주세요");
+    else showSnack(registerFlow==="이송"?"이송할 자재 또는 장비를 추가해주세요":"자재 또는 장비를 추가해주세요");
+    return;
+  }
   if(registerMode === "normal" && registerFlow === "이송"){
     if(!warehouse||!targetWarehouse){ showFeedback("error","출발·도착 보관을 선택해주세요"); return; }
     if(items.some(item=>item.warehouse===targetWarehouse)){ showFeedback("error",`${targetWarehouse}에서 출발하는 자재는 같은 보관장소로 이송할 수 없습니다`); return; }
@@ -2032,7 +2068,7 @@ async function performSaveRecord(){
   if(duplicate&&!await askConfirm("비슷한 기록 있음",`${duplicate.title} · 같은 날짜·종류·품목·수량의 기록이 있습니다. 반복 작업이면 계속 저장할 수 있습니다.`,"계속 저장"))return;
   const saveButton=document.getElementById("saveRecord");
   const stateBefore=JSON.stringify(state);
-  const resetSaveButton=()=>{if(saveButton){saveButton.disabled=false;saveButton.textContent=registerMode==="quick"?"진행 중 사건 저장":registerFlow+" 저장";}};
+  const resetSaveButton=()=>{if(saveButton){saveButton.disabled=false;updateRegisterTypeDependentUI();}};
 
   if(registerMode === "quick"){
     if(saveButton){saveButton.disabled=true;saveButton.textContent="저장 중";}
@@ -2181,11 +2217,22 @@ function historySearchMatches(record,query=historySearchQuery){
   return searchable.filter(value=>value!==undefined&&value!==null).join(" ").toLocaleLowerCase("ko-KR").includes(normalized);
 }
 
+function historyStatusMatches(record,filter=historyFilter){
+  if(filter==="all")return true;
+  if(filter==="review")return record.status==="pending"&&Boolean(record.stockReview);
+  if(filter==="pending")return record.status==="pending"&&!record.stockReview;
+  return record.status!=="pending";
+}
+
+function historyViewFiltersActive(){
+  return historyFilter!=="all"||historyDateFilter!=="all"||historyFlowFilter!=="all"||historyPlaceFilter!=="all"||historyTypeFilter!=="all"||Boolean(historySearchQuery.trim());
+}
+
 function renderBaseHistory(){
   const all = [...state.records].sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id));
   const counts = {all:all.length,pending:all.filter(r=>r.status === "pending"&&!r.stockReview).length,review:all.filter(r=>r.status==="pending"&&r.stockReview).length,done:all.filter(r=>r.status !== "pending").length};
   if(historyFilter==="review"&&!counts.review)historyFilter="all";
-  let filtered = all.filter(record => historyFilter === "all" ? true : historyFilter==="review"?record.status==="pending"&&record.stockReview:historyFilter==="pending"?record.status==="pending"&&!record.stockReview:record.status!=="pending");
+  let filtered = all.filter(record => historyStatusMatches(record));
   filtered = filtered.filter(record => historyDateMatches(record) && historyFlowMatches(record) && historySearchMatches(record));
   view.innerHTML = `
     <div class="history-tabs">
@@ -2217,7 +2264,7 @@ function renderBaseHistory(){
   if(document.getElementById("clearHistoryFilter"))document.getElementById("clearHistoryFilter").onclick=clearAllHistoryFilters;
   document.getElementById("histSearch")?.addEventListener("input", () => {
     historySearchQuery = document.getElementById("histSearch").value;
-    const searched = all.filter(record => (historyFilter === "all" ? true : (historyFilter === "pending" ? record.status === "pending" : record.status !== "pending")) && historyDateMatches(record) && historyFlowMatches(record) && historySearchMatches(record));
+    const searched = all.filter(record => historyStatusMatches(record) && historyDateMatches(record) && historyFlowMatches(record) && historySearchMatches(record));
     const count=document.getElementById("historyResultCount");
     if(count)count.innerHTML=`검색 결과 ${searched.length}건 ${historyDateFilter !== "all" || historyFlowFilter !== "all" || historyPlaceFilter!=="all" || historyTypeFilter!=="all" || historySearchQuery ? `<button class="link-btn" id="clearHistoryFilter" type="button">필터 초기화</button>` : ""}`;
     document.getElementById("histList").innerHTML = renderHistoryListHtml(searched);
@@ -2230,7 +2277,10 @@ function renderBaseHistory(){
 }
 
 function baseHistoryListHtml(records){
-  if(!records.length) return `<div class="emptybox compact-empty-action">기록이 없습니다.<button class="btn secondary compact" id="emptyHistoryRegister" type="button">등록하기</button></div>`;
+  if(!records.length){
+    if(state.records.length||historyViewFiltersActive())return `<div class="emptybox compact-empty-action">조건에 맞는 이력이 없습니다.<button class="btn secondary compact" id="emptyHistoryReset" type="button">전체 이력 보기</button></div>`;
+    return `<div class="emptybox compact-empty-action">아직 저장된 이력이 없습니다.<button class="btn secondary compact" id="emptyHistoryRegister" type="button">등록하기</button></div>`;
+  }
   const defs=["처리 필요","자재 입·출고","장비 사용·반납","재고실사·재고수정","창고 간 이동","기타 기록"];
   const typeOf=r=>r.status==="pending"?"처리 필요":r.flow==="재고수정"?"재고실사·재고수정":r.flow==="이송"?"창고 간 이동":(r.equipmentItems||[]).length?"장비 사용·반납":["입고","출고","긴급"].includes(r.flow)?"자재 입·출고":"기타 기록";
   return defs.map(type=>{const typeRows=records.filter(record=>typeOf(record)===type);if(!typeRows.length)return"";const content=historyDateGroups(typeRows).map(g=>`<div class="history-date-label">${fmtDate(g.date)}</div><div class="list-card">${g.records.map(r => `
@@ -2249,6 +2299,7 @@ function bindHistoryRows(){
   document.getElementById("historyMore")?.addEventListener("click",()=>{historyLimit+=40;document.getElementById("histList").innerHTML=renderHistoryListHtml(historyRenderRecords);bindGroupedSections(renderHistory);bindHistoryRows();});
   view.querySelectorAll("[data-detail]").forEach(b => b.addEventListener("click", () => openDetail(b.dataset.detail)));
   document.getElementById("emptyHistoryRegister")?.addEventListener("click",()=>startHomeRegister("normal","출고"));
+  document.getElementById("emptyHistoryReset")?.addEventListener("click",()=>{historyFilter="all";clearAllHistoryFilters();});
 }
 
 function recordFieldSummary(r){
@@ -4562,6 +4613,7 @@ function refreshResourceLocations(){
   scheduleInputVisibility();
   document.querySelectorAll('select[data-name],select[data-equipment-name],select[id^="pendingName"],select[id^="pendingEquipment"],#registerMaterialName,#registerEquipmentName,#existingMaterialName,#existingEquipmentName').forEach(select=>{
     const equipment=select.matches('select[data-equipment-name],select[id^="pendingEquipment"],#registerEquipmentName,#existingEquipmentName');
+    const inlineMaterial=page==="register"&&select.matches('select[data-name]');
     const item=equipment?state.equipment.find(row=>row.id===select.value):itemOf(select.value);
     if(!item)return;
     const index=select.matches('[data-name]')?Number(select.dataset.name):Number(select.id.replace("pendingName",""));
@@ -4569,11 +4621,13 @@ function refreshResourceLocations(){
     const warehouse=equipment?item.place:(select.id==="existingMaterialName"?selectedWarehouse:perItem||document.getElementById(select.id.startsWith("pending")?"pendingWarehouse":"recWarehouse")?.value||"");
     if(!equipment)Array.from(select.options).forEach(option=>{
       const material=itemOf(option.value);
-      if(material)option.textContent=materialLocationLabel(material,warehouse);
+      if(material)option.textContent=inlineMaterial?`${material.name}${material.archived?" · 보관 처리":""}`:materialLocationLabel(material,warehouse);
     });
     const text=equipment?`${item.name} · 저장위치: ${warehouse||"미지정"} · 등록 ${Number(item.qty??0)}대`:`${item.name} · ${warehouse?"저장위치: "+warehouse+" · 현재 "+Number(state.stock[warehouse]?.[item.name]||0)+(item.unit||""):"저장위치 미지정"}`;
     const label=select.closest("label");
     if(!label)return;
+    // Inline registration already has a per-item warehouse and current-stock row.
+    if(inlineMaterial){label.querySelector(".resource-location")?.remove();return;}
     let hint=label.querySelector(".resource-location");
     if(!hint){hint=document.createElement("span");hint.className="resource-location";label.append(hint);}
     hint.textContent=text;
@@ -5183,6 +5237,8 @@ function enhanceDetailControls(root=document){
     if(input.closest(".search-control"))return;
     const focused=document.activeElement===input,wrap=document.createElement("div");wrap.className="search-control";input.before(wrap);wrap.append(input);if(focused)input.focus({preventScroll:true});
     if(!input.getAttribute("aria-label"))input.setAttribute("aria-label",input.placeholder||"검색");
+    input.setAttribute("enterkeyhint","search");
+    input.addEventListener("keydown",event=>{if(event.key==="Enter"&&!event.isComposing){event.preventDefault();input.blur();}});
     const button=document.createElement("button");button.type="button";button.className="search-clear";button.setAttribute("aria-label","검색어 지우기");button.textContent="×";wrap.append(button);
     const sync=()=>{button.hidden=!input.value;};sync();input.addEventListener("input",sync);
     button.addEventListener("click",()=>{input.value="";input.dispatchEvent(new Event("input",{bubbles:true}));input.focus({preventScroll:true});});

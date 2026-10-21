@@ -201,7 +201,19 @@ body.keyboard-open .snackbar{bottom:auto;top:calc(var(--input-viewport-top,0px) 
 .item-actions>.btn{width:auto;min-width:96px;margin:0}
 #itemArea,#equipmentItemArea{min-width:0}
 .item-box{margin-bottom:16px}
+.register-item-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0}
+.register-item-heading>strong{font-size:14px;color:var(--muted);font-weight:650}
+.register-item-heading>.btn{min-height:44px;width:auto;flex-shrink:0;padding:8px 12px;font-size:13px}
+.item-box[tabindex="-1"]{scroll-margin-block:16px 110px}
+.item-box[tabindex="-1"]:focus{outline:none}
+.register-draft-summary{align-items:center;gap:6px 12px;flex-wrap:wrap}
+.register-draft-summary>strong{font-size:14px;color:var(--text);font-weight:650}
+.register-draft-summary>.draft-incomplete{flex-basis:100%;font-size:12px;color:var(--muted)}
 #saveRecord,.batch-save{isolation:isolate;border:1px solid var(--border);box-shadow:0 -8px 0 5px var(--light);margin-top:18px;scroll-margin-bottom:100px}
+.register-save-dock{background:var(--light);border-radius:12px 12px 0 0;padding-top:8px}
+.register-save-dock .register-draft-summary{margin:0 0 8px;gap:2px 12px}
+:root[data-theme] .register-save-dock .register-draft-summary>span{padding:0;border:0;background:none;border-radius:0;color:var(--muted);font-weight:500}
+.register-save-dock #saveRecord{position:static;width:100%;margin:0;box-shadow:none}
 body.keyboard-open .batch-save{bottom:0}
 .history-date-buttons{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin:12px 0 16px}
 .history-date-buttons>button{grid-column:span 2;min-height:44px}
