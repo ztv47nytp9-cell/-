@@ -107,6 +107,25 @@ button{touch-action:manipulation}
   :root[data-theme] button:active:not(:disabled){transform:none}
 }
 
+/* Field workflow: one-handed actions and explicit local/shared boundaries. */
+.share-local-save{display:flex;align-items:baseline;justify-content:space-between;gap:6px 12px;flex-wrap:wrap;padding:10px 2px;font-size:12px;color:var(--muted)}
+.share-local-save>strong{color:var(--text);font-size:13px;font-weight:650}
+.share-copy-version{margin-top:6px;font-size:12px;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
+.asset-history-tools{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:14px 0}
+.asset-history-tools>span{min-width:0;flex:1 1 180px}
+.asset-history-tools>.btn{flex-shrink:0;min-height:44px}
+.search-control input[type="search"]::-webkit-search-cancel-button{display:none;-webkit-appearance:none}
+.form :is(input,select,textarea),.part-row>input{min-width:0;max-width:100%}
+.part-row{gap:8px}
+.part-row>.btn{min-width:44px;min-height:44px;flex-shrink:0}
+.resource-picker-search{min-height:44px;scroll-margin-block:20px 160px}
+.form :is(input,select,textarea){scroll-margin-block:20px 160px}
+@media(max-width:380px){
+  .history-filter-grid{grid-template-columns:minmax(0,1fr)}
+  .share-local-save>span{flex-basis:100%}
+  .part-row{grid-template-columns:minmax(0,1fr) minmax(64px,.45fr) 44px}
+}
+
 /* Everyday use: more content, stable quantities, and easy input controls. */
 :root[data-theme] .top{position:relative;top:auto}
 :root[data-theme] #homeShareResources{width:100%;min-height:72px;display:grid;grid-template-columns:auto minmax(0,1fr) auto;column-gap:12px;align-content:center;text-align:left;padding:12px 16px;margin-bottom:14px;border:1px solid var(--border);border-radius:18px;color:var(--text);background:var(--tint)}

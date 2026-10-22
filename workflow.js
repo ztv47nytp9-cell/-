@@ -313,8 +313,36 @@ function validateSharedSnapshot(snapshot){
   if(resource.assetOps!==undefined){if(!object(resource.assetOps))fail("차량·함정 관리자료를 확인해주세요");Object.values(resource.assetOps).forEach(op=>{if(!object(op))fail("차량·함정 관리자료를 확인해주세요");["distanceBase","mileageBase","hoursBase","portHoursBase","starboardHoursBase","fuelBase"].forEach(key=>{if(op[key]!==undefined&&!quantity(op[key]))fail("차량·함정 누적값을 확인해주세요");});["logs","fuelLogs","maintenance"].forEach(key=>{if(op[key]!==undefined&&!Array.isArray(op[key]))fail("차량·함정 이력을 확인해주세요");});});}
   return resource;
 }
-function recordResourcesPresent(record){
-  return (record.items||[]).every(item=>itemOf(item.name)&&warehouses.includes(itemWarehouse(item,record.warehouse))&&(record.flow!=="이송"||warehouses.includes(item.targetWarehouse||record.targetWarehouse)))&&(record.equipmentItems||[]).every(entry=>state.equipment.some(item=>item.id===entry.id)&&(!entry.toEquipmentId||state.equipment.some(item=>item.id===entry.toEquipmentId)));
+function recordResourcesPresent(record,{restoring=false}={}){
+  // A reversed partial transfer may have removed its empty destination row.
+  // Restoring creates that row again; the original source must still exist.
+  return (record.items||[]).every(item=>itemOf(item.name)&&warehouses.includes(itemWarehouse(item,record.warehouse))&&(record.flow!=="이송"||warehouses.includes(item.targetWarehouse||record.targetWarehouse)))&&(record.equipmentItems||[]).every(entry=>state.equipment.some(item=>item.id===entry.id)&&(!entry.toEquipmentId||(restoring&&record.flow==="이송")||state.equipment.some(item=>item.id===entry.toEquipmentId)));
+}
+function equipmentTransferReversalProblem(entry,fromPlace=entry.fromPlace||entry.place||""){
+  if(entry.transferMode==="full"){
+    const target=state.equipment.find(item=>item.id===(entry.toEquipmentId||entry.id));
+    // Splitting a full transfer would move the ID used by outstanding records.
+    if(target&&equipmentAvailability(target).using>0)return "사용 중인 장비가 있어 이송을 취소할 수 없습니다 · 반납·이후 기록을 먼저 확인해주세요";
+  }else{
+    const source=state.equipment.find(item=>item.id===entry.id);
+    if(source&&(source.place!==fromPlace||source.id===entry.toEquipmentId))return "원본 장비가 이후 이동되었습니다 · 최근 이송부터 확인해주세요";
+  }
+  return "";
+}
+function equipmentTransferAvailable(record,reverse=false){
+  const totals=new Map();
+  for(const entry of record.equipmentItems||[]){
+    const id=reverse?(entry.toEquipmentId||entry.id):entry.id;
+    const place=reverse?(entry.toPlace||record.targetWarehouse):(entry.fromPlace||record.warehouse);
+    const qty=Number(entry.qty),prior=totals.get(id);
+    if(!Number.isSafeInteger(qty)||qty<=0||prior&&prior.place!==place)return false;
+    if(reverse&&equipmentTransferReversalProblem(entry,entry.fromPlace||entry.place||record.warehouse))return false;
+    totals.set(id,{place,qty:addQuantities(prior?.qty,qty)});
+  }
+  return [...totals].every(([id,needed])=>{
+    const gear=state.equipment.find(item=>item.id===id);
+    return gear&&gear.place===needed.place&&equipmentAvailability(gear).available>=needed.qty;
+  });
 }
 function canReverseRecord(record){
   if(record.status==="pending")return true;
@@ -324,7 +352,7 @@ function canReverseRecord(record){
   if(record.flow==="입고"&&!stockAvailable(record.warehouse,items))return false;
   if(record.flow==="이송"){
     if(!stockAvailable(record.targetWarehouse,items.map(item=>({...item,warehouse:item.targetWarehouse||record.targetWarehouse}))))return false;
-    return (record.equipmentItems||[]).every(entry=>{const target=state.equipment.find(item=>item.id===(entry.toEquipmentId||entry.id));return target&&target.place===(entry.toPlace||record.targetWarehouse)&&Number(target.qty||0)>=Number(entry.qty||0);});
+    return equipmentTransferAvailable(record,true);
   }
   return true;
 }
@@ -335,10 +363,10 @@ function canRestoreTrashEntry(entry){
   if(entry.kind!=="record")return true;
   const record=entry.data;if(state.records.some(item=>item.id===record.id))return false;
   if(record.status==="pending")return true;
-  if(!recordResourcesPresent(record))return false;
+  if(!recordResourcesPresent(record,{restoring:true}))return false;
   if(record.flow==="재고수정")return (record.items||[]).every(item=>Number(state.stock[itemWarehouse(item,record.warehouse)]?.[item.name]||0)===Number(item.before));
   if(["출고","이송"].includes(record.flow)&&!stockAvailable(record.warehouse,record.items||[]))return false;
-  if(record.flow==="이송")return (record.equipmentItems||[]).every(entry=>{const equipment=state.equipment.find(item=>item.id===entry.id);return equipment?.place===(entry.fromPlace||record.warehouse)&&Number(equipment.qty||0)>=Number(entry.qty||0);});
+  if(record.flow==="이송")return equipmentTransferAvailable(record);
   return true;
 }
 

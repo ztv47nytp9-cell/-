@@ -4,6 +4,11 @@ const root=path.resolve(__dirname,'..'),counts=new Map();
 const server=http.createServer((req,res)=>{
   const url=new URL(req.url,'http://localhost');
   res.setHeader('Cache-Control','no-store');
+  if(url.pathname==='/mobile'){
+    const width=[360,390,430].includes(Number(url.searchParams.get('width')))?Number(url.searchParams.get('width')):390;
+    res.setHeader('Content-Type','text/html');
+    res.end(`<!doctype html><html lang="ko"><meta charset="utf-8"><title>Victor 좁은 화면 검증</title><body style="margin:0;background:#dce2e9;display:grid;place-items:center;min-height:100vh;font:14px sans-serif"><main><p>Chrome ${width}px 레이아웃 검증 · 실제 iPhone 아님 · 운영 공유 차단</p><iframe title="Victor 테스트" src="/app?scenario=200" style="display:block;width:${width}px;height:844px;border:1px solid #7c8999;border-radius:16px;background:white"></iframe></main></body></html>`);return;
+  }
   if(url.pathname.startsWith('/mock/')){
     const mode=url.pathname.split('/')[2],count=(counts.get(mode)||0)+1;counts.set(mode,count);
     const status=mode==='recover'?(count===1?503:200):Number(mode)||200;

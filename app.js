@@ -546,11 +546,14 @@ function applyStock(warehouse, items, flow){
 }
 
 function stockChangeItems(warehouse, items, flow){
+  const balances=new Map();
   return (items || []).map(item => {
     const place=itemWarehouse(item,warehouse);
-    const before = Number(state.stock[place]?.[item.name] || 0);
+    const key=place+"\u0000"+item.name;
+    const before = balances.has(key)?balances.get(key):Number(state.stock[place]?.[item.name] || 0);
     const diff = flow === "입고" ? Number(item.qty || 0) : -Number(item.qty || 0);
-    return {...item,warehouse:place,before,after:addQuantities(before,diff),diff};
+    const after=addQuantities(before,diff);balances.set(key,after);
+    return {...item,warehouse:place,before,after,diff};
   });
 }
 
@@ -612,6 +615,8 @@ function restoreEquipmentTransfer(entry){
   const fromPlace=entry.fromPlace || entry.place || "";
   const toPlace=entry.toPlace || "";
   const snapshot=entry.sourceSnapshot || {cat:entry.cat || "기타장비",name:entry.name,spec:entry.spec || "",detail:entry.spec || "",model:entry.model || ""};
+  const problem=equipmentTransferReversalProblem(entry,fromPlace);
+  if(problem)throw new Error(problem);
   if(entry.transferMode==="full"){
     const moved=state.equipment.find(item=>item.id===(entry.toEquipmentId || entry.id));
     if(moved){
@@ -1718,8 +1723,11 @@ function mergeDuplicateDraftItems({notify=false}={}){
 function addDraftItem(){
   const warehouse=document.getElementById("recWarehouse")?.value || warehouses[0];
   const used=new Set(draftItems.map(item=>`${item.name}|${itemWarehouse(item,warehouse)}`));
-  const candidates=activeMaterials().filter(item=>!used.has(`${item.name}|${warehouse}`));
   const needsStock=registerMode==="normal"&&["출고","이송"].includes(registerFlow);
+  const candidates=activeMaterials().filter(item=>!used.has(`${item.name}|${warehouse}`)).sort((a,b)=>{
+    const stockFirst=needsStock?Number(Number(state.stock[warehouse]?.[b.name]||0)>0)-Number(Number(state.stock[warehouse]?.[a.name]||0)>0):0;
+    return stockFirst||materialRecentScore(b.name)-materialRecentScore(a.name)||a.name.localeCompare(b.name,"ko");
+  });
   const item=(needsStock?candidates.find(row=>Number(state.stock[warehouse]?.[row.name]||0)>0):null)||candidates[0];
   if(!item){showFeedback("info","추가할 방제자재가 없습니다");return;}
   draftItems.push({cat:item.cat,name:item.name,qty:"",unit:item.unit,kind:item.kind,warehouse});
@@ -1736,7 +1744,7 @@ function addDraftEquipmentItem(){
   const used=new Set(draftEquipmentItems.map(item=>item.id).filter(Boolean));
   const candidates=activeEquipment().filter(item=>!used.has(item.id));
   const isTransfer=registerMode==="normal"&&registerFlow==="이송";
-  const available=isTransfer?candidates.filter(item=>item.place===warehouse):candidates;
+  const available=(isTransfer?candidates.filter(item=>item.place===warehouse):candidates).sort((a,b)=>equipmentRecentScore(b)-equipmentRecentScore(a)||a.name.localeCompare(b.name,"ko"));
   const equipment=available.find(item=>item.place===warehouse&&Number(item.qty||0)>0)||available[0];
   if(!equipment){showFeedback("info",isTransfer?"출발 보관에 추가할 방제장비가 없습니다":"추가할 방제장비가 없습니다");return;}
   draftEquipmentItems.push({id:equipment.id,name:equipment.name,cat:equipment.cat || "기타장비",qty:"",place:equipment.place,spec:equipment.spec || equipment.detail || "",model:equipment.model || ""});
@@ -2687,15 +2695,7 @@ function openDetail(id, options={}){
     document.getElementById("addPendingEquipment")?.addEventListener("click", () => addPendingEquipmentToRecord(id));
     view.querySelectorAll("[data-remove-pending]").forEach(button => button.addEventListener("click", () => removePendingItemFromRecord(id, Number(button.dataset.removePending))));
     view.querySelectorAll("[data-remove-pending-equipment]").forEach(button => button.addEventListener("click", () => removePendingEquipmentFromRecord(id, Number(button.dataset.removePendingEquipment))));
-    document.getElementById("deleteRecord")?.addEventListener("click", async () => {
-      if(!await askConfirm(r.stockReview?"확인 기록 삭제":"진행 중 사건 삭제","재고에는 영향이 없습니다.","삭제",true)) return;
-      const undoState=JSON.stringify(state);
-      state.trash=state.trash||[];state.trash.push({id:uid(),kind:"record",data:JSON.parse(JSON.stringify(r)),deletedAt:new Date().toISOString()});
-      state.records = state.records.filter(x => x.id !== id);
-      if(!saveStateTransaction(undoState,"사건 삭제 저장에 실패했습니다. 사건은 삭제되지 않았습니다"))return;
-      setPage("history");
-      showUndoSnack(r.stockReview?"확인 기록 삭제":"진행 중 사건 삭제",undoState,()=>{historyFilter="all";setPage("history");});
-    });
+    document.getElementById("deleteRecord")?.addEventListener("click",()=>deleteHistoryRecord(id,r));
     return;
   }
 
@@ -2724,12 +2724,24 @@ function openDetail(id, options={}){
   view.querySelectorAll("[data-edit-item-warehouse]").forEach(button=>button.addEventListener("click",()=>editRecordItemWarehouse(r.id,Number(button.dataset.editItemWarehouse))));
   view.querySelectorAll("[data-used-equipment]").forEach(button=>button.addEventListener("click",()=>openEquipment(button.dataset.usedEquipment)));
   view.querySelectorAll("[data-return-equipment]").forEach(button=>button.addEventListener("click",()=>openPartialReturn(r.id,Number(button.dataset.returnEquipment))));
-  document.getElementById("deleteRecord")?.addEventListener("click", async () => {
-    if(!await askConfirm("기록 삭제","선택한 기록을 삭제할까요?","삭제",true)) return;
-    if(!canReverseRecord(r)){showFeedback("error",recordResourcesPresent(r)?"이후 변경된 재고·장비가 있어 삭제를 보류했습니다 · 최근 이력을 확인해주세요":"삭제된 자재·장비·보관장소를 임시 보관함에서 먼저 복원해주세요");return;}
+  document.getElementById("deleteRecord")?.addEventListener("click",()=>deleteHistoryRecord(id,r));
+}
+
+async function deleteHistoryRecord(id,expectedRecord=null){return runWorkflow(`record-delete:${id}`,async()=>{
+    const r=state.records.find(record=>record.id===id);
+    if(!r||(expectedRecord&&JSON.stringify(r)!==JSON.stringify(expectedRecord))){showFeedback("warning","기록이 변경되었거나 이미 삭제되었습니다 · 목록에서 다시 확인해주세요");return false;}
+    const fingerprint=JSON.stringify(r),pending=r.status==="pending";
+    if(!await askConfirm(pending?(r.stockReview?"확인 기록 삭제":"진행 중 사건 삭제"):"기록 삭제",pending?"재고에는 영향이 없습니다.":"선택한 기록을 삭제할까요?","삭제",true))return false;
+    if(state.records.find(record=>record.id===id)!==r||JSON.stringify(r)!==fingerprint){showFeedback("warning","확인 중 기록이 바뀌었습니다 · 삭제를 보류했습니다");return false;}
+    const transferProblem=!pending&&r.flow==="이송"?(r.equipmentItems||[]).map(entry=>equipmentTransferReversalProblem(entry,entry.fromPlace||entry.place||r.warehouse)).find(Boolean):"";
+    if(transferProblem){showFeedback("error",transferProblem);return false;}
+    if(!canReverseRecord(r)){showFeedback("error",recordResourcesPresent(r)?"이후 변경된 재고·장비가 있어 삭제를 보류했습니다 · 최근 이력을 확인해주세요":"삭제된 자재·장비·보관장소를 임시 보관함에서 먼저 복원해주세요");return false;}
     const undoState=JSON.stringify(state);
+    try{
     state.trash=state.trash||[];state.trash.push({id:uid(),kind:"record",data:JSON.parse(JSON.stringify(r)),deletedAt:new Date().toISOString()});
-    if(r.flow === "재고수정"){
+    if(pending){
+      // Pending records have never changed inventory.
+    }else if(r.flow === "재고수정"){
       r.items.forEach(i => { const place=itemWarehouse(i,r.warehouse);if(i.before !== undefined&&state.stock[place]) state.stock[place][i.name] = Number(i.before); });
     }else if(r.flow === "이송" && r.targetWarehouse){
       reverseStock(r.warehouse,r.items,"출고");
@@ -2739,11 +2751,14 @@ function openDetail(id, options={}){
       reverseStock(r.warehouse, r.items, r.flow || "출고");
     }
     state.records = state.records.filter(x => x.id !== id);
-    if(!saveStateTransaction(undoState,"기록 삭제 저장에 실패했습니다. 재고와 이력은 변경 전 상태로 복원했습니다"))return;
+    }catch(error){
+      restoreAppStateSnapshot(undoState);showFeedback("error",error.message||"기록 삭제를 취소했습니다 · 기존 자료 유지");return false;
+    }
+    if(!saveStateTransaction(undoState,"기록 삭제 저장에 실패했습니다. 재고와 이력은 변경 전 상태로 복원했습니다"))return false;
     setPage("history");
-    showUndoSnack("기록 삭제",undoState,()=>setPage("history"));
-  });
-}
+    showUndoSnack(pending?(r.stockReview?"확인 기록 삭제":"진행 중 사건 삭제"):"기록 삭제",undoState,()=>{if(pending)historyFilter="all";setPage("history");});
+    return true;
+});}
 
 function openPartialReturn(recordId,index){
   const record=state.records.find(item=>item.id===recordId),entry=record?.equipmentItems?.[index];if(!entry)return;const returned=Number(entry.returnedQty||0),remaining=Math.max(0,Number(entry.qty||0)-returned);
@@ -2873,27 +2888,37 @@ function backup(){
   showSnack("전체 백업 파일 생성");
 }
 
-function restoreFile(file){
-  const reader = new FileReader();
-  reader.onload = async () => {
+function restoreFile(file){return runWorkflow("restore",async()=>{
+    if(!file)return false;
+    const source=JSON.stringify(state),disk=localStorage.getItem(KEY);
+    const unchanged=()=>JSON.stringify(state)===source&&localStorage.getItem(KEY)===disk;
     try{
-      const raw=JSON.parse(reader.result);
+      const text=await new Promise((resolve,reject)=>{
+        const reader=new FileReader();
+        reader.onload=()=>resolve(String(reader.result||""));
+        reader.onerror=()=>reject(new Error("백업 파일을 읽지 못했습니다 · 다시 선택해주세요"));
+        reader.onabort=()=>reject(new Error("백업 파일 읽기를 취소했습니다 · 기존 자료 유지"));
+        reader.readAsText(file);
+      });
+      const raw=JSON.parse(text);
       if(!validRestoreData(raw))throw new Error("Victor 전체 백업 파일인지 확인해주세요");
       validateInventoryKeys(raw);
       if(Number(raw.schemaVersion||0)>SCHEMA_VERSION)throw new Error("더 최신 앱에서 만든 자료입니다 · 먼저 앱을 업데이트해주세요");
-      if(!await askConfirm("전체 자료 복원",`창고 ${(raw.warehouses||[]).length}개 · 이력 ${(raw.records||[]).length}건으로 현재 자료를 바꿀까요? 변경 전 자료는 자동 보관됩니다.`,"복원",true))return;
+      if(!unchanged())throw new Error("파일을 읽는 중 자료가 바뀌었습니다 · 최신 자료 확인 후 다시 선택해주세요");
+      if(!await askConfirm("전체 자료 복원",`창고 ${(raw.warehouses||[]).length}개 · 이력 ${(raw.records||[]).length}건 · 메모 ${(raw.memos||[]).length}건으로 이 기기의 자료를 바꿀까요? 공유 서버에는 전송하지 않습니다. 변경 전 자료는 자동 보관됩니다.`,"복원",true))return false;
+      if(!unchanged())throw new Error("확인 중 자료가 바뀌었습니다 · 복원을 보류했습니다");
       if(!createSafetyPoint("전체 복원 전",state))throw new Error("안전지점을 만들 공간이 없어 복원을 보류했습니다");
       const beforeState=JSON.stringify(state);
       state = normalize(raw);
-      if(!saveStateTransaction(beforeState,"복원 파일을 저장하지 못했습니다. 현재 자료는 변경 전 상태로 유지됩니다"))return;
-      showSnack("복원 완료");
+      if(!saveStateTransaction(beforeState,"복원 파일을 저장하지 못했습니다. 현재 자료는 변경 전 상태로 유지됩니다"))return false;
+      showFeedback("success","이 기기 자료 복원 완료 · 공유 서버 변경 없음");
       render();
+      return true;
     }catch(e){
       showFeedback("error",e.message||"복원 실패 · 기존 자료는 유지됩니다");
+      return false;
     }
-  };
-  reader.readAsText(file);
-}
+});}
 
 async function resetAll(){
   if(!await askConfirm("전체 초기화","모든 재고, 이력, 메모가 삭제됩니다. 먼저 데이터 백업을 권장합니다.","계속",true)) return;
@@ -3124,17 +3149,20 @@ function renderFastSurveyReview(){
   document.getElementById("restartConflictedSurvey")?.addEventListener("click",restartFastSurvey);
   const applyButton=document.getElementById("applyFastSurvey"),skipOption=document.getElementById("allowUncheckedApply");
   skipOption?.addEventListener("change",()=>{applyButton.disabled=!skipOption.checked||conflicts.length>0;});
-  applyButton.onclick=async()=>{
-    if(conflicts.length){showFeedback("error","기준 재고가 바뀌어 반영할 수 없습니다");return;}
+  applyButton.onclick=()=>runWorkflow("survey-apply",async()=>{
+    if(conflicts.length||state.survey!==survey||fastSurveyConflicts(items).length){showFeedback("error","기준 재고가 바뀌어 반영할 수 없습니다");return;}
     if(unchecked.length&&!skipOption?.checked){showFeedback("info","미확인 품목을 유지할지 선택해주세요");return;}
+    if(confirmed.some(it=>finiteQuantity(survey.values[`${it.warehouse}|${it.name}`],it.unit)===null)){showFeedback("error","확인 수량을 다시 입력해주세요 · 기존 재고 유지");return;}
+    const expected=JSON.stringify(state);
     if(!await askConfirm("재고실사 반영",`${confirmed.length}개 확인 수량을 반영하고 미확인 ${unchecked.length}개는 기존 수량으로 유지할까요?`,"반영"))return;
+    if(JSON.stringify(state)!==expected||fastSurveyConflicts(items).length){showFeedback("warning","확인 중 자료가 바뀌었습니다 · 실사 내용을 다시 확인해주세요");return;}
     const beforeState=JSON.stringify(state),summary={date:todayISO(),checked:confirmed.length,unchecked:unchecked.length,zeroCount,changedCount:changed.length,unchangedCount,memo:document.getElementById("surveyApplyMemo")?.value.trim()||""};
     const lastApplied={appliedAt:new Date().toISOString(),changes:changed.map(it=>({warehouse:it.warehouse,name:it.name,before:it.before,after:it.after})),summary};
     confirmed.forEach(it=>{if(!state.stock[it.warehouse])state.stock[it.warehouse]={};state.stock[it.warehouse][it.name]=Number(survey.values[`${it.warehouse}|${it.name}`]);});
     state.survey={active:false,index:0,values:{},checked:{},items:[],baseline:{},done:true,endedAt:new Date().toISOString(),lastApplied,lastSummary:summary};
     if(!saveStateTransaction(beforeState,"실사 결과를 저장하지 못했습니다. 입력과 기존 재고를 복원했습니다"))return;
     showFeedback("success",`재고실사 반영 · 확인 ${confirmed.length}개 · 변경 ${changed.length}개`);renderSurveySummary(summary);
-  };
+  });
 }
 
 async function undoLastSurvey(){
@@ -3279,7 +3307,21 @@ function recentOpRows(place){
 
 function bindOpLogActions(place){
   view.querySelector("[data-op-edit]")?.addEventListener("click",event=>editLatestOpLog(place,event.currentTarget.dataset.opEdit));
-  view.querySelector("[data-op-delete]")?.addEventListener("click",async event=>{const op=state.assetOps?.[place],log=op?.logs?.length?op.logs[op.logs.length-1]:null;if(!log||log.id!==event.currentTarget.dataset.opDelete)return;if(!await askConfirm("최근 이력 삭제","최근 기록을 삭제하고 누적값을 이전 값으로 되돌릴까요?","삭제",true))return;if(isVehiclePlace(place))op.distanceBase=Number(log.before||0);else{op.mileageBase=Number(log.mileageBefore??op.mileageBase??0);op.portHoursBase=Number(log.portBefore??log.before??op.portHoursBase??0);op.starboardHoursBase=Number(log.starboardBefore??log.before??op.starboardHoursBase??0);op.fuelBase=addQuantities(op.fuelBase,log.fuel);}op.logs.pop();save();showFeedback("success","최근 이력 삭제 완료");renderWarehouse();});
+  view.querySelector("[data-op-delete]")?.addEventListener("click",event=>deleteLatestOpLog(place,event.currentTarget.dataset.opDelete));
+}
+
+async function deleteLatestOpLog(place,id){return runWorkflow(`operation:${place}`,async()=>{
+  const op=state.assetOps?.[place],log=op?.logs?.at(-1);if(!log||log.id!==id)return false;
+  const expected=JSON.stringify(op);
+  if(!await askConfirm("최근 이력 삭제","최근 기록을 삭제하고 누적값을 이전 값으로 되돌릴까요?","삭제",true))return false;
+  if(state.assetOps?.[place]!==op||JSON.stringify(op)!==expected){showFeedback("warning","확인 중 운용자료가 바뀌었습니다 · 다시 확인해주세요");return false;}
+  const before=JSON.stringify(state);
+  if(isVehiclePlace(place))op.distanceBase=Number(log.before||0);
+  else{op.mileageBase=Number(log.mileageBefore??op.mileageBase??0);op.portHoursBase=Number(log.portBefore??log.before??op.portHoursBase??0);op.starboardHoursBase=Number(log.starboardBefore??log.before??op.starboardHoursBase??0);op.fuelBase=addQuantities(op.fuelBase,log.fuel);}
+  op.logs.pop();
+  if(!saveStateTransaction(before,"운용이력 삭제 저장 실패 · 기존 누적값과 이력 유지"))return false;
+  renderWarehouse();showUndoSnack("최근 운용이력 삭제 · 누적값 복원",before,renderWarehouse);return true;
+});
 }
 
 function historyDateKey(log){
@@ -3303,11 +3345,20 @@ function assetHistoryEntries(place, equipmentId=""){
   return rows.sort((a,b)=>historyDateKey(b.log).localeCompare(historyDateKey(a.log)));
 }
 function filterAssetHistory(rows,{from="",to="",kind="",query=""}={}){
-  const terms=query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  if(from&&to&&from>to)return [];
+  const terms=String(query||"").trim().toLocaleLowerCase("ko-KR").split(/\s+/).filter(Boolean);
   return rows.filter(row=>{
     const date=String(row.log.date || row.log.createdAt || "").slice(0,10);
-    return (!from||date>=from)&&(!to||date<=to)&&(!kind||row.kind===kind)&&terms.every(term=>JSON.stringify(row.log).toLocaleLowerCase().includes(term)||row.kind.includes(term));
+    const text=assetHistorySearchText(row);
+    return (!from||date>=from)&&(!to||date<=to)&&(!kind||row.kind===kind)&&terms.every(term=>text.includes(term));
   });
+}
+function assetHistorySearchText({kind,log}){
+  const fields=["date","type","flow","title","content","memo","purpose","driver","operator","departure","arrival","from","to","warehouse","targetWarehouse","parts"];
+  const text=fields.map(key=>typeof log[key]==="object"?"":log[key]);
+  const resources=[...(log.items||[]),...(log.equipmentItems||[]),...(Array.isArray(log.parts)?log.parts:[])];
+  resources.forEach(item=>text.push(item.name,item.place,item.warehouse,item.targetWarehouse,item.cat,item.spec));
+  return [kind,...text].filter(value=>value!==undefined&&value!==null).join(" ").toLocaleLowerCase("ko-KR");
 }
 function assetHistoryRowHtml({kind,log}){
   const labels={date:"일자",startTime:"출발 시간",endTime:"도착 시간",elapsedHours:"운행시간(h)",purpose:"목적",driver:"운전자",createdAt:"입력 시각",updatedAt:"수정 시각",time:"시간",type:"처리유형",flow:"입출고",title:"제목",content:"내용",departure:"출발 위치",arrival:"도착 위치",from:"출발 보관",to:"도착 보관",warehouse:"보관장소",targetWarehouse:"도착 보관",location:"작업 위치",memo:"메모",parts:"부속품",cost:"비용(원)",before:"이전 누적값",after:"현재 누적값",diff:"증감",distance:"주행거리(km)",hours:"엔진시간(h)",mileageBefore:"이전 마일(NM)",mileageAfter:"현재 마일(NM)",mileageDiff:"운항거리(NM)",portBefore:"이전 좌현(h)",portAfter:"현재 좌현(h)",portDiff:"좌현 사용(h)",starboardBefore:"이전 우현(h)",starboardAfter:"현재 우현(h)",starboardDiff:"우현 사용(h)",fuel:"연료 소모(L)",amount:"연료 증감(L)",operator:"운항자",passengers:"동승자",area:"활동해역",status:"상태"};
@@ -3331,7 +3382,7 @@ function openAssetHistory(place,equipmentId=""){
   const equipment=equipmentId?state.equipment.find(item=>item.id===equipmentId):null;
   const rows=assetHistoryEntries(place,equipmentId);
   const kinds=[...new Set(rows.map(row=>row.kind))];
-  openEntryModal(`${entryHeader("전체 이력",equipment?.name||place)}<div class="form"><label>검색<input id="assetHistoryQuery" type="search" placeholder="메모 · 위치 · 자재 · 장비"></label><details><summary>기간·처리유형</summary><div class="history-filter-grid"><label>시작일<input id="assetHistoryFrom" type="date"></label><label>종료일<input id="assetHistoryTo" type="date"></label></div><label>처리유형<select id="assetHistoryKind"><option value="">전체</option>${kinds.map(kind=>`<option>${esc(kind)}</option>`).join("")}</select></label></details></div><div id="assetHistorySummary" class="row-sub" role="status" aria-live="polite"></div><div id="assetHistoryList"></div><button class="btn secondary" id="assetHistoryMore" type="button" style="width:100%">이력 더보기</button>`);
+  openEntryModal(`${entryHeader("전체 이력",equipment?.name||place)}<div class="form"><label>검색<input id="assetHistoryQuery" class="search" type="search" placeholder="날짜 · 내용 · 장소 · 자재 · 장비" enterkeyhint="search"></label><details><summary>기간·처리유형</summary><div class="history-filter-grid"><label>시작일<input id="assetHistoryFrom" type="date"></label><label>종료일<input id="assetHistoryTo" type="date"></label></div><label>처리유형<select id="assetHistoryKind"><option value="">전체</option>${kinds.map(kind=>`<option>${esc(kind)}</option>`).join("")}</select></label></details></div><div class="asset-history-tools"><span id="assetHistorySummary" class="row-sub" role="status" aria-live="polite"></span><button class="btn gray compact" id="assetHistoryReset" type="button" hidden>조건 초기화</button></div><div id="assetHistoryList"></div><button class="btn secondary" id="assetHistoryMore" type="button" style="width:100%">이력 더보기</button>`);
   let filtered=rows,shown=0,timer;
   const list=document.getElementById("assetHistoryList"),more=document.getElementById("assetHistoryMore"),summary=document.getElementById("assetHistorySummary");
   const append=()=>{
@@ -3343,12 +3394,15 @@ function openAssetHistory(place,equipmentId=""){
   const update=()=>{
     if(!list.isConnected)return;
     const from=document.getElementById("assetHistoryFrom").value,to=document.getElementById("assetHistoryTo").value;
+    document.getElementById("assetHistoryReset").hidden=!["assetHistoryFrom","assetHistoryTo","assetHistoryKind","assetHistoryQuery"].some(id=>document.getElementById(id).value.trim());
+    ["assetHistoryFrom","assetHistoryTo"].forEach(id=>{const input=document.getElementById(id);if(from&&to&&from>to)input.setAttribute("aria-invalid","true");else input.removeAttribute("aria-invalid");});
     filtered=filterAssetHistory(rows,{from,to,kind:document.getElementById("assetHistoryKind").value,query:document.getElementById("assetHistoryQuery").value});
     shown=0;list.innerHTML="";append();
-    if(from&&to&&from>to){summary.textContent="시작일과 종료일을 확인해주세요";return;}
+    if(from&&to&&from>to){summary.textContent="시작일과 종료일을 확인해주세요";list.innerHTML='<div class="emptybox">시작일은 종료일보다 늦을 수 없습니다.</div>';return;}
     if(!filtered.length)list.innerHTML='<div class="emptybox">조건에 맞는 이력이 없습니다.</div>';
   };
   more.addEventListener("click",append);
+  document.getElementById("assetHistoryReset").addEventListener("click",()=>{clearTimeout(timer);["assetHistoryFrom","assetHistoryTo","assetHistoryKind","assetHistoryQuery"].forEach(id=>{const input=document.getElementById(id);input.value="";input.dispatchEvent(new Event("input",{bubbles:true}));});clearTimeout(timer);update();});
   ["assetHistoryFrom","assetHistoryTo","assetHistoryKind"].forEach(id=>document.getElementById(id).addEventListener("change",update));
   document.getElementById("assetHistoryQuery").addEventListener("input",()=>{clearTimeout(timer);timer=setTimeout(update,150);});
   update();
@@ -3357,9 +3411,40 @@ function openVesselHistory(place){openAssetHistory(place);}
 
 function assetMaintenanceRows(place){const rows=[...(state.assetOps?.[place]?.maintenance||[])].sort((a,b)=>(b.date+b.createdAt).localeCompare(a.date+a.createdAt)).slice(0,20);if(!rows.length)return `<div class="emptybox">등록된 정비이력이 없습니다.</div>`;return rows.map(log=>`<div class="history-box"><div><span class="badge orange">${esc(log.type||"정비")}</span></div><div class="row-title" style="margin-top:7px">${esc(log.content||"정비 기록")}</div><div class="row-sub">${fmtDate(log.date)}${log.parts?` · 부속품 ${esc(log.parts)}`:""}${Number(log.cost||0)>0?` · ${Number(log.cost).toLocaleString("ko-KR")}원`:""}</div>${log.memo?`<div class="row-sub">${esc(log.memo)}</div>`:""}<div class="btn-row" style="margin-top:8px"><button class="btn gray compact" data-asset-maint-edit="${log.id}" type="button">수정</button><button class="btn danger compact" data-asset-maint-delete="${log.id}" type="button">삭제</button></div></div>`).join("");}
 
-function openAssetMaintenanceForm(place,id=""){const op=state.assetOps?.[place];if(!op)return;op.maintenance=op.maintenance||[];const existing=op.maintenance.find(log=>log.id===id);openEntryModal(`${entryHeader(existing?"정비이력 수정":"정비이력 추가",place)}<div class="form"><label>정비일<input id="assetMaintDate" type="date" value="${esc(existing?.date||todayISO())}"></label><label>정비 구분<select id="assetMaintType">${["정기점검","수리","부속품 교체","오일·소모품","기타"].map(type=>`<option ${type===(existing?.type||"정기점검")?"selected":""}>${type}</option>`).join("")}</select></label><label>정비 내용<input id="assetMaintContent" value="${esc(existing?.content||"")}" placeholder="점검·수리한 내용을 입력하세요"></label><label>부속품·교체품<input id="assetMaintParts" value="${esc(existing?.parts||"")}" placeholder="없으면 비워두세요"></label><label>비용(원)<input id="assetMaintCost" type="number" inputmode="numeric" min="0" value="${Number(existing?.cost||0)||""}" placeholder="선택 입력"></label><label>메모<textarea id="assetMaintMemo">${esc(existing?.memo||"")}</textarea></label><button class="btn primary" id="saveAssetMaintenance" type="button">저장</button></div>`);document.getElementById("saveAssetMaintenance")?.addEventListener("click",()=>{const content=document.getElementById("assetMaintContent").value.trim(),cost=Number(document.getElementById("assetMaintCost").value||0);if(!content){showFeedback("error","정비 내용을 입력해주세요");return;}if(!Number.isFinite(cost)||cost<0){showFeedback("error","비용을 확인해주세요");return;}const data={date:document.getElementById("assetMaintDate").value||todayISO(),type:document.getElementById("assetMaintType").value,content,parts:document.getElementById("assetMaintParts").value.trim(),cost,memo:document.getElementById("assetMaintMemo").value.trim(),updatedAt:new Date().toISOString()};if(existing)Object.assign(existing,data);else op.maintenance.push({id:uid(),...data,createdAt:new Date().toISOString()});save();closeEntryModal();showFeedback("success","정비이력 저장");renderWarehouse();});}
+function openAssetMaintenanceForm(place,id=""){
+  const op=state.assetOps?.[place];if(!op)return;
+  const existing=(op.maintenance||[]).find(log=>log.id===id);
+  if(id&&!existing){showFeedback("info","현재 목록에 없는 정비이력입니다");return;}
+  openEntryModal(`${entryHeader(existing?"정비이력 수정":"정비이력 추가",place)}<div class="form"><label>정비일<input id="assetMaintDate" type="date" value="${esc(existing?.date||todayISO())}"></label><label>정비 구분<select id="assetMaintType">${["정기점검","수리","부속품 교체","오일·소모품","기타"].map(type=>`<option ${type===(existing?.type||"정기점검")?"selected":""}>${type}</option>`).join("")}</select></label><label>정비 내용<input id="assetMaintContent" value="${esc(existing?.content||"")}" placeholder="점검·수리한 내용을 입력하세요"></label><label>부속품·교체품<input id="assetMaintParts" value="${esc(existing?.parts||"")}" placeholder="없으면 비워두세요"></label><label>비용(원)<input id="assetMaintCost" type="number" inputmode="numeric" min="0" value="${Number(existing?.cost||0)||""}" placeholder="선택 입력"></label><label>메모<textarea id="assetMaintMemo">${esc(existing?.memo||"")}</textarea></label><button class="btn primary sticky-action" id="saveAssetMaintenance" type="button">정비 기록 저장</button></div>`);
+  document.getElementById("saveAssetMaintenance")?.addEventListener("click",()=>saveAssetMaintenance(place,id));
+}
 
-function bindAssetMaintenanceActions(place){view.querySelectorAll("[data-asset-maint-edit]").forEach(button=>button.addEventListener("click",()=>openAssetMaintenanceForm(place,button.dataset.assetMaintEdit)));view.querySelectorAll("[data-asset-maint-delete]").forEach(button=>button.addEventListener("click",async()=>{const op=state.assetOps?.[place],log=op?.maintenance?.find(item=>item.id===button.dataset.assetMaintDelete);if(!log)return;if(!await askConfirm("정비이력 삭제",`${log.date} 정비이력을 삭제할까요?`,"삭제",true))return;op.maintenance=op.maintenance.filter(item=>item.id!==log.id);save();showFeedback("success","정비이력 삭제 완료");renderWarehouse();}));}
+async function saveAssetMaintenance(place,id=""){return runWorkflow(`maintenance:${place}`,async()=>{
+  const op=state.assetOps?.[place];if(!op)return false;
+  const existing=(op.maintenance||[]).find(log=>log.id===id);
+  if(id&&!existing){showFeedback("warning","정비이력이 변경되었습니다 · 목록에서 다시 열어주세요");return false;}
+  const value=key=>document.getElementById(key)?.value||"";
+  const content=value("assetMaintContent").trim(),cost=finiteQuantity(value("assetMaintCost"),"",true);
+  if(!content){fieldError("#assetMaintContent","정비 내용을 입력해주세요");return false;}
+  if(cost===null){fieldError("#assetMaintCost","비용을 확인해주세요");return false;}
+  const now=new Date().toISOString(),data={date:value("assetMaintDate")||todayISO(),type:value("assetMaintType"),content,parts:value("assetMaintParts").trim(),cost,memo:value("assetMaintMemo").trim(),updatedAt:now};
+  const before=JSON.stringify(state);op.maintenance=op.maintenance||[];
+  if(existing)Object.assign(existing,data);else op.maintenance.push({id:uid(),...data,createdAt:now});
+  if(!saveStateTransaction(before,"정비이력 저장 실패 · 작성 내용은 유지됩니다"))return false;
+  closeEntryModal();renderWarehouse();showUndoSnack("정비 기록 저장 · 이 기기에 보관",before,renderWarehouse);return true;
+});}
+
+function bindAssetMaintenanceActions(place){view.querySelectorAll("[data-asset-maint-edit]").forEach(button=>button.addEventListener("click",()=>openAssetMaintenanceForm(place,button.dataset.assetMaintEdit)));view.querySelectorAll("[data-asset-maint-delete]").forEach(button=>button.addEventListener("click",()=>deleteAssetMaintenance(place,button.dataset.assetMaintDelete)));}
+
+async function deleteAssetMaintenance(place,id){return runWorkflow(`maintenance:${place}`,async()=>{
+  const op=state.assetOps?.[place],log=op?.maintenance?.find(item=>item.id===id);if(!log)return false;
+  const expected=JSON.stringify(log);
+  if(!await askConfirm("정비이력 삭제",`${log.date} 정비이력을 삭제할까요?`,"삭제",true))return false;
+  if(state.assetOps?.[place]!==op||!op.maintenance.includes(log)||JSON.stringify(log)!==expected){showFeedback("warning","확인 중 정비이력이 바뀌었습니다 · 다시 확인해주세요");return false;}
+  const before=JSON.stringify(state);op.maintenance=op.maintenance.filter(item=>item.id!==id);
+  if(!saveStateTransaction(before,"정비이력 삭제 저장 실패 · 기존 이력 유지"))return false;
+  renderWarehouse();showUndoSnack("정비이력 삭제",before,renderWarehouse);return true;
+});}
 
 function editLatestOpLog(place,logId){
   const op=state.assetOps?.[place],log=op?.logs?.length?op.logs[op.logs.length-1]:null;if(!log||log.id!==logId)return;const vehicle=isVehiclePlace(place);
@@ -4288,8 +4373,10 @@ function cloudDashboardHtml(latest=null,{loading=false,error=""}={}){
         <div class="share-status-title">${esc(statusTitle)}</div>
         <div class="share-status-brief">${esc(statusHint)}</div>
         <div class="share-time-note">${esc(lastAction)}</div>
+        ${cloudSummary?`<div class="share-copy-version">공유본 기준 ${esc(fmtShareTime(latest.cloudRowVersion||cloudSummary.date))}</div>`:""}
       </div>
       ${error?`<div class="callout">${esc(error)}</div>`:""}
+      <div class="share-local-save"><strong>${state.savedAt?"이 기기 저장됨":"이 기기 자료"}</strong><span>${state.savedAt?esc(fmtShareTime(state.savedAt)):"첫 저장 전"} · 자동 전송 안 함</span></div>
       <div class="cloud-main-actions">
         <button class="btn primary" id="cloudApplyNow" type="button" ${loading||error||!latest?"disabled":""}><span aria-hidden="true">↓</span><strong>공유자료 받기</strong><small>이 기기에 반영</small></button>
         <button class="btn secondary" id="cloudUploadNow" type="button" ${loading||error?"disabled":""}><span aria-hidden="true">↑</span><strong>내 자료 보내기</strong><small>공유자료 변경</small></button>
@@ -4558,7 +4645,12 @@ async function refreshVictorAppCache(){
   return protectNavigation(async()=>{if(!createSafetyPoint("앱 새로고침 전",state)){showFeedback("error","자료를 보관하지 못해 새로고침을 보류했습니다");return;}await checkAppUpdate();if(!currentUpdateRegistration?.waiting&&!currentUpdateRegistration?.installing)location.reload();});
 }
 
-let inputViewportFrame=0;
+let inputViewportFrame=0,inputViewportBaselineHeight=0,inputViewportBaselineWidth=0;
+function inputViewportMetrics({focused=false,touch=false,layoutHeight=0,height=0,top=0,baseline=0,scale=1}={}){
+  const reference=Math.max(layoutHeight,baseline,height),lost=Math.max(0,reference-height-top);
+  const keyboardOpen=Boolean(focused&&touch&&scale<=1.01&&lost>Math.max(90,reference*.15));
+  return {keyboardOpen,space:keyboardOpen?lost:0};
+}
 function updateInputViewport(){
   const viewport=window.visualViewport;
   const height=viewport?.height || window.innerHeight;
@@ -4567,12 +4659,12 @@ function updateInputViewport(){
   root.style.setProperty("--input-viewport-height",height+"px");
   root.style.setProperty("--input-viewport-top",top+"px");
   const focused=document.activeElement?.matches?.("input,textarea,select");
+  const width=window.innerWidth;
+  if(!focused||Math.abs(width-inputViewportBaselineWidth)>80){inputViewportBaselineHeight=window.innerHeight;inputViewportBaselineWidth=width;}
+  const metrics=inputViewportMetrics({focused,touch:!window.matchMedia?.("(hover: hover) and (pointer: fine)")?.matches,layoutHeight:window.innerHeight,height,top,baseline:inputViewportBaselineHeight,scale:viewport?.scale||1});
+  root.classList.toggle("input-focused",Boolean(focused));document.body.classList.toggle("keyboard-open",metrics.keyboardOpen);
   const done=document.getElementById("numericInputDone");if(done)done.hidden=!needsNumericDone();
-  if(!focused){
-    root.classList.remove("input-focused");
-    document.body.classList.remove("keyboard-open");
-  }
-  root.style.setProperty("--keyboard-space",focused?Math.max(0,window.innerHeight-height-top)+"px":"0px");
+  root.style.setProperty("--keyboard-space",metrics.space+"px");
 }
 function ensureInputVisible(){
   const input=document.activeElement;
@@ -4583,7 +4675,13 @@ function ensureInputVisible(){
   const bounds=input.getBoundingClientRect();
   const containerBounds=dialog?.getBoundingClientRect();
   const visibleTop=Math.max(top,containerBounds?containerBounds.top+12:top);
-  const visibleBottom=Math.min(bottom,containerBounds?containerBounds.bottom-12:bottom);
+  let visibleBottom=Math.min(bottom,containerBounds?containerBounds.bottom-12:bottom);
+  const surface=dialog||view;
+  for(const action of surface.querySelectorAll(".sticky-action,.sticky-save,.entry-actions")){
+    if(action.contains(input))continue;
+    const style=getComputedStyle(action),box=action.getBoundingClientRect();
+    if(["sticky","fixed"].includes(style.position)&&box.height&&box.top>visibleTop&&box.top<visibleBottom&&box.right>bounds.left&&box.left<bounds.right)visibleBottom=Math.min(visibleBottom,box.top-12);
+  }
   const delta=bounds.bottom>visibleBottom?Math.min(bounds.bottom-visibleBottom,bounds.top-visibleTop):bounds.top<visibleTop?bounds.top-visibleTop:0;
   if(Math.abs(delta)>1){
     if(dialog)dialog.scrollTop+=delta;
@@ -4652,7 +4750,6 @@ function bindGlobal(){
     if(input?.matches?.("input, textarea, select")){
       lastInputFocusAt = Date.now();
       document.documentElement.classList.add("input-focused");
-      document.body.classList.add("keyboard-open");
       scheduleInputVisibility();
     }
   });
@@ -5256,7 +5353,7 @@ function enhanceDetailControls(root=document){
   });
 }
 
-function needsNumericDone(){return !window.matchMedia?.("(hover: hover) and (pointer: fine)")?.matches&&Boolean(document.activeElement?.matches?.('input[type="number"],input[inputmode="numeric"],input[inputmode="decimal"]'));}
+function needsNumericDone(){return document.body.classList.contains("keyboard-open")&&Boolean(document.activeElement?.matches?.('input[type="number"],input[inputmode="numeric"],input[inputmode="decimal"]'));}
 function bindDetailPolish(){
   if("scrollRestoration" in history)history.scrollRestoration="manual";
   bindContextBack();
