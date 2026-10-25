@@ -55,6 +55,13 @@ function recordDuplicateSignature(record){
   const gear=(record.equipmentItems||[]).map(item=>[item.id,Number(item.qty||0)]).sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b)));
   return JSON.stringify([record.date,title,record.type,flow,record.targetWarehouse||"",items,gear,items.length||gear.length?"":record.memo||""]);
 }
+function recordDuplicateLevel(left,right){
+  if(recordDuplicateSignature(left)!==recordDuplicateSignature(right))return "none";
+  const time=record=>record.time||String(record.occurredAt||"").slice(11,16),location=record=>[record.location?.type,record.location?.detail].filter(Boolean).join(" · ");
+  const differentTime=time(left)&&time(right)&&time(left)!==time(right);
+  const differentLocation=location(left)&&location(right)&&location(left)!==location(right);
+  return differentTime||differentLocation||String(left.memo||"").trim()!==String(right.memo||"").trim()?"similar":"exact";
+}
 function mergeBundleRows(rows,key){const map=new Map();rows.forEach(row=>{const current=map.get(row[key]);if(current)current.qty+=Number(row.qty);else map.set(row[key],{...row,qty:Number(row.qty)});});return [...map.values()];}
 function resourceBundles(){
   return (Array.isArray(state.resourceBundles)?state.resourceBundles:[]).filter(row=>row&&typeof row.id==="string"&&typeof row.name==="string").map(row=>({...row,items:mergeBundleRows((Array.isArray(row.items)?row.items:[]).filter(item=>item&&typeof item.name==="string"&&Number.isFinite(Number(item.qty))&&Number(item.qty)>0),"name"),equipmentItems:mergeBundleRows((Array.isArray(row.equipmentItems)?row.equipmentItems:[]).filter(item=>item&&typeof item.id==="string"&&Number.isInteger(Number(item.qty))&&Number(item.qty)>0),"id")}));

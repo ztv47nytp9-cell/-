@@ -108,6 +108,15 @@ button{touch-action:manipulation}
 }
 
 /* Field workflow: one-handed actions and explicit local/shared boundaries. */
+.change-history,.older-draft{margin:12px 0;border:1px solid var(--border);border-radius:14px;padding:12px;background:var(--card);color:var(--text);overflow-wrap:anywhere}
+.change-history>summary,.older-draft>summary{min-height:32px;font-weight:650;cursor:pointer}
+.change-history-row{padding:10px 0;border-top:1px solid var(--border);font-size:13px;white-space:pre-wrap}
+.change-history-row>small,.linked-work-list small{display:block;color:var(--muted);font-size:12px}
+.correction-preview{white-space:pre-wrap;padding:12px;border-radius:14px;background:var(--surface);color:var(--text);font-size:14px;line-height:1.7}
+.linked-work-list{display:grid;gap:8px;min-width:0}
+.linked-work-list .list-row{text-align:left;width:100%;border:1px solid var(--border);border-radius:14px;gap:12px}
+.linked-work-list .list-row>span:first-child{min-width:0;overflow-wrap:anywhere}
+.older-draft .btn{min-height:44px}
 .share-local-save{display:flex;align-items:baseline;justify-content:space-between;gap:6px 12px;flex-wrap:wrap;padding:10px 2px;font-size:12px;color:var(--muted)}
 .share-local-save>strong{color:var(--text);font-size:13px;font-weight:650}
 .share-copy-version{margin-top:6px;font-size:12px;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}

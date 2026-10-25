@@ -35,7 +35,7 @@ if(require.main===module)(async()=>{
   await test('SEQUENCE old build upgrade preserves source data and safety point',()=>{
     const f=fixture(),raw=copy(f.state());raw.appBuild='119';raw.memos=[{id:'memo-'+variant,body:'가상 메모'}];raw.records=[{id:'old-'+variant,status:'pending',flow:'사고',items:[]}];
     f.disk.set(KEY,JSON.stringify(raw));f.run('state=loadState();refreshGlobals(state);save()');
-    assert.equal(f.state().appBuild,'120');assert.equal(f.state().memos[0].id,'memo-'+variant);assert.equal(f.state().records[0].id,'old-'+variant);
+    assert.equal(f.state().appBuild,f.run('APP_BUILD'));assert.equal(f.state().memos[0].id,'memo-'+variant);assert.equal(f.state().records[0].id,'old-'+variant);
     const points=JSON.parse(f.disk.get('victor_safety_points_v1'));assert.equal(points[0].state.appBuild,'119');assert.equal(points[0].state.memos[0].id,'memo-'+variant);
     f.run('state=loadState();refreshGlobals(state)');assert.equal(f.state().records[0].status,'pending');assert.equal(f.state().stock.시험A.시험흡착재,20);
   });
