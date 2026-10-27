@@ -364,6 +364,43 @@ body.keyboard-open #contextBack,body.menu-open #contextBack{display:none}
 .snackbar.undo>span{min-width:0;font-size:13px}
 .snackbar.undo>button{white-space:nowrap;flex-shrink:0;margin-left:0;min-height:32px}
 body.keyboard-open .snackbar{bottom:auto!important}
+.context-back-dock{position:fixed;left:50%;transform:translateX(-50%);width:min(700px,100%);height:64px;z-index:18;background:var(--light);border-top:1px solid var(--border);pointer-events:none}
+:root[data-theme] body.has-context-back .app{padding-bottom:calc(var(--app-nav-height,76px) + var(--context-back-space,0px))}
+:root[data-theme] .content .form .sticky-action{bottom:calc(var(--app-nav-height,76px) + var(--context-back-space,0px))}
+:root[data-theme] body.keyboard-open .content .form .sticky-action{bottom:0}
+:root[data-theme] body.has-context-back .content .form .register-save-dock{bottom:var(--app-nav-height,76px);padding:8px 0 8px 88px;z-index:19}
+body.has-context-back .register-save-dock .register-draft-summary{margin-left:-88px}
+body.has-context-back :is(#contextBack,.back){z-index:20}
+html{scroll-padding-bottom:calc(var(--app-nav-height,76px) + var(--context-back-space,0px) + 80px)}
+
+/* Readable rhythm: related text stays together; separate tasks have space. */
+:root[data-theme] :is(.row-title,.stock-name,.choice-title){letter-spacing:-.01em}
+:root[data-theme] :is(.section-title,.dialog-title,.menu-title){letter-spacing:-.02em;line-height:1.4}
+.row-sub,.stock-spec,.plain-note,.share-status-brief,.callout{word-break:keep-all;overflow-wrap:anywhere;line-height:1.6}
+.row-sub,.stock-spec{margin-top:6px}
+.row-sub+.row-sub{margin-top:4px}
+.record-place{font-size:13px}
+.record-resource-summary{font-size:14px;color:var(--text)}
+.form{gap:16px}
+.form :is(input,select,textarea){margin-top:6px}
+.form>.callout{margin-bottom:0}
+.form-grid2,.location-grid{gap:12px}
+.entry-modal-head .row-sub{font-size:14px;line-height:1.5;margin-top:6px}
+.stock-display-tools{margin:8px 0 12px;border-bottom:1px solid var(--border)}
+.stock-display-tools>summary{font-size:14px;color:var(--muted);font-weight:600;min-height:44px}
+.stock-display-tools>summary::after{content:'⌄';margin-left:auto}
+.stock-display-tools .group-toolbar{margin:4px 0 12px}
+.warehouse-delete-status{padding:12px 14px;border:1px solid var(--border);border-radius:14px;background:var(--surface);font-size:14px;line-height:1.6;word-break:keep-all;overflow-wrap:anywhere}
+.warehouse-delete-status strong{display:block;color:var(--text)}
+.warehouse-delete-status p{margin:6px 0 0;color:var(--muted)}
+:root[data-theme] .cloud-share-form .share-status-label{font-size:13px;line-height:1.5;letter-spacing:0}
+:root[data-theme] .cloud-share-form .share-status-title{font-size:22px;line-height:1.4;margin:8px 0}
+:root[data-theme] .cloud-share-form :is(.share-time-note,.share-scope-note,.share-copy-version){font-size:13px;line-height:1.6;word-break:keep-all;overflow-wrap:anywhere}
+.cloud-share-form .share-local-save{padding:4px 0;gap:6px 12px}
+.cloud-main-actions>button>small{font-size:13px;line-height:1.5;opacity:1}
+.cloud-main-actions>button>strong{font-size:15px;line-height:1.4}
+.cloud-share-form .share-mini-summary>span>small{font-size:13px;line-height:1.6}
+.cloud-share-form .share-detail-group{margin-top:16px}
 .history-tabs [data-hfilter="review"]{grid-column:1 / -1;min-height:44px}
 :root[data-theme] #contextBack:active{background:var(--surface-pressed);transform:scale(.97)}
 :root[data-theme] .btn:active:not(:disabled){transform:scale(.985)}

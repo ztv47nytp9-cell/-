@@ -270,7 +270,7 @@ function renderHistory(){
   if(previousFold)historyFiltersOpen=previousFold.open;
   renderBaseHistory();
   const grid=document.querySelector(".history-filter-grid:not(.compact-filter)");if(!grid)return;
-  grid.insertAdjacentHTML("beforeend",`<label>장소<select id="historyPlaceFilter"><option value="all">전체 장소</option>${warehouses.map(place=>`<option value="${esc(place)}" ${place===historyPlaceFilter?"selected":""}>${esc(placeLabel(place))}</option>`).join("")}</select></label><label>사고·훈련<select id="historyTypeFilter"><option value="all">전체 구분</option>${["사고","훈련","작업","기타"].map(type=>`<option ${type===historyTypeFilter?"selected":""}>${type}</option>`).join("")}</select></label>`);
+  grid.insertAdjacentHTML("beforeend",`<label>장소<select id="historyPlaceFilter"><option value="all">전체 장소</option>${historyPlaceChoices().map(place=>`<option value="${esc(place.name)}" ${place.name===historyPlaceFilter?"selected":""}>${esc(place.label)}</option>`).join("")}</select></label><label>업무 구분<select id="historyTypeFilter"><option value="all">전체 구분</option>${["사고","훈련","작업","기타"].map(type=>`<option ${type===historyTypeFilter?"selected":""}>${type}</option>`).join("")}</select></label>`);
   document.getElementById("historyPlaceFilter").addEventListener("change",event=>{historyPlaceFilter=event.target.value;renderHistory();});
   document.getElementById("historyTypeFilter").addEventListener("change",event=>{historyTypeFilter=event.target.value;renderHistory();});
   const count=document.getElementById("historyResultCount");
@@ -364,7 +364,7 @@ function canReverseRecord(record){
   return true;
 }
 function canRestoreTrashEntry(entry){
-  if(entry.kind==="warehouse")return !warehouses.includes(entry.data.name)&&!state.survey?.active;
+  if(entry.kind==="warehouse")return !warehouses.includes(entry.data.name)&&!state.survey?.active&&(!entry.data.equipment||(Array.isArray(entry.data.equipment)&&new Set(entry.data.equipment.map(item=>item?.id)).size===entry.data.equipment.length&&entry.data.equipment.every(item=>item&&item.id&&item.place===entry.data.name&&!state.equipment.some(current=>current.id===item.id))));
   if(entry.kind==="equipment")return !state.equipment.some(item=>item.id===entry.data.id)&&warehouses.includes(entry.data.place);
   if(entry.kind==="material")return !itemOf(entry.data.item.name)&&Object.entries(entry.data.stock||{}).every(([place,qty])=>warehouses.includes(place)||Number(qty)===0);
   if(entry.kind!=="record")return true;

@@ -3,8 +3,8 @@ const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypt
 const root=path.resolve(__dirname,'..'),outputName=process.env.VICTOR_AUDIT_OUTPUT||'field-audit-10';
 if(!/^[a-z0-9-]+$/.test(outputName))throw Error('Use a simple audit output folder name');
 const out=path.resolve(root,'../outputs',outputName);
-const suites=['input-usability','cloud-connection','field-stability','critical-sequences','transfer-delete-safety','resource-usability'];
-const expectedCounts={'input-usability':43,'cloud-connection':57,'field-stability':65,'critical-sequences':9,'transfer-delete-safety':15,'resource-usability':35};
+const suites=['input-usability','cloud-connection','field-stability','critical-sequences','transfer-delete-safety','resource-usability','layout-warehouse'];
+const expectedCounts={'input-usability':43,'cloud-connection':57,'field-stability':65,'critical-sequences':9,'transfer-delete-safety':15,'resource-usability':35,'layout-warehouse':42};
 const production=['app.js','workflow.js','storage.js','style.css','interface.css','index.html','sw.js'];
 const hashes=()=>Object.fromEntries(production.map(file=>[file,crypto.createHash('sha256').update(fs.readFileSync(path.join(root,file))).digest('hex')]));
 const report={startedAt:new Date().toISOString(),rounds:10,scope:'Synthetic VM fixtures and mocked network only. Not iPhone Safari/PWA, real cloud, or UI interaction testing.',productionBefore:hashes(),syntax:[],results:[]};
@@ -42,7 +42,7 @@ fs.writeFileSync(path.join(out,'summary.md'),[
   `앱 소스 SHA-256 동일: ${report.productionUnchanged}. 구문 검사 ${report.syntax.filter(r=>r.exitCode===0).length}/${report.syntax.length}.`,
   '', '| 회차 | 통과 | 실패 | 소요(ms) |','|---|---:|---:|---:|',...roundRows,'',
   '## 재현된 실패',...report.uniqueFailures.map(line=>'- '+line),
-  '', '기존 165개 회귀 검사, 연속 작업 9개, 이송·삭제 안전 검사 15개를 각각 별도 프로세스로 실행했다. 연속 작업은 회차별 수량을 바꿨다. 기대 결과는 재고·위치·참조 보존이며 안전한 취소 보류도 허용한다.',
+  '', '입력·연결·현장 안정성·연속 작업·이송 삭제·업무 연결·화면 및 창고 삭제 검사를 각각 별도 프로세스로 실행했다. 연속 작업은 회차별 수량을 바꿨다. 기대 결과는 재고·위치·참조 보존이며 안전한 취소 보류도 허용한다.',
   '가상 저장소·모의 통신만 사용했다. 실제 iPhone/Android 키패드·화면·서비스워커·운영 Supabase 동작은 이번 10회에 포함되지 않는다.',
   '각 검사 출력은 round-*.log, 세부 결과와 앱 소스 해시는 results.json에 보관했다.'
 ].join('\n')+'\n');
