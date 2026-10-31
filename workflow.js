@@ -363,8 +363,13 @@ function canReverseRecord(record){
   }
   return true;
 }
+function surveyUsesWarehouse(survey,name){
+  if(!survey?.active)return false;
+  if(Array.isArray(survey.items)&&survey.items.length)return survey.items.some(item=>item.warehouse===name);
+  return !survey.scope?.warehouse||survey.scope.warehouse==="all"||survey.scope.warehouse===name;
+}
 function canRestoreTrashEntry(entry){
-  if(entry.kind==="warehouse")return !warehouses.includes(entry.data.name)&&!state.survey?.active&&(!entry.data.equipment||(Array.isArray(entry.data.equipment)&&new Set(entry.data.equipment.map(item=>item?.id)).size===entry.data.equipment.length&&entry.data.equipment.every(item=>item&&item.id&&item.place===entry.data.name&&!state.equipment.some(current=>current.id===item.id))));
+  if(entry.kind==="warehouse")return !warehouses.includes(entry.data.name)&&!surveyUsesWarehouse(state.survey,entry.data.name)&&(!entry.data.equipment||(Array.isArray(entry.data.equipment)&&new Set(entry.data.equipment.map(item=>item?.id)).size===entry.data.equipment.length&&entry.data.equipment.every(item=>item&&item.id&&item.place===entry.data.name&&!state.equipment.some(current=>current.id===item.id))));
   if(entry.kind==="equipment")return !state.equipment.some(item=>item.id===entry.data.id)&&warehouses.includes(entry.data.place);
   if(entry.kind==="material")return !itemOf(entry.data.item.name)&&Object.entries(entry.data.stock||{}).every(([place,qty])=>warehouses.includes(place)||Number(qty)===0);
   if(entry.kind!=="record")return true;

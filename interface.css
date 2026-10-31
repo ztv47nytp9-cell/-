@@ -238,10 +238,11 @@ body.keyboard-open .snackbar{bottom:auto;top:calc(var(--input-viewport-top,0px) 
 .register-draft-summary>strong{font-size:14px;color:var(--text);font-weight:650}
 .register-draft-summary>.draft-incomplete{flex-basis:100%;font-size:12px;color:var(--muted)}
 #saveRecord,.batch-save{isolation:isolate;border:1px solid var(--border);box-shadow:0 -8px 0 5px var(--light);margin-top:18px;scroll-margin-bottom:100px}
-.register-save-dock{background:var(--light);border-radius:12px 12px 0 0;padding-top:8px}
+.register-save-dock{position:static;background:transparent;border-radius:0;padding:0;box-shadow:none}
 .register-save-dock .register-draft-summary{margin:0 0 8px;gap:2px 12px}
 :root[data-theme] .register-save-dock .register-draft-summary>span{padding:0;border:0;background:none;border-radius:0;color:var(--muted);font-weight:500}
-.register-save-dock #saveRecord{position:static;width:100%;margin:0;box-shadow:none}
+.register-save-dock #saveRecord{position:fixed;left:max(104px,calc((100vw - 700px)/2 + 104px));right:max(16px,calc((100vw - 700px)/2 + 16px));bottom:calc(var(--app-nav-height,76px) + 10px);width:auto;margin:0;z-index:20;box-shadow:0 2px 8px rgba(12,24,40,.12)}
+body.keyboard-open .register-save-dock #saveRecord{position:static;width:100%;margin-top:8px;box-shadow:none}
 body.keyboard-open .batch-save{bottom:0}
 .history-date-buttons{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin:12px 0 16px}
 .history-date-buttons>button{grid-column:span 2;min-height:44px}
@@ -364,14 +365,11 @@ body.keyboard-open #contextBack,body.menu-open #contextBack{display:none}
 .snackbar.undo>span{min-width:0;font-size:13px}
 .snackbar.undo>button{white-space:nowrap;flex-shrink:0;margin-left:0;min-height:32px}
 body.keyboard-open .snackbar{bottom:auto!important}
-.context-back-dock{position:fixed;left:50%;transform:translateX(-50%);width:min(700px,100%);height:64px;z-index:18;background:var(--light);border-top:1px solid var(--border);pointer-events:none}
-:root[data-theme] body.has-context-back .app{padding-bottom:calc(var(--app-nav-height,76px) + var(--context-back-space,0px))}
-:root[data-theme] .content .form .sticky-action{bottom:calc(var(--app-nav-height,76px) + var(--context-back-space,0px))}
+:root[data-theme] body.has-context-back .content{padding-bottom:84px}
+:root[data-theme] .content .form .sticky-action{bottom:calc(var(--app-nav-height,76px) + 64px)}
 :root[data-theme] body.keyboard-open .content .form .sticky-action{bottom:0}
-:root[data-theme] body.has-context-back .content .form .register-save-dock{bottom:var(--app-nav-height,76px);padding:8px 0 8px 88px;z-index:19}
-body.has-context-back .register-save-dock .register-draft-summary{margin-left:-88px}
 body.has-context-back :is(#contextBack,.back){z-index:20}
-html{scroll-padding-bottom:calc(var(--app-nav-height,76px) + var(--context-back-space,0px) + 80px)}
+html{scroll-padding-bottom:calc(var(--app-nav-height,76px) + 80px)}
 
 /* Readable rhythm: related text stays together; separate tasks have space. */
 :root[data-theme] :is(.row-title,.stock-name,.choice-title){letter-spacing:-.01em}
@@ -381,9 +379,17 @@ html{scroll-padding-bottom:calc(var(--app-nav-height,76px) + var(--context-back-
 .row-sub+.row-sub{margin-top:4px}
 .record-place{font-size:13px}
 .record-resource-summary{font-size:14px;color:var(--text)}
-.form{gap:16px}
+.form{gap:12px}
 .form :is(input,select,textarea){margin-top:6px}
 .form>.callout{margin-bottom:0}
+.form>.card,.form>.field-card{margin-block:0}
+.form details.field-card{padding:0 12px}
+.form details.field-card>summary{min-height:48px;padding:10px 0;line-height:1.4}
+.form details.field-card[open]{padding-bottom:12px}
+.form details.field-card>.location-grid{padding-top:4px}
+.field-card:not(details)>.section-title{margin-bottom:8px}
+.survey-session-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)}
+.survey-session-actions>.row-sub{grid-column:1/-1;margin:0;font-size:13px;line-height:1.5}
 .form-grid2,.location-grid{gap:12px}
 .entry-modal-head .row-sub{font-size:14px;line-height:1.5;margin-top:6px}
 .stock-display-tools{margin:8px 0 12px;border-bottom:1px solid var(--border)}
@@ -393,6 +399,8 @@ html{scroll-padding-bottom:calc(var(--app-nav-height,76px) + var(--context-back-
 .warehouse-delete-status{padding:12px 14px;border:1px solid var(--border);border-radius:14px;background:var(--surface);font-size:14px;line-height:1.6;word-break:keep-all;overflow-wrap:anywhere}
 .warehouse-delete-status strong{display:block;color:var(--text)}
 .warehouse-delete-status p{margin:6px 0 0;color:var(--muted)}
+.warehouse-delete-status ul{margin:6px 0 0;padding-left:18px;color:var(--muted)}
+.warehouse-delete-status li+li{margin-top:6px}
 :root[data-theme] .cloud-share-form .share-status-label{font-size:13px;line-height:1.5;letter-spacing:0}
 :root[data-theme] .cloud-share-form .share-status-title{font-size:22px;line-height:1.4;margin:8px 0}
 :root[data-theme] .cloud-share-form :is(.share-time-note,.share-scope-note,.share-copy-version){font-size:13px;line-height:1.6;word-break:keep-all;overflow-wrap:anywhere}

@@ -3,8 +3,8 @@ const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypt
 const root=path.resolve(__dirname,'..'),outputName=process.env.VICTOR_AUDIT_OUTPUT||'field-audit-10';
 if(!/^[a-z0-9-]+$/.test(outputName))throw Error('Use a simple audit output folder name');
 const out=path.resolve(root,'../outputs',outputName);
-const suites=['input-usability','cloud-connection','field-stability','critical-sequences','transfer-delete-safety','resource-usability','layout-warehouse'];
-const expectedCounts={'input-usability':43,'cloud-connection':57,'field-stability':65,'critical-sequences':9,'transfer-delete-safety':15,'resource-usability':35,'layout-warehouse':42};
+const suites=['input-usability','cloud-connection','field-stability','critical-sequences','transfer-delete-safety','resource-usability','layout-warehouse','survey-exit','survey-rename'];
+const expectedCounts={'input-usability':43,'cloud-connection':57,'field-stability':65,'critical-sequences':9,'transfer-delete-safety':15,'resource-usability':35,'layout-warehouse':42,'survey-exit':24,'survey-rename':35};
 const production=['app.js','workflow.js','storage.js','style.css','interface.css','index.html','sw.js'];
 const hashes=()=>Object.fromEntries(production.map(file=>[file,crypto.createHash('sha256').update(fs.readFileSync(path.join(root,file))).digest('hex')]));
 const report={startedAt:new Date().toISOString(),rounds:10,scope:'Synthetic VM fixtures and mocked network only. Not iPhone Safari/PWA, real cloud, or UI interaction testing.',productionBefore:hashes(),syntax:[],results:[]};

@@ -175,7 +175,25 @@ function isMeaningfulRegisterDraft(draft){
   if(String(draft.title || "").trim()) return true;
   return false;
 }
-function readRegisterDraft(){try{const draft=JSON.parse(localStorage.getItem(REGISTER_DRAFT_KEY)||"null");return shouldOfferRegisterDraft(draft)?draft:null;}catch(_){return null;}}
+function reconcileWarehouseDraft(draft){
+  if(!draft||typeof draft!=="object")return draft;
+  const since=Date.parse(draft.savedAt||""),seen=new Set(Array.isArray(draft.warehouseNameEvents)?draft.warehouseNameEvents:[]);
+  if(!Number.isFinite(since))return draft;
+  const events=Object.values(state.warehouseInfos||{}).flatMap(info=>Array.isArray(info?.nameHistory)?info.nameHistory:[])
+    .filter(row=>row&&row.before&&row.after&&Number.isFinite(Date.parse(row.at)))
+    .sort((a,b)=>Date.parse(a.at)-Date.parse(b.at));
+  let next=draft;
+  for(const event of events){
+    const id=event.id||`${event.at}|${event.before}|${event.after}`;
+    if(seen.has(id)||Date.parse(event.at)<since)continue;
+    if(next===draft)next=JSON.parse(JSON.stringify(draft));
+    const replace=row=>{if(row)for(const key of ["warehouse","targetWarehouse","place","fromPlace","toPlace"])if(row[key]===event.before)row[key]=event.after;};
+    replace(next);(next.items||[]).forEach(replace);(next.equipmentItems||[]).forEach(replace);seen.add(id);
+  }
+  if(next!==draft)next.warehouseNameEvents=[...seen];
+  return next;
+}
+function readRegisterDraft(){try{const draft=reconcileWarehouseDraft(JSON.parse(localStorage.getItem(REGISTER_DRAFT_KEY)||"null"));return shouldOfferRegisterDraft(draft)?draft:null;}catch(_){return null;}}
 function shouldOfferRegisterDraft(draft){
   if(!isMeaningfulRegisterDraft(draft)) return false;
   const saved=dateMs(draft.savedAt);
@@ -184,7 +202,7 @@ function shouldOfferRegisterDraft(draft){
 function readOlderRegisterDraft(){
   try{
     const read=key=>{try{return JSON.parse(localStorage.getItem(key)||"null");}catch(_){return null;}},current=read(REGISTER_DRAFT_KEY),older=read(REGISTER_OLDER_DRAFT_KEY);
-    return [current,older].filter(draft=>isMeaningfulRegisterDraft(draft)&&!shouldOfferRegisterDraft(draft)).sort((a,b)=>dateMs(b.savedAt)-dateMs(a.savedAt))[0]||null;
+    return [current,older].map(reconcileWarehouseDraft).filter(draft=>isMeaningfulRegisterDraft(draft)&&!shouldOfferRegisterDraft(draft)).sort((a,b)=>dateMs(b.savedAt)-dateMs(a.savedAt))[0]||null;
   }catch(_){return null;}
 }
 function retainExpiredRegisterDraft(){
@@ -1254,7 +1272,7 @@ function renderMenuPage(){
       <div class="menu-page-grid">
         <button type="button" id="pageTrashBtn">임시 보관함</button>
         <button type="button" id="pageBulkUndoBtn">대량변경 되돌리기</button>
-        <button type="button" id="pageSurveyUndoBtn">실사 반영 취소</button>
+        <button type="button" id="pageSurveyUndoBtn">완료 실사 되돌리기</button>
         <button type="button" id="pageSafetyBtn">자동 안전지점</button>
       </div>
       <div class="menu-page-grid">
@@ -1276,7 +1294,7 @@ function renderMenuPage(){
   document.getElementById("pageRestoreBtn")?.addEventListener("click",()=>document.getElementById("restoreFile")?.click());
   document.getElementById("pageCloudSettingsBtn")?.addEventListener("click",openCloudShareSettings);
   document.getElementById("pageTechniqueBtn")?.addEventListener("click",()=>setPage("technique"));
-  document.getElementById("pageFastSurveyBtn")?.addEventListener("click",()=>state.survey?.active?renderFastSurvey():openFastSurveySetup());
+  document.getElementById("pageFastSurveyBtn")?.addEventListener("click",()=>state.survey?.active?enterFastSurvey():openFastSurveySetup());
   document.getElementById("pageThemeBtn")?.addEventListener("click",openThemeSettings);
   document.getElementById("pageTrashBtn")?.addEventListener("click",openTrash);
   document.getElementById("pageBulkUndoBtn")?.addEventListener("click",restoreBulkSafetyPoint);
@@ -1416,7 +1434,7 @@ function editWarehouseInfo(w){
     if(nextName!==w && !await askConfirm("창고명 변경 영향",`${warehouseImpactText(w)}\n\n${w} → ${nextName}(으)로 변경할까요?`,"변경"))return;
     if(expected!==JSON.stringify(state)){showFeedback("warning","확인 중 자료가 바뀌었습니다 · 다시 확인해주세요");return;}
     const before=JSON.stringify(state);
-    renameWarehouse(w,nextName,{kind,memo,...fieldMemo});
+    if(renameWarehouse(w,nextName,{kind,memo,...fieldMemo})===false)return;
     if(!saveStateTransaction(before,"보관장소 수정 저장 실패 · 입력은 유지됩니다"))return;
     selectedWarehouse=nextName;
     closeEntryModal(); showFeedback("success","보관장소 정보 저장"); renderWarehouse();
@@ -1432,8 +1450,11 @@ function warehouseImpactText(name){
 }
 
 function renameWarehouse(oldName,newName,{kind,memo,access,keyNote,special,contactMemo,office,detailLocation}={}){
-  if(!oldName || !newName) return;
+  if(!safeInventoryKey(newName)||!state.warehouses.includes(oldName)||(oldName!==newName&&state.warehouses.includes(newName)))return false;
   if(oldName!==newName){
+    const survey=renamedSurveyWarehouse(state.survey,oldName,newName);
+    if(survey===false){showFeedback("error","새 이름에 기존 실사 입력이 남아 있어 변경을 보류했습니다");return false;}
+    state.survey=survey;
     state.warehouses=(state.warehouses||[]).map(name=>name===oldName?newName:name);
     if(state.stock?.[oldName]){state.stock[newName]=state.stock[oldName];delete state.stock[oldName];}
     (state.equipment||[]).forEach(item=>{if(item.place===oldName)item.place=newName;(item.moves||[]).forEach(move=>{if(move.from===oldName)move.from=newName;if(move.to===oldName)move.to=newName;});});
@@ -1456,6 +1477,26 @@ function renameWarehouse(oldName,newName,{kind,memo,access,keyNote,special,conta
   if(oldName!==newName)state.warehouseInfos[newName].nameHistory=[...(Array.isArray(previous.nameHistory)?previous.nameHistory:[]),{id:uid(),before:oldName,after:newName,at:new Date().toISOString()}];
   if(state.warehouseKinds[newName]==="차량"&&!state.assetOps[newName])state.assetOps[newName]={distanceBase:0,logs:[],maintenance:[],counterMode:"absolute"};
   if(state.warehouseKinds[newName]==="함정"&&!state.assetOps[newName])state.assetOps[newName]={mileageBase:0,hoursBase:0,portHoursBase:0,starboardHoursBase:0,engineSplitMode:"dual",fuelBase:0,logs:[],maintenance:[],counterMode:"absolute"};
+  refreshGlobals(state);
+  return true;
+}
+function renamedSurveyWarehouse(survey,oldName,newName){
+  if(!survey)return survey;
+  const next=JSON.parse(JSON.stringify(survey));
+  const items=Array.isArray(next.items)?next.items:[],changes=Array.isArray(next.lastApplied?.changes)?next.lastApplied.changes:[];
+  const names=new Set([...catalog.map(item=>item.name),...items.filter(item=>item.warehouse===oldName).map(item=>item.name),...changes.filter(item=>item.warehouse===oldName).map(item=>item.name)]);
+  const remap=new Map([...names].map(name=>[oldName+"|"+name,newName+"|"+name]));
+  if(items.some(item=>item.warehouse!==oldName&&remap.has(item.warehouse+"|"+item.name)))return false;
+  for(const field of ["values","checked","baseline"]){
+    if(!next[field]||typeof next[field]!=="object")continue;
+    const entries=Object.entries(next[field]),keys=new Set(entries.map(([key])=>key));
+    if(entries.some(([key])=>remap.has(key)&&keys.has(remap.get(key))))return false;
+    next[field]=Object.fromEntries(entries.map(([key,value])=>[remap.get(key)||key,value]));
+  }
+  if(next.scope?.warehouse===oldName)next.scope.warehouse=newName;
+  items.forEach(item=>{if(item.warehouse===oldName)item.warehouse=newName;});
+  changes.forEach(change=>{if(change.warehouse===oldName)change.warehouse=newName;});
+  return next;
 }
 
 function renderStockList(){
@@ -1594,6 +1635,7 @@ function syncTransferTarget(){
 }
 
 function applyRegisterDraft(saved){
+  saved=reconcileWarehouseDraft(saved);
   if(!saved)return;
   registerFormDraft=saved;
   pendingRegisterDraft=null;
@@ -1606,6 +1648,8 @@ function applyRegisterDraft(saved){
 function renderRegister(){
   queueMicrotask(attachRecordTimeTools);
   queueMicrotask(attachBundleButton);
+  if(registerFormDraft){const next=reconcileWarehouseDraft(registerFormDraft);if(next!==registerFormDraft)applyRegisterDraft(next);}
+  pendingRegisterDraft=reconcileWarehouseDraft(pendingRegisterDraft);
   if(!registerFormDraft&&!pendingRegisterDraft) pendingRegisterDraft=readRegisterDraft();
   draftItems = draftItems.length ? draftItems : [];
   view.innerHTML = `
@@ -1658,7 +1702,7 @@ function renderRegister(){
         <div id="stockAfterPreview"></div>
       </div>
       <label>메모<textarea id="recMemo" placeholder="${registerMode === "quick" ? "현장 메모를 간단히 입력하세요" : "메모를 입력하세요"}"></textarea></label>
-      <div class="register-save-dock sticky-action">
+      <div class="register-save-dock">
         <div id="registerDraftSummary" role="status" aria-live="polite">${registerDraftSummaryHtml()}</div>
         <button class="btn primary" id="saveRecord" type="button">${registerMode === "quick" ? "진행 중 사건 저장" : registerFlow + " 저장"}</button>
       </div>
@@ -2852,7 +2896,7 @@ function openTrash(){
   document.querySelectorAll("[data-trash-restore]").forEach(button=>button.onclick=async()=>{
     const entry=state.trash.find(item=>item.id===button.dataset.trashRestore);
     if(!entry||!await askConfirm("자료 복원","삭제했던 자료를 다시 복원할까요?","복원"))return;
-    if(!canRestoreTrashEntry(entry)){showFeedback("error","같은 자료가 있거나 이후 재고가 변경되어 복원을 보류했습니다");return;}
+    if(!canRestoreTrashEntry(entry)){showFeedback("error",entry.kind==="warehouse"&&warehouseSurveyInUse(entry.data.name)?"이 보관장소가 진행 중 실사에 포함돼 있습니다 · 실사를 중단하거나 마친 뒤 복원해주세요":"같은 자료가 있거나 이후 재고가 변경되어 복원을 보류했습니다");return;}
     const beforeState=JSON.stringify(state);
     try{
       if(entry.kind==="record"){
@@ -3157,13 +3201,23 @@ function openFastSurveySetup(){
     const items=buildFastSurveyItems(scope),beforeState=JSON.stringify(state);
     state.survey={active:true,index:0,startedAt:new Date().toISOString(),values:{},checked:{},scope,items,baseline:Object.fromEntries(items.map(item=>[`${item.warehouse}|${item.name}`,Number(state.stock[item.warehouse]?.[item.name]||0)])),lastApplied:state.survey?.lastApplied||null};
     if(!saveStateTransaction(beforeState,"실사 시작 정보를 저장하지 못했습니다. 기존 자료는 유지했습니다"))return;
-    closeEntryModal();renderFastSurvey();
+    closeEntryModal();enterFastSurvey();
   });
 }
 function buildFastSurveyItems(scope={warehouse:"all",category:"all"}){return warehouses.filter(w=>scope.warehouse==="all"||w===scope.warehouse).flatMap(w=>catalog.filter(i=>scope.category==="all"||i.cat===scope.category).map(i=>({warehouse:w,name:i.name,cat:i.cat,unit:i.unit})));}
 function ensureFastSurveyState(){
-  const survey=state.survey;
+  let survey=state.survey;
   if(!survey)return null;
+  if(survey.active){
+    const before=JSON.stringify(state),missing=new Set([...(Array.isArray(survey.items)?survey.items:[]).map(item=>item.warehouse),survey.scope?.warehouse].filter(name=>name&&name!=="all"&&!warehouses.includes(name)));
+    for(const oldName of missing){
+      const aliases=warehouses.filter(name=>(state.warehouseInfos?.[name]?.nameHistory||[]).some(row=>row?.before===oldName));
+      if(aliases.length!==1)continue;
+      const repaired=renamedSurveyWarehouse(survey,oldName,aliases[0]);
+      if(repaired!==false){survey=repaired;state.survey=survey;}
+    }
+    if(JSON.stringify(state)!==before&&!saveStateTransaction(before,"실사 연결 보정 저장 실패 · 기존 입력을 유지했습니다"))return state.survey;
+  }
   survey.scope=survey.scope||{warehouse:"all",category:"all"};
   survey.values=survey.values&&typeof survey.values==="object"?survey.values:{};
   survey.checked=survey.checked&&typeof survey.checked==="object"?survey.checked:Object.fromEntries(Object.keys(survey.values).map(key=>[key,true]));
@@ -3176,7 +3230,8 @@ function fastSurveyConfirmedCount(items=fastSurveyItems()){return items.reduce((
 function fastSurveyConflicts(items=fastSurveyItems()){
   return items.filter(item=>{
     const key=`${item.warehouse}|${item.name}`,stillExists=warehouses.includes(item.warehouse)&&catalog.some(row=>row.name===item.name);
-    return !stillExists||Number(state.stock[item.warehouse]?.[item.name]||0)!==Number(state.survey?.baseline?.[key]||0);
+    const started=Date.parse(state.survey?.startedAt||""),reusedName=warehouses.some(name=>name!==item.warehouse&&(state.warehouseInfos?.[name]?.nameHistory||[]).some(row=>row?.before===item.warehouse&&(!Number.isFinite(started)||Date.parse(row.at)>=started)));
+    return !stillExists||reusedName||Number(state.stock[item.warehouse]?.[item.name]||0)!==Number(state.survey?.baseline?.[key]||0);
   });
 }
 async function restartFastSurvey(){if(!await askConfirm("재고실사 다시 시작","현재 실사 입력을 지우고 새 기준 수량으로 다시 시작할까요?","다시 시작",true))return;const beforeState=JSON.stringify(state);state.survey={active:false,index:0,values:{},checked:{},items:[],baseline:{},lastApplied:state.survey?.lastApplied||null};if(!saveStateTransaction(beforeState,"실사 초기화를 저장하지 못했습니다"))return;openFastSurveySetup();}
@@ -3186,32 +3241,33 @@ function renderFastSurvey(){
   const key=`${it.warehouse}|${it.name}`,cur=Number(state.stock[it.warehouse]?.[it.name]||0),baseline=Number(survey.baseline[key]||0),checked=survey.checked[key]===true,confirmed=fastSurveyConfirmedCount(items),saved=survey.values[key];
   document.getElementById("headTitle").innerHTML=`<div class="page-title">초기 재고실사</div><div class="date">확인 ${confirmed} / ${items.length} · ${idx+1}번째</div>`;
   updateBottomNav();
-  view.innerHTML=`<button class="back" id="exitFastSurvey" type="button">‹ 홈</button>
+  view.innerHTML=`<button class="back" id="exitFastSurvey" type="button">‹ ${fastSurveyReturnWarehouse?"창고 관리":"홈"}</button>
     <div class="card survey-card"><div class="survey-item-heading"><span class="badge blue">${esc(it.warehouse)}</span><span class="survey-item-status ${checked?"confirmed":"unconfirmed"}">${checked?"✓ 확인 완료":"미확인"}</span></div>
       <div class="section-title" style="margin-top:10px">${esc(it.name)}</div><div class="row-sub">${esc(it.cat)} · 시작 수량 ${qtyText(baseline,it.unit)}${cur!==baseline?` · 현재 ${qtyText(cur,it.unit)} (변경됨)`:""}</div>
       <label class="survey-quantity-label">실사 수량 (${esc(it.unit)})<span class="quantity-control"><input class="big-input" id="fastSurveyQty" type="number" inputmode="${integerUnit(it.unit)?"numeric":"decimal"}" min="0" value="${checked?saved??"":""}" placeholder="세어 본 수량"><span class="quantity-unit" aria-hidden="true">${esc(it.unit)}</span></span></label>
       <div class="survey-fast-actions"><button class="btn gray" id="surveyZero" type="button">0으로 확인</button><button class="btn secondary" id="surveyKeepCurrent" type="button">현재 수량 확인</button><button class="btn gray" id="surveyDirect" type="button">직접 입력</button></div>
     </div><div class="entry-actions survey-navigation"><button class="btn gray" id="fastPrev" type="button" ${idx===0?"disabled":""}>이전</button><button class="btn primary" id="fastNext" type="button"></button></div>
-    <div class="row-sub survey-progress-note">확인 ${confirmed}개 · 미확인 ${items.length-confirmed}개</div><div class="survey-secondary-actions"><button class="btn secondary" id="fastBatch" type="button">여러 품목 입력</button><button class="btn secondary" id="fastReview" type="button">확인 현황</button></div>`;
+    <div class="row-sub survey-progress-note">확인 ${confirmed}개 · 미확인 ${items.length-confirmed}개</div><div class="survey-secondary-actions"><button class="btn secondary" id="fastBatch" type="button">여러 품목 입력</button><button class="btn secondary" id="fastReview" type="button">확인 현황</button></div>${surveySessionActionsHtml()}`;
   const syncNext=()=>{const entered=document.getElementById("fastSurveyQty").value!=="";document.getElementById("fastNext").textContent=idx===items.length-1?(entered?"확인 · 검토":"미확인 · 검토"):(entered?"확인 · 다음":"건너뛰기");};
   syncNext();document.getElementById("fastSurveyQty").addEventListener("input",syncNext);
   const commit=async(value)=>{const beforeState=JSON.stringify(state);survey.values[key]=Number(value);survey.checked[key]=true;if(!saveStateTransaction(beforeState,"실사 수량을 저장하지 못했습니다. 다시 저장해주세요"))return;const next=Math.min(idx+1,items.length-1);if(next===idx)renderFastSurveyReview();else{const beforeMove=JSON.stringify(state);survey.index=next;if(saveStateTransaction(beforeMove,"실사 진행 위치를 저장하지 못했습니다"))renderFastSurvey();}};
   document.getElementById("surveyZero").onclick=()=>commit(0);document.getElementById("surveyKeepCurrent").onclick=()=>commit(cur);document.getElementById("surveyDirect").onclick=()=>document.getElementById("fastSurveyQty").focus();
   document.getElementById("fastNext").onclick=async()=>{const input=document.getElementById("fastSurveyQty");if(input.value!==""){commit(input.value);return;}const beforeState=JSON.stringify(state);survey.checked[key]=false;delete survey.values[key];if(idx===items.length-1){if(saveStateTransaction(beforeState,"실사 진행 정보를 저장하지 못했습니다"))renderFastSurveyReview();return;}survey.index=idx+1;if(saveStateTransaction(beforeState,"실사 진행 정보를 저장하지 못했습니다"))renderFastSurvey();};
   document.getElementById("fastPrev").onclick=()=>{const beforeState=JSON.stringify(state);survey.index=Math.max(0,idx-1);if(saveStateTransaction(beforeState,"실사 진행 위치를 저장하지 못했습니다"))renderFastSurvey();};
-  document.getElementById("fastBatch").onclick=renderFastSurveyBatch;document.getElementById("fastReview").onclick=renderFastSurveyReview;document.getElementById("exitFastSurvey").onclick=()=>setPage("home");
+  document.getElementById("fastBatch").onclick=renderFastSurveyBatch;document.getElementById("fastReview").onclick=renderFastSurveyReview;document.getElementById("exitFastSurvey").onclick=pauseFastSurvey;bindSurveySessionActions();
 }
 function renderFastSurveyBatch(){
   const survey=ensureFastSurveyState(),items=fastSurveyItems(),start=Math.floor((survey.index||0)/12)*12,rows=items.slice(start,start+12);
-  view.innerHTML=`<button class="back" id="batchBack" type="button">‹ 한 품목씩</button><div class="card batch-card"><div class="section-title">일괄 재고입력</div><div class="row-sub">빈칸은 미확인 · 0도 확인 수량으로 저장</div>${rows.map((it,n)=>{const key=`${it.warehouse}|${it.name}`,checked=survey.checked[key]===true;return `<div class="batch-row"><strong class="batch-item-name">${esc(it.name)}</strong><div class="row-sub batch-place">${esc(it.warehouse)} · 시작 ${qtyText(survey.baseline[key]||0,it.unit)}</div><div class="batch-input-row"><button class="btn gray compact" type="button" data-batch-current="${n}">현재 수량</button><label class="batch-quantity"><span class="batch-state">${checked?"확인 수량":"실사 수량"}</span><span class="quantity-control"><input data-batch="${n}" aria-label="${esc(it.name)} 실사 수량 (${esc(it.unit)})" type="number" inputmode="${integerUnit(it.unit)?"numeric":"decimal"}" min="0" value="${checked?survey.values[key]??"":""}" placeholder="미확인"><span class="quantity-unit" aria-hidden="true">${esc(it.unit)}</span></span></label></div></div>`;}).join("")}</div><button class="btn primary sticky-action batch-save" id="batchSave" type="button">${start+12>=items.length?"확인 저장 · 검토":"확인 저장 · 다음 묶음"}</button>`;
+  view.innerHTML=`<button class="back" id="batchBack" type="button">‹ 한 품목씩</button><div class="card batch-card"><div class="section-title">일괄 재고입력</div><div class="row-sub">빈칸은 미확인 · 0도 확인 수량으로 저장</div>${rows.map((it,n)=>{const key=`${it.warehouse}|${it.name}`,checked=survey.checked[key]===true;return `<div class="batch-row"><strong class="batch-item-name">${esc(it.name)}</strong><div class="row-sub batch-place">${esc(it.warehouse)} · 시작 ${qtyText(survey.baseline[key]||0,it.unit)}</div><div class="batch-input-row"><button class="btn gray compact" type="button" data-batch-current="${n}">현재 수량</button><label class="batch-quantity"><span class="batch-state">${checked?"확인 수량":"실사 수량"}</span><span class="quantity-control"><input data-batch="${n}" aria-label="${esc(it.name)} 실사 수량 (${esc(it.unit)})" type="number" inputmode="${integerUnit(it.unit)?"numeric":"decimal"}" min="0" value="${checked?survey.values[key]??"":""}" placeholder="미확인"><span class="quantity-unit" aria-hidden="true">${esc(it.unit)}</span></span></label></div></div>`;}).join("")}</div><button class="btn primary sticky-action batch-save" id="batchSave" type="button">${start+12>=items.length?"확인 저장 · 검토":"확인 저장 · 다음 묶음"}</button>${surveySessionActionsHtml()}`;
   document.getElementById("batchBack").onclick=renderFastSurvey;
+  bindSurveySessionActions();
   document.querySelectorAll("[data-batch-current]").forEach(button=>button.onclick=()=>{const n=Number(button.dataset.batchCurrent),item=rows[n],input=document.querySelector(`[data-batch="${n}"]`);input.value=Number(state.stock[item.warehouse]?.[item.name]||0);});
   document.getElementById("batchSave").onclick=()=>{const beforeState=JSON.stringify(state);rows.forEach((it,n)=>{const key=`${it.warehouse}|${it.name}`,input=document.querySelector(`[data-batch="${n}"]`);if(input.value!==""){survey.values[key]=Number(input.value);survey.checked[key]=true;}else{delete survey.values[key];survey.checked[key]=false;}});survey.index=Math.min(start+12,items.length-1);if(!saveStateTransaction(beforeState,"일괄 실사 입력을 저장하지 못했습니다. 입력을 확인하고 다시 시도해주세요"))return;start+12>=items.length?renderFastSurveyReview():renderFastSurveyBatch();};
 }
 function renderSurveySummary(summary){
   page="survey";
   document.getElementById("headTitle").innerHTML=`<div class="page-title">실사 완료</div><div class="date">${fmtDate(summary.date || todayISO())}</div>`;
-  view.innerHTML=`<div class="card"><div class="section-title">재고실사 완료 요약</div><div class="summary-grid survey-summary-grid"><div class="summary-pill"><div class="summary-label">확인 품목</div><div class="summary-value">${Number(summary.checked||0).toLocaleString("ko-KR")}건</div></div><div class="summary-pill"><div class="summary-label">미확인</div><div class="summary-value">${Number(summary.unchecked||0).toLocaleString("ko-KR")}건</div></div><div class="summary-pill"><div class="summary-label">0재고</div><div class="summary-value">${Number(summary.zeroCount||0).toLocaleString("ko-KR")}건</div></div><div class="summary-pill"><div class="summary-label">변동</div><div class="summary-value">${Number(summary.changedCount||0).toLocaleString("ko-KR")}건</div></div></div>${summary.memo?`<div class="callout" style="margin-top:12px">${esc(summary.memo)}</div>`:""}</div><div class="card"><div class="section-title">다음 작업</div><div class="row-sub">필요하면 이력에서 재고수정 기록을 확인하고, 문제가 있으면 점3개 메뉴의 실사 반영 취소를 사용할 수 있습니다.</div></div><button class="btn primary" id="surveySummaryHome" type="button" style="width:100%">홈으로</button>`;
+  view.innerHTML=`<div class="card"><div class="section-title">재고실사 완료 요약</div><div class="summary-grid survey-summary-grid"><div class="summary-pill"><div class="summary-label">확인 품목</div><div class="summary-value">${Number(summary.checked||0).toLocaleString("ko-KR")}건</div></div><div class="summary-pill"><div class="summary-label">미확인</div><div class="summary-value">${Number(summary.unchecked||0).toLocaleString("ko-KR")}건</div></div><div class="summary-pill"><div class="summary-label">0재고</div><div class="summary-value">${Number(summary.zeroCount||0).toLocaleString("ko-KR")}건</div></div><div class="summary-pill"><div class="summary-label">변동</div><div class="summary-value">${Number(summary.changedCount||0).toLocaleString("ko-KR")}건</div></div></div>${summary.memo?`<div class="callout" style="margin-top:12px">${esc(summary.memo)}</div>`:""}</div><div class="card"><div class="section-title">다음 작업</div><div class="row-sub">필요하면 이력에서 재고수정 기록을 확인하고, 문제가 있으면 점3개 메뉴의 완료 실사 되돌리기를 사용할 수 있습니다.</div></div><button class="btn primary" id="surveySummaryHome" type="button" style="width:100%">홈으로</button>`;
   document.getElementById("surveySummaryHome")?.addEventListener("click",()=>setPage("home"));
 }
 
@@ -3220,8 +3276,8 @@ function renderFastSurveyReview(){
   const reviewed=confirmed.map(it=>{const key=`${it.warehouse}|${it.name}`;return {...it,before:Number(survey.baseline[key]||0),after:Number(survey.values[key]||0)};});
   const changed=reviewed.filter(it=>it.before!==it.after),zeroCount=reviewed.filter(it=>Number(it.after||0)===0).length,unchangedCount=reviewed.length-changed.length;
   page="survey";document.getElementById("headTitle").innerHTML=`<div class="page-title">실사 확인</div><div class="date">확인 ${confirmed.length} / ${items.length}</div>`;
-  view.innerHTML=`<button class="back" id="reviewBack" type="button">‹ 실사 입력</button><div class="card"><div class="section-title">실사 요약</div><div class="summary-grid"><div class="summary-pill"><div class="summary-label">확인</div><div class="summary-value">${confirmed.length}개</div></div><div class="summary-pill"><div class="summary-label">미확인</div><div class="summary-value">${unchecked.length}개</div></div><div class="summary-pill"><div class="summary-label">수량 변경</div><div class="summary-value">${changed.length}개</div></div></div><div class="row-sub" style="margin-top:10px">확인 중 0재고 ${zeroCount}개 · 수량 변동 없음 ${unchangedCount}개</div></div>${conflicts.length?`<div class="callout error-callout"><strong>재고 기준이 바뀐 항목 ${conflicts.length}개</strong><div>실사 중 다른 작업에서 수량이나 품목 구성이 바뀌었습니다. 잘못 덮어쓰지 않도록 반영을 막았습니다. 새 기준으로 실사를 다시 시작해주세요.</div><button class="btn secondary" id="restartConflictedSurvey" type="button">새 기준으로 다시 시작</button></div>`:""}<div class="list-card"><div class="section-title">확인한 수량 변경 ${changed.length}건</div>${changed.length?changed.map(it=>`<div class="list-row"><div><div class="row-title">${esc(it.name)}</div><div class="row-sub">${esc(it.warehouse)} · ${qtyText(it.before,it.unit)} → ${qtyText(it.after,it.unit)}</div></div></div>`).join(""):`<div class="emptybox">확인한 수량 변경이 없습니다.</div>`}</div>${unchecked.length?`<label class="survey-skip-option"><input id="allowUncheckedApply" type="checkbox"> 미확인 ${unchecked.length}개는 기존 수량을 유지하고, 확인한 품목만 반영</label>`:""}<div class="card"><label>담당 메모<textarea id="surveyApplyMemo" placeholder="실사 특이사항 또는 담당 메모"></textarea></label></div><button class="btn primary" id="applyFastSurvey" type="button" style="width:100%" ${conflicts.length||unchecked.length?"disabled":""}>확인한 품목 반영</button>`;
-  document.getElementById("reviewBack").onclick=renderFastSurvey;
+  view.innerHTML=`<button class="back" id="reviewBack" type="button">‹ 실사 입력</button><div class="card"><div class="section-title">실사 요약</div><div class="summary-grid"><div class="summary-pill"><div class="summary-label">확인</div><div class="summary-value">${confirmed.length}개</div></div><div class="summary-pill"><div class="summary-label">미확인</div><div class="summary-value">${unchecked.length}개</div></div><div class="summary-pill"><div class="summary-label">수량 변경</div><div class="summary-value">${changed.length}개</div></div></div><div class="row-sub" style="margin-top:10px">확인 중 0재고 ${zeroCount}개 · 수량 변동 없음 ${unchangedCount}개</div></div>${conflicts.length?`<div class="callout error-callout"><strong>재고 기준이 바뀐 항목 ${conflicts.length}개</strong><div>실사 중 다른 작업에서 수량이나 품목 구성이 바뀌었습니다. 잘못 덮어쓰지 않도록 반영을 막았습니다. 새 기준으로 실사를 다시 시작해주세요.</div><button class="btn secondary" id="restartConflictedSurvey" type="button">새 기준으로 다시 시작</button></div>`:""}<div class="list-card"><div class="section-title">확인한 수량 변경 ${changed.length}건</div>${changed.length?changed.map(it=>`<div class="list-row"><div><div class="row-title">${esc(it.name)}</div><div class="row-sub">${esc(it.warehouse)} · ${qtyText(it.before,it.unit)} → ${qtyText(it.after,it.unit)}</div></div></div>`).join(""):`<div class="emptybox">확인한 수량 변경이 없습니다.</div>`}</div>${unchecked.length?`<label class="survey-skip-option"><input id="allowUncheckedApply" type="checkbox"> 미확인 ${unchecked.length}개는 기존 수량을 유지하고, 확인한 품목만 반영</label>`:""}<div class="card"><label>담당 메모<textarea id="surveyApplyMemo" placeholder="실사 특이사항 또는 담당 메모"></textarea></label></div><button class="btn primary" id="applyFastSurvey" type="button" style="width:100%" ${conflicts.length||unchecked.length?"disabled":""}>확인한 품목 반영</button>${surveySessionActionsHtml()}`;
+  document.getElementById("reviewBack").onclick=renderFastSurvey;bindSurveySessionActions();
   document.getElementById("restartConflictedSurvey")?.addEventListener("click",restartFastSurvey);
   const applyButton=document.getElementById("applyFastSurvey"),skipOption=document.getElementById("allowUncheckedApply");
   skipOption?.addEventListener("change",()=>{applyButton.disabled=!skipOption.checked||conflicts.length>0;});
@@ -3243,16 +3299,86 @@ function renderFastSurveyReview(){
 
 async function undoLastSurvey(){
   return runWorkflow("survey-undo",async()=>{
-    const applied=state.survey?.lastApplied;if(!applied?.changes?.length){showFeedback("info","취소할 실사 반영 내역이 없습니다");return;}
-    const changed=()=>applied.changes.some(change=>Number(state.stock[change.warehouse]?.[change.name]||0)!==Number(change.after));
+    const applied=state.survey?.lastApplied;if(!applied?.changes?.length){showFeedback("info","되돌릴 완료 실사가 없습니다 · 진행 중 중단은 실사 화면에서 할 수 있습니다");return;}
+    const changes=applied.changes.map(change=>{
+      const appliedAt=Date.parse(applied.appliedAt||"");
+      const aliases=warehouses.filter(name=>(state.warehouseInfos?.[name]?.nameHistory||[]).some(row=>row?.before===change.warehouse&&(!Number.isFinite(appliedAt)||Date.parse(row.at)>=appliedAt)));
+      if(warehouses.includes(change.warehouse))return {...change,warehouse:aliases.some(name=>name!==change.warehouse)?"":change.warehouse};
+      return {...change,warehouse:aliases.length===1?aliases[0]:change.warehouse};
+    });
+    const keys=new Set();
+    const valid=()=>changes.every(change=>{
+      const key=JSON.stringify([change.warehouse,change.name]),item=itemOf(change.name);
+      if(keys.has(key))return false;keys.add(key);
+      return warehouses.includes(change.warehouse)&&Object.hasOwn(state.stock||{},change.warehouse)&&Object.hasOwn(state.stock[change.warehouse]||{},change.name)&&item&&finiteQuantity(change.before,item.unit)!==null&&finiteQuantity(change.after,item.unit)!==null;
+    });
+    if(!valid()){showFeedback("error","실사에 연결된 창고·품목을 확인해주세요 · 되돌리기를 보류했습니다");return false;}
+    const expected=JSON.stringify(state);
+    const changed=()=>changes.some(change=>Number(state.stock[change.warehouse]?.[change.name])!==Number(change.after));
     if(changed()){showFeedback("error","실사 후 변경된 재고가 있습니다 · 이후 기록을 먼저 확인해주세요");return;}
-    if(!await askConfirm("실사 반영 취소",`${applied.changes.length}개 품목을 실사 전 수량으로 되돌릴까요?`,"되돌리기",true))return;
-    if(changed()){showFeedback("error","확인 중 재고가 바뀌어 취소를 보류했습니다");return;}
+    if(!await askConfirm("완료 실사 되돌리기",`${applied.changes.length}개 품목을 실사 전 수량으로 되돌릴까요?`,"되돌리기",true))return;
+    if(JSON.stringify(state)!==expected||changed()){showFeedback("error","확인 중 자료가 바뀌어 취소를 보류했습니다");return false;}
     const beforeState=JSON.stringify(state);
-    applied.changes.forEach(change=>{if(state.stock[change.warehouse])state.stock[change.warehouse][change.name]=Number(change.before||0);});
+    changes.forEach(change=>{state.stock[change.warehouse][change.name]=Number(change.before);});
     state.survey.lastApplied=null;
     if(!saveStateTransaction(beforeState,"실사 취소를 저장하지 못했습니다. 현재 재고를 유지했습니다"))return;
     showFeedback("success","직전 실사 반영을 취소했습니다");renderHome();
+  });
+}
+
+let fastSurveyReturnWarehouse="";
+function enterFastSurvey(warehouse=""){
+  const survey=ensureFastSurveyState();
+  if(warehouse&&survey?.active&&survey.items[survey.index||0]?.warehouse!==warehouse){
+    const index=survey.items.findIndex(item=>item.warehouse===warehouse);
+    if(index>=0){const before=JSON.stringify(state);survey.index=index;if(!saveStateTransaction(before,"실사 진행 위치를 저장하지 못했습니다"))return false;}
+  }
+  fastSurveyReturnWarehouse=warehouse;renderFastSurvey();scrollToTop();
+}
+function surveySessionActionsHtml(){
+  return `<div class="survey-session-actions"><button class="btn secondary" id="pauseFastSurvey" type="button">나중에 계속</button><button class="btn danger" id="stopFastSurvey" type="button">${fastSurveyReturnWarehouse?"이 창고 실사 중단":"실사 중단"}</button><p class="row-sub">나중에 계속: 입력 보관 · 중단: 실사 입력 종료, 현재 재고 유지</p></div>`;
+}
+function bindSurveySessionActions(){
+  document.getElementById("pauseFastSurvey")?.addEventListener("click",pauseFastSurvey);
+  document.getElementById("stopFastSurvey")?.addEventListener("click",()=>stopFastSurvey({warehouse:fastSurveyReturnWarehouse}));
+}
+function fastSurveyDestination(warehouse=fastSurveyReturnWarehouse){
+  fastSurveyReturnWarehouse="";
+  if(warehouse&&warehouses.includes(warehouse)){
+    page="warehouse";selectedWarehouse=warehouse;warehouseViewMode="warehouses";updateBottomNav();render();
+    replaceNavigationState({page:"warehouse",warehouse,tab:warehouseTab});scrollToTop();openWarehouseManagement(warehouse);
+  }else setPage("home",{skipGuard:true});
+}
+async function pauseFastSurvey(){
+  return runWorkflow("survey-pause",async()=>{
+    const survey=state.survey;if(!survey?.active){fastSurveyDestination();return;}
+    const items=Array.isArray(survey.items)?survey.items:buildFastSurveyItems(survey.scope);
+    const single=document.getElementById("fastSurveyQty"),batch=document.querySelectorAll?.("[data-batch]")||[];
+    const rows=single?[{input:single,item:items[Math.min(survey.index||0,items.length-1)]}]:Array.from(batch).map(input=>({input,item:items[Math.floor((survey.index||0)/12)*12+Number(input.dataset.batch)]}));
+    for(const {input,item} of rows)if(item&&input.value!==""&&finiteQuantity(input.value,item.unit)===null){fieldError(input,"수량을 확인해주세요 · 입력은 유지됩니다");return false;}
+    const before=JSON.stringify(state);survey.values=survey.values||{};survey.checked=survey.checked||{};
+    rows.forEach(({input,item})=>{if(!item)return;const key=`${item.warehouse}|${item.name}`;if(input.value===""){delete survey.values[key];survey.checked[key]=false;}else{survey.values[key]=Number(input.value);survey.checked[key]=true;}});
+    if(!saveStateTransaction(before,"실사 입력을 보관하지 못했습니다 · 화면을 유지합니다"))return false;
+    fastSurveyDestination();showFeedback("success","실사 입력 보관 · 나중에 계속할 수 있습니다");return true;
+  });
+}
+async function stopFastSurvey({warehouse=""}={}){
+  return runWorkflow("survey-stop",async()=>{
+    const survey=state.survey;if(!survey?.active){showFeedback("info","진행 중 실사가 없습니다");if(warehouse)openWarehouseManagement(warehouse);return false;}
+    if(warehouse&&!warehouseSurveyInUse(warehouse)){showFeedback("info","이 창고는 진행 중 실사에 포함되지 않습니다");openWarehouseManagement(warehouse);return false;}
+    const items=Array.isArray(survey.items)?survey.items:buildFastSurveyItems(survey.scope);
+    const affected=warehouse?items.filter(item=>item.warehouse===warehouse):items;
+    const remaining=warehouse?items.filter(item=>item.warehouse!==warehouse):[];
+    const expected=JSON.stringify(state),count=affected.filter(item=>survey.checked?.[`${item.warehouse}|${item.name}`]===true).length;
+    if(!await askConfirm(warehouse?"이 창고 실사 중단":"진행 중 실사 중단",`${warehouse||"현재 실사 전체"}\n실사 대상 ${affected.length}개 · 보관 입력 ${count}개를 중단합니다.\n현재 재고와 이미 반영된 실사는 바뀌지 않습니다.${remaining.length?`\n다른 창고의 실사 ${remaining.length}개는 계속 유지됩니다.`:""}\n보관된 실사 입력은 중단 전 자동 안전지점에 남깁니다.`,"실사 중단",true))return false;
+    if(JSON.stringify(state)!==expected){showFeedback("warning","확인 중 자료가 바뀌었습니다 · 중단을 보류했습니다");return false;}
+    if(!createSafetyPoint("실사 중단 전",JSON.parse(expected))){showFeedback("error","안전지점을 저장하지 못해 실사 중단을 보류했습니다");return false;}
+    const keys=new Set(remaining.map(item=>`${item.warehouse}|${item.name}`));
+    const keep=values=>Object.fromEntries(Object.entries(values||{}).filter(([key])=>keys.has(key)));
+    state.survey={...survey,active:remaining.length>0,index:0,items:remaining,values:keep(survey.values),checked:keep(survey.checked),baseline:keep(survey.baseline),stoppedAt:new Date().toISOString()};
+    if(!saveStateTransaction(expected,"실사 중단 저장 실패 · 기존 실사 입력 유지"))return false;
+    const destination=warehouse||fastSurveyReturnWarehouse;closeEntryModal();fastSurveyDestination(destination);
+    showFeedback("success",warehouse?"이 창고 실사 중단 · 재고 유지":"실사 중단 · 재고 유지");return true;
   });
 }
 
@@ -4764,7 +4890,7 @@ function ensureInputVisible(){
   const visibleTop=Math.max(top,containerBounds?containerBounds.top+12:top);
   let visibleBottom=Math.min(bottom,containerBounds?containerBounds.bottom-12:bottom);
   const surface=dialog||view;
-  for(const action of surface.querySelectorAll(".sticky-action,.sticky-save,.entry-actions")){
+  for(const action of surface.querySelectorAll(".sticky-action,.sticky-save,.entry-actions,#saveRecord")){
     if(action.contains(input))continue;
     const style=getComputedStyle(action),box=action.getBoundingClientRect();
     if(["sticky","fixed"].includes(style.position)&&box.height&&box.top>visibleTop&&box.top<visibleBottom&&box.right>bounds.left&&box.left<bounds.right)visibleBottom=Math.min(visibleBottom,box.top-12);
@@ -4907,7 +5033,7 @@ function bindGlobal(){
   document.getElementById("trashBtn")?.addEventListener("click",openTrash);
   document.getElementById("bulkUndoBtn")?.addEventListener("click",restoreBulkSafetyPoint);
   document.getElementById("surveyUndoBtn")?.addEventListener("click",()=>{closeMenu();undoLastSurvey();});
-  document.getElementById("fastSurveyMenuBtn")?.addEventListener("click",()=>{closeMenu();state.survey?.active?renderFastSurvey():openFastSurveySetup();});
+  document.getElementById("fastSurveyMenuBtn")?.addEventListener("click",()=>{closeMenu();state.survey?.active?enterFastSurvey():openFastSurveySetup();});
   document.getElementById("themeSettingsBtn")?.addEventListener("click",()=>{closeMenu();openThemeSettings();});
   document.getElementById("appInfoBtn")?.addEventListener("click", () => {
     closeMenu();
@@ -5341,7 +5467,6 @@ function bindPullToDismiss(element,{enabled,dismiss,atTop=()=>element.scrollTop<
 
 function bindContextBack(){
   const button=document.createElement("button");button.type="button";button.id="contextBack";button.hidden=true;document.body.append(button);
-  const dock=document.createElement("div");dock.className="context-back-dock";dock.hidden=true;dock.setAttribute("aria-hidden","true");document.body.append(dock);
   let frame=0;
   const source=()=>view.querySelector(".back");
   const sync=()=>{
@@ -5350,14 +5475,13 @@ function bindContextBack(){
     if(back){back.classList.add("persistent-back");back.classList.toggle("back-blocked",Boolean(blocked));if(["backWh","backEquip","backHist","backMemoHome","menuBackHome","techniqueBack"].includes(back.id)){if(back.textContent!=="‹ 뒤로")back.textContent="‹ 뒤로";back.setAttribute("aria-label","이전 화면으로 돌아가기");}}
     button.hidden=Boolean(back||blocked||page==="home");
     button.textContent=history.state?.returnTo?"‹ 뒤로":"‹ 홈";button.setAttribute("aria-label",history.state?.returnTo?"이전 화면으로 돌아가기":"홈으로 돌아가기");
-    const nav=document.querySelector(".bottom").getBoundingClientRect(),active=Boolean(!blocked&&page!=="home"&&(back||!button.hidden));
-    document.body.classList.toggle("has-context-back",active);dock.hidden=!active;
+    const nav=document.querySelector(".bottom").getBoundingClientRect();
+    document.body.classList.toggle("has-context-back",page!=="home");
     document.documentElement.style.setProperty("--app-nav-height",`${Math.max(0,innerHeight-nav.top)}px`);
-    document.documentElement.style.setProperty("--context-back-space",active?"64px":"0px");
-    dock.style.bottom=`${Math.max(0,innerHeight-nav.top)}px`;
-    let top=nav.top-(active?64:0)-12;
-    for(const action of view.querySelectorAll(".sticky-action")){const box=action.getBoundingClientRect();if(box.height&&box.top<top&&box.bottom>0)top=Math.min(top,box.top-12);}
+    let top=nav.top-12;
+    for(const action of view.querySelectorAll(".sticky-action,#saveRecord")){const box=action.getBoundingClientRect();if(box.height&&box.top<top&&box.bottom>0)top=Math.min(top,box.top-12);}
     (back||button).style.bottom=`${Math.max(innerHeight-nav.top+10,12)}px`;
+    if(!blocked){const box=(back||button).getBoundingClientRect();if(box.height&&box.top>0)top=Math.min(top,box.top-12);}
     const snack=document.getElementById("snackbar");
     if(snack)snack.style.bottom=blocked?"":`${Math.max(82,innerHeight-top)}px`;
   };
@@ -5532,35 +5656,40 @@ function warehouseRecordInUse(record,name){
     (record.equipmentItems||[]).some(item=>item.id&&[item.place,item.warehouse,item.fromPlace,state.equipment.find(gear=>gear.id===item.id)?.place,(!item.place&&!item.warehouse&&!item.fromPlace&&!state.equipment.some(gear=>gear.id===item.id))?record.warehouse:"",transfer?(item.toPlace||record.targetWarehouse):""].includes(name));
 }
 function warehouseSurveyInUse(name){
-  if(!state.survey?.active)return false;
-  if(Array.isArray(state.survey.items)&&state.survey.items.length)return state.survey.items.some(item=>item.warehouse===name);
-  return !state.survey.scope?.warehouse||state.survey.scope.warehouse==="all"||state.survey.scope.warehouse===name;
+  return surveyUsesWarehouse(state.survey,name);
 }
 function openWarehouseManagement(name){
   if(!warehouses.includes(name))return;
-  const reason=deletionBlock("warehouse",name),zeroCount=state.equipment.filter(item=>item.place===name&&Number(item.qty||0)===0).length;
-  openEntryModal(`${entryHeader("창고 관리",name)}<div class="form"><button class="btn secondary" id="manageWarehouseEdit" type="button">이름·보관장소 정보 수정</button><div class="warehouse-delete-status"><strong>${reason?"삭제 전 확인 필요":"삭제 가능"}</strong><p>${esc(reason||"과거 이력은 그대로 유지됩니다.")}</p>${zeroCount?`<p>0수량 장비 ${zeroCount}건은 창고와 함께 임시 보관함에 보관합니다.</p>`:""}</div>${reason?'<button class="btn secondary" id="reviewWarehouseDeletion" type="button">막힌 항목 확인</button>':""}<button class="btn danger" id="deleteWarehouse" type="button">보관장소 삭제</button></div>`);
+  const reasons=warehouseDeletionReasons(name),reason=reasons[0]||"",inSurvey=warehouseSurveyInUse(name),zeroCount=state.equipment.filter(item=>item.place===name&&Number(item.qty||0)===0).length;
+  openEntryModal(`${entryHeader("창고 관리",name)}<div class="form"><button class="btn secondary" id="manageWarehouseEdit" type="button">이름·보관장소 정보 수정</button><div class="warehouse-delete-status" id="warehouseDeleteReason"><strong>${reason?"삭제 전 확인 필요":"삭제 가능"}</strong>${reasons.length?`<ul>${reasons.map(text=>`<li>${esc(text)}</li>`).join("")}</ul>`:'<p>과거 이력은 그대로 유지됩니다.</p>'}${zeroCount?`<p>삭제 시 0수량 장비 ${zeroCount}건은 창고와 함께 임시 보관함에 보관합니다.</p>`:""}</div>${inSurvey?'<button class="btn secondary" id="continueWarehouseSurvey" type="button">이 창고 실사 계속하기</button><button class="btn danger" id="stopWarehouseSurvey" type="button">이 창고 실사 중단</button>':""}${reason&&reasons.some(text=>!text.startsWith("진행 중 실사"))?'<button class="btn secondary" id="reviewWarehouseDeletion" type="button">연결된 재고·업무 확인</button>':""}<button class="btn danger" id="deleteWarehouse" type="button" aria-describedby="warehouseDeleteReason" ${reason?'disabled aria-disabled="true"':""}>보관장소 삭제</button></div>`);
   document.getElementById("manageWarehouseEdit").onclick=()=>editWarehouseInfo(name);
   document.getElementById("deleteWarehouse").onclick=()=>deleteManagedWarehouse(name);
+  document.getElementById("stopWarehouseSurvey")?.addEventListener("click",()=>stopFastSurvey({warehouse:name}));
+  document.getElementById("continueWarehouseSurvey")?.addEventListener("click",()=>{closeEntryModal();enterFastSurvey(name);});
   document.getElementById("reviewWarehouseDeletion")?.addEventListener("click",()=>{
     const rows=state.records.filter(record=>record.status==="pending"&&warehouseRecordInUse(record,name)),draft=readRegisterDraft();
     if(rows.length||(draft&&warehouseRecordInUse(draft,name)))showLinkedWork("삭제 전 연결 확인",reason,{records:rows,draft:Boolean(draft&&warehouseRecordInUse(draft,name))});
-    else if(warehouseSurveyInUse(name)){closeEntryModal();renderFastSurvey();}
-    else{closeEntryModal();selectedWarehouse=name;warehouseViewMode="warehouses";warehouseTab=state.equipment.some(item=>item.place===name&&Number(item.qty||0)>0)?"equipment":"material";renderWarehouse();showFeedback("info",reason);}
+    else{closeEntryModal();selectedWarehouse=name;warehouseViewMode="warehouses";warehouseTab=state.equipment.some(item=>item.place===name&&Number(item.qty||0)>0)?"equipment":"material";renderWarehouse();showFeedback("info",reasons.filter(text=>!text.startsWith("진행 중 실사")).join(" · "));}
   });
 }
-function deletionBlock(kind,id){
-  if(kind==="warehouse"?warehouseSurveyInUse(id):state.survey?.active)return "재고실사를 마친 뒤 삭제해주세요";
+function warehouseDeletionReasons(name){
+  const reasons=[];
+  if(warehouseSurveyInUse(name))reasons.push("진행 중 실사에 포함돼 있습니다 · 계속하거나 이 창고 실사를 중단해주세요");
   const draft=page==="register"?(captureRegisterDraft(),registerFormDraft):readRegisterDraft();
-  const uses=record=>kind==="warehouse"?warehouseRecordInUse(record,id):recordMatchesResource(record,kind,id);
+  if(state.records.some(record=>record.status==="pending"&&warehouseRecordInUse(record,name))||(draft&&warehouseRecordInUse(draft,name)))reasons.push("작성 중 기록이나 진행 중 사건에 연결되어 있습니다 · 품목을 먼저 정리해주세요");
+  if(warehouses.length<=1)reasons.push("보관장소는 최소 1곳이 필요합니다");
+  if(Object.values(state.stock[name]||{}).some(qty=>Number(qty)!==0))reasons.push("재고가 남아 있습니다 · 다른 보관장소로 옮긴 뒤 삭제해주세요");
+  if(state.equipment.some(item=>item.place===name&&(Number(item.qty||0)!==0||outstandingEquipmentRows(item.id).length)))reasons.push("보유·사용 중 장비가 있습니다 · 이동하거나 반납한 뒤 진행해주세요");
+  if(Number(state.assetOps?.[name]?.fuelBase||0)>0)reasons.push("연료 재고가 남아 있습니다 · 연료 재고를 먼저 정리해주세요");
+  return reasons;
+}
+function deletionBlock(kind,id){
+  if(kind==="warehouse")return warehouseDeletionReasons(id)[0]||"";
+  if(state.survey?.active)return "진행 중 실사를 중단하거나 마친 뒤 삭제해주세요";
+  const draft=page==="register"?(captureRegisterDraft(),registerFormDraft):readRegisterDraft();
+  const uses=record=>recordMatchesResource(record,kind,id);
   if(state.records.some(record=>record.status==="pending"&&uses(record))||(draft&&uses(draft)))return "작성 중 기록이나 진행 중 사건에 연결되어 있습니다 · 품목을 먼저 정리해주세요";
   if(kind==="equipment"&&outstandingEquipmentRows(id).length)return "사용 중인 장비입니다 · 반납 기록을 먼저 정리해주세요";
-  if(kind==="warehouse"){
-    if(warehouses.length<=1)return "보관장소는 최소 1곳이 필요합니다";
-    if(Object.values(state.stock[id]||{}).some(qty=>Number(qty)!==0))return "재고가 남아 있습니다 · 다른 보관장소로 옮긴 뒤 삭제해주세요";
-    if(state.equipment.some(item=>item.place===id&&(Number(item.qty||0)!==0||outstandingEquipmentRows(item.id).length)))return "보유·사용 중 장비가 있습니다 · 이동하거나 반납한 뒤 진행해주세요";
-    if(Number(state.assetOps?.[id]?.fuelBase||0)>0)return "연료 재고가 남아 있습니다 · 연료 재고를 먼저 정리해주세요";
-  }
   return "";
 }
 function deleteManagedResource(kind,id){

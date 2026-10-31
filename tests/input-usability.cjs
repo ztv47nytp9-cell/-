@@ -76,8 +76,10 @@ test('removing draft equipment keeps source equipment and stock unchanged',()=>{
     const before=JSON.stringify(c.state);await c.performSaveRecord();assert.equal(errors[0].input,quantity);assert.equal(errors[0].message,'수량을 입력해주세요');assert.equal(JSON.stringify(c.state),before);passed++;console.log('PASS '+flow+' save directs empty quantity to its field, without writing data');
   }
   test('failed save restores the current accident/training button label',()=>{assert.match(source,/const resetSaveButton=\(\)=>\{if\(saveButton\)\{saveButton\.disabled=false;updateRegisterTypeDependentUI\(\);\}\}/);});
-  test('save summary and action share one sticky dock, bundle button stays outside',()=>{
-    assert.match(source,/<div class="register-save-dock sticky-action">\s*<div id="registerDraftSummary"[\s\S]*?<button class="btn primary" id="saveRecord"/);
+  test('save button floats independently of summary, bundle button stays in normal flow',()=>{
+    assert.match(source,/<div class="register-save-dock">\s*<div id="registerDraftSummary"[\s\S]*?<button class="btn primary" id="saveRecord"/);
+    const css=fs.readFileSync(path.join(__dirname,'../interface.css'),'utf8');assert.match(css,/\.register-save-dock #saveRecord\{position:fixed/);assert.doesNotMatch(css,/\.context-back-dock\{/);
+    assert.match(source,/surface\.querySelectorAll\("\.sticky-action,\.sticky-save,\.entry-actions,#saveRecord"\)/);
     const workflow=fs.readFileSync(path.join(__dirname,'../workflow.js'),'utf8');assert.match(workflow,/summary\.closest\("\.register-save-dock"\)\|\|summary\)\.before\(button\)/);
   });
   console.log(`DONE ${passed} isolated input usability checks; zero external requests`);
