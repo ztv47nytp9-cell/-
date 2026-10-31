@@ -247,8 +247,17 @@ body.keyboard-open .batch-save{bottom:0}
 .history-date-buttons{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin:12px 0 16px}
 .history-date-buttons>button{grid-column:span 2;min-height:44px}
 .history-date-buttons>button:nth-last-child(-n+2){grid-column:span 3}
-.record-material-line{padding:14px 0;border-bottom:1px solid var(--border)}
-.record-material-line:last-child{border-bottom:0;padding-bottom:0}
+.record-resource-line{display:block;padding:12px 0;border-bottom:1px solid var(--border)}
+.record-resource-line:last-child{border-bottom:0;padding-bottom:0}
+.history-resource-card>.section-title{margin-bottom:0}
+.record-equipment-line .plain-button{min-width:0;align-self:start}
+.record-equipment-line .stock-name{display:block;overflow-wrap:anywhere;line-height:1.5}
+.pending-resource-card .section-head{margin:0 0 12px}
+.pending-resource-card .item-box{display:grid;gap:12px;margin:0;min-width:0}
+.pending-resource-card .form{gap:12px}
+.pending-resource-card .resource-location{margin-top:6px}
+.pending-row-actions{display:flex;justify-content:flex-end}
+.pending-row-actions>.btn{min-height:44px}
 .record-material-heading .stock-qty small{display:block;font-size:12px;color:var(--muted);font-weight:550}
 .record-material-line>.stock-spec{margin-top:6px}
 .record-item-actions{display:flex;justify-content:flex-end;margin-top:10px}

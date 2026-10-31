@@ -48,14 +48,14 @@ test('search Enter respects IME composition and does not save a form',()=>{asser
 function locationFixture(pending=false){
   const f=fixture(),c=f.context,label={hint:null,querySelector:()=>label.hint,append:node=>label.hint=node},select={id:pending?'pendingName0':'',dataset:{name:'0'},value:'흡착재',options:[{value:'흡착재'},{value:'유처리제'}],matches:selector=>!pending&&['select[data-name]','[data-name]'].includes(selector),closest:()=>label};
   c.document.querySelectorAll=()=>[select];c.document.createElement=()=>({});const oldGet=c.document.getElementById;c.document.getElementById=id=>id==='pendingItemWarehouse0'?{value:'B'}:oldGet(id);
-  Object.assign(c,{placeLabel:value=>value,queueMicrotask:()=>{},scheduleInputVisibility:()=>{}});
+  Object.assign(c,{placeLabel:value=>value,qtyText:(n,u)=>`${n} ${u}`,queueMicrotask:()=>{},scheduleInputVisibility:()=>{}});
   vm.runInContext(slice('function materialLocationLabel(','function bindGlobal('),c);
   return {...f,label,select};
 }
 test('inline material picker shows names, not repeated location and stock',()=>{const f=locationFixture();f.context.refreshResourceLocations();assert.equal(f.select.options[0].textContent,'흡착재');assert.equal(f.label.hint,null);});
 test('inline material removes stale duplicated hint',()=>{const f=locationFixture();let removed=false;f.label.hint={remove:()=>removed=true};f.context.refreshResourceLocations();assert.equal(removed,true);});
 test('inline picker keeps archived resource warning',()=>{const f=locationFixture();f.catalog[0].archived=true;f.context.refreshResourceLocations();assert.match(f.select.options[0].textContent,/보관 처리/);});
-test('pending record picker preserves full source and quantity hints',()=>{const f=locationFixture(true);f.context.page='history';f.context.refreshResourceLocations();assert.equal(f.select.options[0].textContent,'B · 흡착재 · 8kg');assert.match(f.label.hint.textContent,/저장위치: B · 현재 8kg/);});
+test('pending record picker separates name from current warehouse and quantity',()=>{const f=locationFixture(true);f.context.page='history';f.context.refreshResourceLocations();assert.equal(f.select.options[0].textContent,'흡착재');assert.match(f.label.hint.textContent,/B · 현재 8 kg/);});
 function equipmentFixture(){
   const f=fixture(),c=f.context,gear={id:'gear',name:'시험 장비',cat:'기타장비',place:'A',qty:3},qty=element({equipmentQty:'0'}),remove=element({equipmentRemove:'0'}),name=element({equipmentName:'0'});
   c.state.equipment=[gear];c.draftEquipmentItems=[{...gear,qty:''}];
