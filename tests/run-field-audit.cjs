@@ -3,14 +3,14 @@ const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypt
 const root=path.resolve(__dirname,'..'),outputName=process.env.VICTOR_AUDIT_OUTPUT||'field-audit-10';
 if(!/^[a-z0-9-]+$/.test(outputName))throw Error('Use a simple audit output folder name');
 const out=path.resolve(root,'../outputs',outputName);
-const suites=['input-usability','cloud-connection','field-stability','critical-sequences','transfer-delete-safety','resource-usability','layout-warehouse','survey-exit','survey-rename','history-records'];
-const expectedCounts={'input-usability':43,'cloud-connection':57,'field-stability':65,'critical-sequences':9,'transfer-delete-safety':15,'resource-usability':35,'layout-warehouse':42,'survey-exit':24,'survey-rename':35,'history-records':43};
-const production=['app.js','workflow.js','storage.js','style.css','interface.css','index.html','sw.js'];
+const suites=['input-usability','cloud-connection','field-stability','critical-sequences','transfer-delete-safety','resource-usability','layout-warehouse','survey-exit','survey-rename','history-records','fieldwork'];
+const expectedCounts={'input-usability':43,'cloud-connection':57,'field-stability':65,'critical-sequences':9,'transfer-delete-safety':15,'resource-usability':35,'layout-warehouse':42,'survey-exit':24,'survey-rename':35,'history-records':43,'fieldwork':88};
+const production=['app.js','workflow.js','fieldwork.js','storage.js','style.css','interface.css','index.html','sw.js'];
 const hashes=()=>Object.fromEntries(production.map(file=>[file,crypto.createHash('sha256').update(fs.readFileSync(path.join(root,file))).digest('hex')]));
 const report={startedAt:new Date().toISOString(),rounds:10,scope:'Synthetic VM fixtures and mocked network only. Not iPhone Safari/PWA, real cloud, or UI interaction testing.',productionBefore:hashes(),syntax:[],results:[]};
 fs.mkdirSync(out,{recursive:true});
 const persist=()=>fs.writeFileSync(path.join(out,'results.json'),JSON.stringify(report,null,2));
-for(const file of ['app.js','workflow.js','storage.js','sw.js',...suites.map(name=>'tests/'+name+'.cjs')]){
+for(const file of ['app.js','workflow.js','fieldwork.js','storage.js','sw.js',...suites.map(name=>'tests/'+name+'.cjs'),'tests/history-layout.cjs','tests/fieldwork-ui.cjs']){
   const result=cp.spawnSync(process.execPath,['--check',file],{cwd:root,encoding:'utf8',timeout:15000});
   report.syntax.push({file,exitCode:result.status,error:result.stderr||result.error?.message||''});
 }

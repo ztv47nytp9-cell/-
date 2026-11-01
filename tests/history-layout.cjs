@@ -3,7 +3,7 @@ const http=require('node:http'),fs=require('node:fs'),path=require('node:path'),
 const {chromium}=require(process.env.VICTOR_PLAYWRIGHT||'C:/Users/hjchu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
 const verify=true;
 const root=path.resolve(__dirname,'..'),out=path.resolve(root,'../outputs/history-layout-10');fs.mkdirSync(out,{recursive:true});
-const sources=['app.js','workflow.js','storage.js','style.css','interface.css','index.html','sw.js'];
+const sources=['app.js','workflow.js','fieldwork.js','storage.js','style.css','interface.css','index.html','sw.js'];
 const hashes=()=>Object.fromEntries(sources.map(f=>[f,crypto.createHash('sha256').update(fs.readFileSync(path.join(root,f))).digest('hex')]));
 const report={startedAt:new Date().toISOString(),before:hashes(),rounds:[],checks:[],errors:[],externalBlocked:0};
 const persist=()=>fs.writeFileSync(path.join(out,'results.json'),JSON.stringify(report,null,2));

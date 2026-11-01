@@ -260,7 +260,9 @@ body.keyboard-open .batch-save{bottom:0}
 .pending-row-actions>.btn{min-height:44px}
 .record-material-heading .stock-qty small{display:block;font-size:12px;color:var(--muted);font-weight:550}
 .record-material-line>.stock-spec{margin-top:6px}
-.record-item-actions{display:flex;justify-content:flex-end;margin-top:10px}
+.record-item-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px;margin-top:10px}
+.correction-preview{white-space:pre-line;overflow-wrap:anywhere}
+.return-history{margin-top:10px}
 .transfer-balances{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0 0}
 .transfer-balances>div{border:1px solid var(--border);background:var(--surface);border-radius:10px;padding:10px;min-width:0}
 .transfer-balances dt{font-size:12px;color:var(--muted)}
