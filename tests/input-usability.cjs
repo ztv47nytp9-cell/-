@@ -84,7 +84,7 @@ test('removing draft equipment keeps source equipment and stock unchanged',()=>{
   });
   test('scroll controls fade their surface while keeping labels and save action readable',()=>{
     assert.match(source,/body\.classList\.add\("is-scrolling-ui"\)/);assert.match(source,/body\.classList\.remove\("is-scrolling-ui"\)/);
-    const css=fs.readFileSync(path.join(__dirname,'../interface.css'),'utf8');assert.match(css,/body\.is-scrolling-ui :is\(#contextBack,\.back\)\{background:color-mix/);assert.match(css,/body\.is-scrolling-ui \.register-save-dock #saveRecord\{box-shadow:none\}/);
+    const css=fs.readFileSync(path.join(__dirname,'../interface.css'),'utf8');assert.match(css,/body\.is-scrolling-ui :is\(#contextBack,\.back\)\{background:color-mix/);assert.match(css,/body\.is-scrolling-ui \.register-save-dock #saveRecord\{box-shadow:none;opacity:\.62\}/);
   });
   test('registration draft and no-result search provide compact mobile recovery actions',()=>{
     assert.match(source,/class="callout register-pending-draft"[\s\S]*?필요하면 불러와서 이어서 작성하세요/);assert.match(source,/data-clear-empty-filter/);

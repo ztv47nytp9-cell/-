@@ -425,8 +425,8 @@ html{scroll-padding-bottom:calc(var(--app-nav-height,76px) + 80px)}
 :root[data-theme] .btn:active:not(:disabled){transform:scale(.985)}
 /* Keep floating controls readable while reducing their visual weight during scroll. */
 :root[data-theme] :is(#contextBack,.back){transition:background-color .22s ease,border-color .22s ease,box-shadow .22s ease,opacity .22s ease}
-:root[data-theme] body.is-scrolling-ui :is(#contextBack,.back){background:color-mix(in srgb,var(--card) 48%,transparent);border-color:transparent;box-shadow:none}
-:root[data-theme] body.is-scrolling-ui .register-save-dock #saveRecord{box-shadow:none}
+:root[data-theme] body.is-scrolling-ui :is(#contextBack,.back){background:color-mix(in srgb,var(--card) 38%,transparent);border-color:transparent;box-shadow:none;opacity:.72}
+:root[data-theme] body.is-scrolling-ui .register-save-dock #saveRecord{box-shadow:none;opacity:.62}
 :root[data-theme] .content:has(.register-save-dock){padding-bottom:calc(76px + env(safe-area-inset-bottom))}
 :root[data-theme] .register-pending-draft{display:flex;align-items:center;justify-content:space-between;gap:12px}
 :root[data-theme] .compact-draft-copy{display:grid;gap:3px;min-width:0;line-height:1.45}
