@@ -408,7 +408,10 @@ function setPage(next, options={}){
   const previousPage=page;
   rememberListPosition();
   if(options.resume&&previousPage!==next&&next!=="register"&&pagePositions.has(next)){
-    const saved=pagePositions.get(next),restored={...(restoreNavigation(saved,{direction:"tab"})||saved)};
+    const saved=pagePositions.get(next);
+    // Reopen the storage tab at the top while keeping its last selected view/warehouse.
+    const resumeState=next==="warehouse"?{...saved,scrollY:0}:saved;
+    const restored={...(restoreNavigation(resumeState,{direction:"tab"})||resumeState)};
     if(!restored.warehouse&&!restored.recordId&&!restored.equipmentId&&!restored.memoId&&!["menu","technique"].includes(next))delete restored.returnTo;
     pushNavigationState(restored);return;
   }
