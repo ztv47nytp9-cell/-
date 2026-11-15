@@ -82,5 +82,13 @@ test('removing draft equipment keeps source equipment and stock unchanged',()=>{
     assert.match(source,/surface\.querySelectorAll\("\.sticky-action,\.sticky-save,\.entry-actions,#saveRecord"\)/);
     const workflow=fs.readFileSync(path.join(__dirname,'../workflow.js'),'utf8');assert.match(workflow,/summary\.closest\("\.register-save-dock"\)\|\|summary\)\.before\(button\)/);
   });
+  test('scroll controls fade their surface while keeping labels and save action readable',()=>{
+    assert.match(source,/body\.classList\.add\("is-scrolling-ui"\)/);assert.match(source,/body\.classList\.remove\("is-scrolling-ui"\)/);
+    const css=fs.readFileSync(path.join(__dirname,'../interface.css'),'utf8');assert.match(css,/body\.is-scrolling-ui :is\(#contextBack,\.back\)\{background:color-mix/);assert.match(css,/body\.is-scrolling-ui \.register-save-dock #saveRecord\{box-shadow:none\}/);
+  });
+  test('registration draft and no-result search provide compact mobile recovery actions',()=>{
+    assert.match(source,/class="callout register-pending-draft"[\s\S]*?필요하면 불러와서 이어서 작성하세요/);assert.match(source,/data-clear-empty-filter/);
+    const css=fs.readFileSync(path.join(__dirname,'../interface.css'),'utf8');assert.match(css,/@media\(max-width:360px\)[\s\S]*?\.register-pending-draft\{align-items:stretch;flex-direction:column/);assert.match(css,/\.content:has\(\.register-save-dock\)\{padding-bottom/);
+  });
   console.log(`DONE ${passed} isolated input usability checks; zero external requests`);
 })().catch(error=>{console.error(error);process.exitCode=1;});
