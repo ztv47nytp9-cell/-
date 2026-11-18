@@ -470,3 +470,6 @@ html{scroll-padding-bottom:calc(var(--app-nav-height,76px) + 80px)}
 @media(prefers-reduced-motion:reduce){
   :root[data-theme] .btn:active:not(:disabled),:root[data-theme] #contextBack:active{transform:none}
 }
+fieldset.register-type-options{min-width:0;margin:0;padding:0;border:0;display:flex;gap:4px;flex-wrap:wrap}
+.register-type-options legend{margin-bottom:6px}
+.register-type-options button[aria-pressed="true"]{outline:2px solid var(--blue2);outline-offset:-2px;color:var(--blue2)}

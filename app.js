@@ -68,7 +68,7 @@ let registerFormDraft = null;
 let pendingRegisterDraft = null;
 let themeRefreshTimer = null;
 let lastInputFocusAt = 0;
-const stockEditReasons = ["재고조사","오기입 수정","폐기","파손","전산 수정","기타"];
+const stockEditReasons = ["실사 결과 반영","입력 오류 정정","폐기","파손","장부 대조 정정","기타"];
 const LOCATION_TYPES = ["항포구","해상","선박명","기타 위치"];
 const RESPONSE_TECH_ITEMS = [
   {id:"flooded-vessel",title:"침수선박",tags:["침수","기관실","빌지","선박"],summary:"선박 내부로 해수가 유입되어 연료·윤활유·빌지수가 외부로 나올 가능성이 있는 상황",check:["선명·위치·침수 구역","연료탱크·윤활유·빌지 상태","배수 작업 여부와 배출수 색상","방제자원 접근 가능 여부"],initial:["현장 안전 확보와 관계기관 상황 공유","오염 가능 배출구·배수 방향 확인","필요 시 오일펜스·흡착재 준비","배수 전후 사진과 배출수 상태 기록"],evidence:["선박 외관, 침수부, 배출구, 수면 유막","배수 시작·종료 시각","조치 전후 비교 사진"],resources:["오일펜스","유흡착재","폐흡착재 임시보관 용기","기름채취병"],report:["상황 발생 위치와 시간","배수 여부","오염 발견 여부","사용 자재와 회수량"],memo:"직원 검토용 초안입니다. 실제 문구는 내부 지침 기준으로 다듬어야 합니다."},
@@ -455,7 +455,7 @@ function render(){
 }
 
 function lowStockCount(){
-  return catalog.filter(item=>stockLevel(item).label==="부족").length;
+  return catalog.filter(item=>materialShortages(item).length).length;
 }
 
 function getRecent(n=3){
@@ -1166,19 +1166,23 @@ function renderAllMaterialList(){
   bindGroupedSections(renderAllMaterialList);target.querySelectorAll("[data-all-material]").forEach(button=>button.addEventListener("click",()=>{if(!resourceSelectionMode)openAllMaterialDetail(button.dataset.allMaterial);}));target.querySelectorAll("[data-select-material]").forEach(input=>input.addEventListener("change",()=>{const key=`material:${input.dataset.selectMaterial}`;input.checked?selectedResources.add(key):selectedResources.delete(key);renderBulkResourceActions();}));renderBulkResourceActions();
 }
 
-function openAllMaterialDetail(name){
+function openAllMaterialDetail(name,full=false){
   const item = itemOf(name);
   if(!item) return;
   queueMicrotask(()=>{const button=document.getElementById("deleteMaterial");if(!button||document.getElementById("archiveResource")||document.getElementById("entryDialog").dataset.materialName!==name)return;button.insertAdjacentHTML("beforebegin",archiveButtonHtml("material",item));bindArchiveResource("material",item.name,()=>openAllMaterialDetail(item.name));});
-  const timeline=[...state.records].flatMap(record=>(record.items||[]).filter(entry=>entry.name===name).map(entry=>({...record,timelineItem:entry}))).sort((a,b)=>(b.date+b.createdAt).localeCompare(a.date+a.createdAt)).slice(0,20);
+  const timeline=[...state.records].flatMap(record=>(record.items||[]).filter(entry=>entry.name===name).map(entry=>({...record,timelineItem:entry}))).sort((a,b)=>(b.date+b.createdAt).localeCompare(a.date+a.createdAt));
+  const qtyAt=w=>Number(state.stock[w]?.[name]||0),places=[...warehouses].sort((a,b)=>qtyAt(b)-qtyAt(a)),emptyPlaces=places.filter(w=>qtyAt(w)===0);
   openEntryModal(`
     ${entryHeader(item.name,"전체 자재 상세")}
     <div class="card compact-card"><div class="row-sub">카테고리</div><div class="row-title">${esc(item.cat)} ${stockBadge(item)}</div><div class="row-sub">규격 ${esc(item.spec || "없음")} · 단위 ${esc(item.unit)}</div>${lastOutgoingHtml(item.name)}${item.memo ? `<div class="callout" style="margin-top:10px">${esc(item.memo)}</div>` : ""}</div>
-    <div class="list-card">${warehouses.map(name => {const quantity=Number(state.stock[name]?.[item.name]||0);return `<div class="list-row material-location-row"><button class="row-main" data-material-warehouse="${esc(name)}" type="button"><div><div class="row-title">${esc(name)}</div><div class="row-sub">보관장소 상세 보기</div></div><div class="stock-qty">${materialQtyText(quantity,item.unit,item)}</div></button><div class="btn-row"><button class="btn secondary compact" data-material-flow="출고" data-material-place="${esc(name)}" type="button" >출고</button><button class="btn secondary compact" data-material-flow="입고" data-material-place="${esc(name)}" type="button">입고</button></div></div>`;}).join("")}</div>
-    <button class="btn secondary" id="editMaterialInfo" type="button" style="width:100%;margin-top:10px">자재 정보·분류 수정</button><div class="card"><div class="section-title">재고 변동 타임라인</div>${timeline.map(record=>{const entry=record.timelineItem,sign=record.flow==="입고"?"+":record.flow==="출고"||record.flow==="긴급"?"-":"";return `<div class="stock-line"><div><div class="stock-name">${fmtDate(record.date)} · ${esc(record.title)}</div><div class="stock-spec">${esc(itemWarehouse(entry,record.warehouse)||"창고 미지정")} · ${esc(record.flow)}</div></div><div class="stock-qty">${pendingBalanceText(entry)||`${sign}${materialQtyText(entry.qty,entry.unit,entry)}`}</div></div>`;}).join("")||`<div class="emptybox">변동 이력이 없습니다.</div>`}</div><button class="btn danger" id="deleteMaterial" type="button" style="width:100%">자재를 임시 보관함으로 이동</button>`);
+    <div class="list-card">${(()=>{const row=name=>{const quantity=qtyAt(name);return `<div class="list-row material-location-row"><button class="row-main" data-material-warehouse="${esc(name)}" type="button"><div><div class="row-title">${esc(name)}</div><div class="row-sub">보관장소 상세 보기</div></div><div class="stock-qty">${materialQtyText(quantity,item.unit,item)}</div></button><div class="btn-row"><button class="btn secondary compact" data-material-flow="출고" data-material-place="${esc(name)}" type="button" >출고</button><button class="btn secondary compact" data-material-flow="입고" data-material-place="${esc(name)}" type="button">입고</button></div></div>`;};return places.filter(w=>qtyAt(w)!==0).map(row).join("")+(emptyPlaces.length?`<details><summary>재고 없는 창고 ${emptyPlaces.length}곳</summary>${emptyPlaces.map(row).join("")}</details>`:"");})()}</div>
+    <button class="btn secondary" id="editMaterialInfo" type="button" style="width:100%;margin-top:10px">자재 정보·분류 수정</button><div class="card"><div class="section-title">재고 변동 타임라인</div>${(full?timeline:timeline.slice(0,20)).map(record=>{const entry=record.timelineItem,sign=record.flow==="입고"?"+":record.flow==="출고"||record.flow==="긴급"?"-":"";return `<button type="button" class="stock-line" data-origin-record="${esc(record.id)}"><div><div class="stock-name">${fmtDate(record.date)} · ${esc(record.title)}</div><div class="stock-spec">${esc(itemWarehouse(entry,record.warehouse)||"창고 미지정")} · ${esc(record.flow)}</div></div><div class="stock-qty">${pendingBalanceText(entry)||`${sign}${materialQtyText(entry.qty,entry.unit,entry)}`}</div></button>`;}).join("")||`<div class="emptybox">변동 이력이 없습니다.</div>`}${!full&&timeline.length>20?`<button type="button" id="materialMoreHistory" class="btn secondary">이 품목 이력 전체 ${timeline.length}건 보기</button>`:""}</div><button class="btn danger" id="deleteMaterial" type="button" style="width:100%">자재를 임시 보관함으로 이동</button>`);
   document.querySelectorAll("[data-material-warehouse]").forEach(button => button.addEventListener("click", () => { closeEntryModal(); warehouseViewMode="warehouses"; selectedWarehouse=button.dataset.materialWarehouse; warehouseTab="material"; renderWarehouse(); pushNavigationState({page:"warehouse",warehouse:selectedWarehouse,tab:"material"}); }));
   document.querySelectorAll("[data-material-flow]").forEach(button=>{button.disabled=false;button.addEventListener("click",()=>startResourceRegister("material",item,button.dataset.materialFlow,button.dataset.materialPlace));});
   document.getElementById("entryDialog").dataset.materialName=name;
+  const dialog=document.getElementById("entryDialog");
+  dialog.querySelector("#materialMoreHistory")?.addEventListener("click",()=>{const y=dialog.scrollTop;openAllMaterialDetail(name,true);dialog.scrollTop=y;});
+  dialog.querySelectorAll("[data-origin-record]").forEach(b=>b.onclick=()=>{const depth=navigationDepth,y=dialog.scrollTop;closeEntryModal();openDetail(b.dataset.originRecord);const nav=navigationPositions.get(depth);if(nav)navigationPositions.set(depth,{...nav,materialReturn:{name,y,full}});});
   document.getElementById("editMaterialInfo")?.addEventListener("click",()=>openMaterialInfoForm(item.name));
   const deleteButton=document.getElementById("deleteMaterial");
   if(deleteButton){deleteButton.textContent="자재 삭제";deleteButton.addEventListener("click",()=>deleteManagedResource("material",item.name));}
@@ -1568,7 +1572,7 @@ function editStock(name,options={}){
     <div class="callout">현재 수량 ${materialQtyText(cur,item.unit,item)}</div><div class="form">
       <label>변경 수량 (${esc(item.unit)})<input id="stockNewQty" class="big-input" type="number" inputmode="decimal" min="0" step="${integerOnly ? "1" : "0.1"}" value="${cur===0?"":cur}"></label>
       <div class="qty-quick"><button type="button" data-stock-add="-1">-1</button><button type="button" data-stock-add="1">+1</button><button type="button" data-stock-add="5">+5</button><button type="button" data-stock-add="10">+10</button></div>
-      <label>변경 사유<select id="stockReason">${stockEditReasons.map(reason => `<option value="${esc(reason)}">${esc(reason)}</option>`).join("")}</select></label>
+      <label>재고 수정 사유<select required id="stockReason"><option value="">사유 선택</option>${stockEditReasons.map(reason => `<option value="${esc(reason)}">${esc(reason)}</option>`).join("")}</select></label>
       <label>메모<textarea id="stockMemo" placeholder="필요한 경우 입력하세요"></textarea></label>
       <button class="btn primary sticky-save" id="saveStockEdit" type="button">수량 수정 저장</button>
     </div>`);
@@ -1580,6 +1584,7 @@ function editStock(name,options={}){
     if(num===null){fieldError("#stockNewQty","올바른 수량을 입력해주세요 · 개·대·세트는 정수만 가능합니다");return;}
     if(num===cur){ showFeedback("info","변경된 수량이 없습니다"); return; }
     const reason=document.getElementById("stockReason").value;
+    if(!reason){fieldError("#stockReason","재고 수정 사유를 선택해주세요");return;}
     const memo=document.getElementById("stockMemo").value.trim();
     const diff=addQuantities(num,-cur);
     const before=JSON.stringify(state);
@@ -1655,7 +1660,7 @@ function updateRegisterDraftSummary(){
 
 function transferTargetOptions(from=""){
   const list=warehouses.filter(name=>name!==from);
-  return (list.length?list:warehouses).map(name=>`<option value="${esc(name)}">${esc(name)}</option>`).join("");
+  const recent=[...new Set([...state.records].reverse().filter(r=>r.flow==="이송"&&r.warehouse===from&&list.includes(r.targetWarehouse)).map(r=>r.targetWarehouse))].slice(0,3);return `<option value="">도착지 선택</option>`+[...recent,...list.filter(w=>!recent.includes(w))].map(w=>`<option value="${esc(w)}">${esc(w)}${recent.includes(w)?" · 최근":""}</option>`).join("");
 }
 
 function syncTransferTarget(){
@@ -1665,7 +1670,7 @@ function syncTransferTarget(){
   const previous=target.value;
   target.innerHTML=transferTargetOptions(from);
   if(previous&&previous!==from&&warehouses.includes(previous)) target.value=previous;
-  else target.value=warehouses.find(name=>name!==from) || "";
+  else target.value="";
 }
 
 function applyRegisterDraft(saved){
@@ -1707,13 +1712,13 @@ function renderRegister(){
           <button class="flow-btn ${registerFlow === "입고" ? "active" : ""}" id="flowIn" type="button">입고</button>
           <button class="flow-btn ${registerFlow === "이송" ? "active" : ""}" id="flowMove" type="button">이송</button>
         </div>
-        ${registerFlow === "이송" ? `<input id="recType" type="hidden" value="이송">` : `<label>종류<select id="recType">${types.filter(t=>t!=="이송").map(t=>`<option value="${t}">${t}</option>`).join("")}</select></label>`}
+        ${registerFlow === "이송" ? `<input id="recType" type="hidden" value="이송">` : `${registerTypeChoices(types.filter(t=>t!=="이송"))}`}
         <div class="register-route ${registerFlow === "이송"?"is-transfer":""}"><label>${registerFlow === "이송" ? "기본 출발지" : "기본 보관 (자재별 변경 가능)"}<select id="recWarehouse">${warehouses.map(w=>`<option value="${esc(w)}">${esc(w)}</option>`).join("")}</select></label>
         ${registerFlow === "이송" ? `<label>도착지<select id="recTargetWarehouse">${transferTargetOptions(warehouses[0] || "")}</select></label><div class="row-sub route-help">아래 품목의 출발지만 개별 변경할 수 있습니다.</div>` : ""}</div>
         <details class="field-card"><summary>기록 시각 · 자동 입력</summary><div class="location-grid"><label>날짜<input id="recDate" type="date" value="${todayISO()}"></label><label>시간<input id="recTime" type="time" value="${localTimeNow()}"></label></div></details>
         <label>제목 · 필수<input id="recTitle" placeholder="예: 항만 순찰, 방제 훈련" aria-required="true"></label>
       ` : `
-        <label>종류<select id="recType"><option>사고</option><option>훈련</option></select></label>
+        ${registerTypeChoices(["사고","훈련"])}
         <label>기본 보관<select id="recWarehouse">${warehouses.map(w=>`<option value="${esc(w)}">${esc(placeLabel(w))}</option>`).join("")}</select></label>
         <details class="field-card"><summary>기록 시각 · 자동 입력</summary><div class="location-grid"><label>날짜<input id="recDate" type="date" value="${todayISO()}"></label><label>시간<input id="recTime" type="time" value="${localTimeNow()}"></label></div></details>
         <label>사건·훈련명<input id="recTitle" placeholder="비워두면 현재 시각으로 저장"></label>
@@ -1775,7 +1780,9 @@ function renderRegister(){
   view.querySelectorAll("input,select,textarea").forEach(input=>{input.addEventListener("input",scheduleRegisterDraft);input.addEventListener("change",scheduleRegisterDraft);});
 }
 
+function registerTypeChoices(values){return `<fieldset class="register-type-options"><legend>업무 구분</legend><select hidden id="recType">${values.map(t=>`<option>${esc(t)}</option>`).join("")}</select>${values.map(t=>`<button type="button" class="btn secondary compact" data-rec-choice="${esc(t)}">${esc(({사고:"사고 대응",작업:"일반 작업"})[t]||t)}</button>`).join("")}</fieldset>`;}
 function updateRegisterTypeDependentUI(){
+  view.querySelectorAll("[data-rec-choice]").forEach(b=>{const s=document.getElementById("recType");b.setAttribute("aria-pressed",String(b.dataset.recChoice===s.value));b.onclick=()=>{s.value=b.dataset.recChoice;s.dispatchEvent(new Event("change",{bubbles:true}));};});
   const card=document.getElementById("registerLocationCard");
   const isAccident=document.getElementById("recType")?.value === "사고";
   if(card){
@@ -4130,7 +4137,7 @@ function saveSimpleResource(kind,id=null){
 
 function openMaterialTransferForm(){
   const from=selectedWarehouse || warehouses[0] || "";
-  const target=warehouses.find(name=>name!==from) || "";
+  const target="";
   applyRegisterDraft({mode:"normal",flow:"이송",type:"이송",warehouse:from,targetWarehouse:target,date:todayISO(),title:"창고 간 이동",memo:"",items:[],equipmentItems:[]});
   setPage("register");
 }
@@ -5409,6 +5416,7 @@ function restoreNavigation(nav,options={}){
       const search=document.getElementById("stockSearch");if(search){search.value=nav.stockQuery;renderStockList();}
     }
     if(Number.isFinite(nav?.scrollY))scrollToSavedPosition(nav.scrollY);
+    if(page==="warehouse"&&nav.materialReturn&&itemOf(nav.materialReturn.name)){const m=nav.materialReturn;openAllMaterialDetail(m.name,m.full);document.getElementById("entryDialog").scrollTop=m.y;}
     return nav;
   }finally{
     restoringNavigation = false;

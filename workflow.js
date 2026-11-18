@@ -247,13 +247,14 @@ function equipmentUseConflict(entries,excludeId="",{forTransfer=false}={}){
 function clearAllHistoryFilters(){historyPlaceFilter="all";historyTypeFilter="all";historySearchQuery="";historyDateFilter="all";historyFlowFilter="all";historyCustomFrom="";historyCustomTo="";renderHistory();}
 function openMaterialInfoForm(name){
   const item=itemOf(name);if(!item)return;
-  openEntryModal(`${entryHeader("자재 정보·분류 수정",name)}<div class="form"><label>품목명<input id="materialEditName" value="${esc(name)}"></label><label>분류<select id="materialEditCategory">${cats.map(cat=>`<option ${cat===item.cat?"selected":""}>${esc(cat)}</option>`).join("")}</select></label><label>규격<input id="materialEditSpec" value="${esc(item.spec||"")}"></label><label>최소수량 (전체 재고 기준 · 선택)<input id="materialMinimum" type="number" inputmode="decimal" min="0" value="${Number(item.minStock||0)}"></label><label>메모<textarea id="materialEditMemo">${esc(item.memo||"")}</textarea></label><button class="btn primary" id="saveMaterialInfo" type="button">저장</button></div>`);
+  openEntryModal(`${entryHeader("자재 정보·분류 수정",name)}<div class="form"><label>품목명<input id="materialEditName" value="${esc(name)}"></label><label>분류<select id="materialEditCategory">${cats.map(cat=>`<option ${cat===item.cat?"selected":""}>${esc(cat)}</option>`).join("")}</select></label><label>규격<input id="materialEditSpec" value="${esc(item.spec||"")}"></label><label>최소수량 (전체 재고 기준 · 선택)<input id="materialMinimum" type="number" inputmode="decimal" min="0" value="${Number(item.minStock||0)}"></label><details><summary>창고별 최소수량 (선택)</summary>${warehouses.map(w=>`<label>${esc(w)}<input type="number" min="0" inputmode="decimal" data-place-min="${esc(w)}" value="${esc(String(item.minimumByPlace?.[w]??""))}"></label>`).join("")}</details><label>메모<textarea id="materialEditMemo">${esc(item.memo||"")}</textarea></label><button class="btn primary" id="saveMaterialInfo" type="button">저장</button></div>`);
   document.getElementById("saveMaterialInfo").addEventListener("click",()=>runWorkflow(`material:${name}`,async()=>{
     const current=itemOf(name),value=id=>document.getElementById(id).value,nextName=value("materialEditName").trim(),cat=value("materialEditCategory"),minimum=finiteQuantity(value("materialMinimum"),current.unit,true);
     if(!nextName||catalog.some(row=>row!==current&&row.name===nextName)){showFeedback("error",!nextName?"품목명을 입력해주세요":"같은 이름의 자재가 있습니다");return;}
     if(minimum===null){showFeedback("error","최소수량을 확인해주세요");return;}
     const before=JSON.stringify(state);
-    Object.assign(current,{name:nextName,cat,minStock:minimum,spec:value("materialEditSpec").trim(),memo:value("materialEditMemo").trim(),updatedAt:new Date().toISOString()});
+    const minimumByPlace={...current.minimumByPlace};for(const input of document.querySelectorAll("#entryDialog [data-place-min]")){const n=finiteQuantity(input.value,current.unit,true);if(n===null){fieldError(input,"창고 최소수량을 확인해주세요");return;}if(n)minimumByPlace[input.dataset.placeMin]=n;else delete minimumByPlace[input.dataset.placeMin];}
+    Object.assign(current,{name:nextName,cat,minimumByPlace,minStock:minimum,spec:value("materialEditSpec").trim(),memo:value("materialEditMemo").trim(),updatedAt:new Date().toISOString()});
     if(name!==nextName)warehouses.forEach(place=>{state.stock[place][nextName]=Number(state.stock[place]?.[name]||0);delete state.stock[place][name];});
     state.records.forEach(record=>(record.items||[]).forEach(entry=>{if(entry.name===name){entry.name=nextName;entry.cat=cat;}}));
     state.resourceBundles=resourceBundles().map(bundle=>({...bundle,items:bundle.items.map(entry=>entry.name===name?{...entry,name:nextName}:entry)}));
@@ -421,6 +422,7 @@ function assetPeriodSummary(rows){
   if(sailing.length){parts.push(`운항 ${total(sailing,"mileageDiff")}NM`);parts.push(`좌현 ${total(sailing,"portDiff","hours")}h / 우현 ${total(sailing,"starboardDiff","hours")}h`);parts.push(`소모 ${total(sailing,"fuel")}L`);}
   return parts.length?" · "+parts.join(" · "):"";
 }
+function materialShortages(item){return ["",...warehouses.filter(w=>item.minimumByPlace?.[w]>0)].map(place=>({place,...stockLevel(item,place)})).filter(s=>s.label==="부족");}
 function stockLevel(item,place=""){
   const qty=place?Number(state.stock[place]?.[item.name]||0):warehouses.reduce((total,name)=>total+Number(state.stock[name]?.[item.name]||0),0);
   const minimum=Number(place?(item.minimumByPlace?.[place]??0):(item.minStock??0));
@@ -508,7 +510,7 @@ function homeWorkSummaryHtml(){
   const recent=state.records.filter(record=>record.status!=="pending"&&record.flow==="출고").sort((a,b)=>dateMs(b.createdAt||b.date)-dateMs(a.createdAt||a.date))[0];
   const maintenance=Object.entries(state.assetOps||{}).flatMap(([place,asset])=>(asset.maintenance||[]).map(log=>({...log,place}))).sort((a,b)=>dateMs(b.updatedAt||b.createdAt||b.date)-dateMs(a.updatedAt||a.createdAt||a.date))[0];
   const operations=Object.entries(state.assetOps||{}).flatMap(([place,asset])=>(asset.logs||[]).map(log=>({...log,place}))).sort((a,b)=>dateMs(b.createdAt||b.date)-dateMs(a.createdAt||a.date))[0];
-  return `<div class="home-status-grid"><button id="homeStockAttention" type="button"><strong>${catalog.filter(item=>stockLevel(item).label==="부족").length}</strong><span>부족 품목</span></button><button id="homePendingList" type="button"><strong>${events.length}</strong><span>진행·미반영</span></button><button id="homeResourceKinds" type="button"><strong>${catalog.length}</strong><span>자원 품목</span></button></div>
+  return `<div class="home-status-grid"><button id="homeStockAttention" type="button"><strong>${catalog.filter(item=>materialShortages(item).length).length}</strong><span>부족 품목</span></button><button id="homePendingList" type="button"><strong>${events.length}</strong><span>진행·미반영</span></button><button id="homeResourceKinds" type="button"><strong>${catalog.length}</strong><span>자원 품목</span></button></div>
   <details class="home-work-recent"><summary>최근 업무</summary>${recent?`<button class="list-row" data-detail="${recent.id}" type="button"><div><div class="row-title">최근 출고 · ${esc(recent.title)}</div><div class="row-sub">${fmtDateTime(recent.occurredAt||recent.createdAt)}</div></div></button>`:`<div class="row-sub">출고 기록 없음</div>`}${maintenance?`<div class="stock-line"><div>최근 점검 · ${esc(maintenance.place)}<div class="row-sub">${esc(maintenance.content)} · ${fmtDate(maintenance.date)}</div></div></div>`:""}${operations?`<button class="list-row" data-home-asset="${esc(operations.place)}" type="button"><div><div class="row-title">최근 운행 · ${esc(operations.place)}</div><div class="row-sub">${fmtDate(operations.date)} · ${esc(operations.purpose||operations.memo||"기록 보기")}</div></div></button>`:""}</details>`;
 }
 function bindHomeWorkActions(){
@@ -528,8 +530,8 @@ function chooseAssetRecord(kind){
   document.querySelectorAll("[data-choose-asset]").forEach(button=>button.addEventListener("click",()=>addOpLog(button.dataset.chooseAsset)));
 }
 function openStockAttention(){
-  const rows=catalog.filter(item=>stockLevel(item).label==="부족");
-  openEntryModal(`${entryHeader("재고 부족","설정한 최소수량 기준")}<div class="list-card">${rows.map(item=>`<button class="list-row" data-stock-attention="${esc(item.name)}" type="button"><div>${esc(item.name)}<div class="row-sub">현재 ${materialQtyText(stockLevel(item).qty,item.unit,item)} · 최소 ${stockLevel(item).minimum}${esc(item.unit)}</div></div>${stockBadge(item)}</button>`).join("")||`<div class="emptybox">부족 품목 없음 · 자재 정보에서 최소수량을 설정할 수 있습니다.</div>`}</div>`);
+  const rows=catalog.filter(item=>materialShortages(item).length);
+  openEntryModal(`${entryHeader("재고 부족","설정한 최소수량 기준")}<div class="list-card">${rows.map(item=>`<button class="list-row" data-stock-attention="${esc(item.name)}" type="button"><div>${esc(item.name)}<div class="row-sub">${materialShortages(item).map(s=>`${esc(s.place||"전체")} · 현재 ${materialQtyText(s.qty,item.unit,item)} / 최소 ${materialQtyText(s.minimum,item.unit,item)}`).join("<br>")}</div></div>${stockBadge(item)}</button>`).join("")||`<div class="emptybox">부족 품목 없음 · 자재 정보에서 최소수량을 설정할 수 있습니다.</div>`}</div>`);
   document.querySelectorAll("[data-stock-attention]").forEach(button=>button.addEventListener("click",()=>openAllMaterialDetail(button.dataset.stockAttention)));
 }
 function copyRecordToRegister(record){
