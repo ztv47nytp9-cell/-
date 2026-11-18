@@ -45,6 +45,7 @@ function attachEquipmentAvailabilityRows(){
   document.querySelectorAll("[data-all-equipment],[data-equip]").forEach(button=>{
     if(button.querySelector(".equipment-available"))return;
     const item=state.equipment.find(row=>row.id===(button.dataset.allEquipment||button.dataset.equip));if(!item)return;
+    if(listedGearQty(item)===null)return;
     const line=document.createElement("div");line.className="row-sub equipment-available";line.textContent=equipmentAvailabilityText(item);button.querySelector(".row-title")?.parentElement.append(line);
   });
 }
