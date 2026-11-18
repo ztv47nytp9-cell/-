@@ -46,8 +46,17 @@ button{touch-action:manipulation}
 .quick-action{min-height:90px;border-radius:16px}
 .quick-action strong,.home-tool-grid strong{font-size:15px;font-weight:650}
 .quick-action small,.home-tool-grid small{font-size:12px;color:var(--muted);font-weight:500}
-.home-tool-grid .home-line-icon{display:grid;place-items:center;width:24px;height:24px;color:var(--blue2)}
-.home-tool-grid .home-line-icon svg{display:block;width:24px;height:24px;overflow:visible}
+.app-icon,.home-tool-grid .home-line-icon{display:inline-grid;place-items:center;width:24px;height:24px;color:currentColor;flex:0 0 auto}
+.app-icon svg,.home-tool-grid .home-line-icon svg{display:block;width:24px;height:24px;overflow:visible;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.home-tool-grid .app-icon{color:var(--blue2)}
+.home-tool-grid .home-line-icon{color:var(--blue2)}
+.quick-action .app-icon{width:26px;height:26px}
+.quick-action .app-icon svg{width:26px;height:26px}
+.quick-action .urgent-mark{filter:none;opacity:1}
+.home-tool-grid .urgent-mark{color:inherit;filter:none;opacity:1}
+.home-tool-grid .urgent-mark svg{width:22px;height:22px}
+#homeShareResources>.app-icon{grid-column:1 / 2;grid-row:1 / 3;width:28px;height:28px;color:var(--blue)}
+#homeShareResources>.app-icon svg{width:28px;height:28px}
 .resource-view-options{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 10px}
 .resource-view-options>span{font-size:12px;line-height:1.4;color:var(--muted)}
 :root[data-theme] .quick-action.emergency{background:#FEF4EE;border-color:#E9CEBF;color:#914B2E}
@@ -87,7 +96,7 @@ button{touch-action:manipulation}
 .resource-management>summary,.bundle-preview>summary{font-weight:600}
 :root[data-theme] .bottom{background:var(--card);border-top-color:var(--border);backdrop-filter:none;-webkit-backdrop-filter:none;gap:4px;padding-top:6px;padding-bottom:calc(6px + env(safe-area-inset-bottom))}
 :root[data-theme] .nav{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:54px;padding:6px 4px;font-size:12px;font-weight:550;line-height:1.25;border-radius:12px;color:var(--muted);background:transparent}
-.nav svg{width:22px;height:22px;display:block;flex-shrink:0;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;fill:none}
+.nav svg{width:22px;height:22px;display:block;flex-shrink:0;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;fill:none}
 :root[data-theme] .nav.active{color:var(--blue);font-weight:650;background:var(--tint)}
 .nav.active::after{display:none}
 :root[data-theme] :is(.card,.quick-action,.choice-card,.flow-btn,.warehouse-card,.resource-detail-card,.tech-card){animation:none}
@@ -149,6 +158,8 @@ button{touch-action:manipulation}
 #homeShareResources strong{grid-column:2;font-size:17px;font-weight:700;line-height:1.4}
 #homeShareResources small{grid-column:2;font-size:12px;line-height:1.5;color:var(--muted)}
 #homeShareResources>.share-entry-arrow{grid-column:3;font-size:25px;color:var(--blue)}
+:root[data-theme] .management-content .row-sub .app-icon{width:16px;height:16px;vertical-align:-3px;margin-right:3px}
+:root[data-theme] .management-content .row-sub .app-icon svg{width:16px;height:16px;stroke-width:2}
 .search-control{position:relative;min-width:0;width:100%}
 .search-control input.search{padding-right:50px;width:100%;min-width:0}
 :root[data-theme] .search-clear{position:absolute;right:3px;top:50%;transform:translateY(-50%);width:44px;height:44px;padding:0;border:0;background:transparent;color:var(--muted);font-size:24px;border-radius:12px}

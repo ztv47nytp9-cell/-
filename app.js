@@ -910,6 +910,23 @@ function cloudShareNoticeHtml(){
   </div>`;
 }
 
+function appIcon(name,className=""){
+  const paths={
+    share:'<path d="M7 7 3.5 10.5 7 14"/><path d="M4 10.5h12a4.5 4.5 0 0 1 0 9h-2"/><path d="m17 17 3.5-3.5L17 10"/><path d="M20 13.5H8A4.5 4.5 0 0 1 8 4h2"/>',
+    siren:'<path d="M5 17h14l-1.1-7.1a5.95 5.95 0 0 0-11.8 0L5 17Z"/><path d="M3 20h18M12 2V1M4.6 4.1 3.5 3M19.4 4.1 20.5 3"/>',
+    out:'<path d="M7 17 17 7M8 7h9v9"/>',in:'<path d="m7 7 10 10M8 17h9V8"/>',
+    box:'<path d="m3.5 7 8.5-4 8.5 4v10L12 21l-8.5-4V7Z"/><path d="m3.5 7 8.5 4 8.5-4M12 11v10M8 5l8.5 4"/>',
+    search:'<circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/>',
+    vehicle:'<path d="M5 16.5h14l1-4.5-2-5H6l-2 5 1 4.5Z"/><path d="M4.5 12h15M7 16.5v2m10-2v2M7 8.5l-1 3.5m12-3.5 1 3.5"/>',
+    vessel:'<path d="M3 15.5h18l-2.5 4h-13L3 15.5Z"/><path d="M7 15.5V9h8l3 6.5M10 9V6h5l2 3M4 21c1.5-1 2.8-1 4.2 0s2.8 1 4.3 0 2.8-1 4.2 0 2.8-1 4.3 0"/>',
+    check:'<path d="m5 12.5 4.2 4.2L19 7"/>',
+    note:'<path d="M6 3.5h8l4 4V20H6z"/><path d="M14 3.5V8h4M9 12h6M9 15h4"/><path d="m14.5 18.5 4.2-4.2 1.5 1.5-4.2 4.2-2 .5z"/>',
+    warehouse:'<path d="m3 10 9-7 9 7v10h-6v-6H9v6H3z"/><path d="M3 10h18"/>',
+    pin:'<path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z"/><circle cx="12" cy="10" r="2.2"/>'
+  };
+  return `<span class="app-icon ${className}" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths[name]||paths.box}</svg></span>`;
+}
+
 function renderHome(){
   queueMicrotask(bindHomeWorkActions);
   queueMicrotask(bindBackupReminder);
@@ -920,14 +937,14 @@ function renderHome(){
   const memoCount = recentMemos(3).length;
   view.innerHTML = `
     ${storageSummaryCard(true)}
-    <button class="home-share-entry" id="homeShareResources" type="button"><span aria-hidden="true">↔</span><strong>자원연계</strong><small>내 자료 보내기 · 공유자료 받기</small><span class="share-entry-arrow" aria-hidden="true">›</span></button>
+    <button class="home-share-entry" id="homeShareResources" type="button">${appIcon("share")}<strong>자원연계</strong><small>내 자료 보내기 · 공유자료 받기</small><span class="share-entry-arrow" aria-hidden="true">›</span></button>
     ${homeStockReviewHtml()}
     <div class="home-quick card">
       <div class="section-title">바로 등록</div>
       <div class="home-quick-grid">
-        <button class="quick-action emergency" id="homeQuickEmergency" type="button"><span class="urgent-mark">🚨</span><strong>긴급기록</strong><small>사용량·메모</small></button>
-        <button class="quick-action" id="homeQuickOut" type="button"><span>↗</span><strong>출고</strong><small>재고 차감</small></button>
-        <button class="quick-action" id="homeQuickIn" type="button"><span>↙</span><strong>입고</strong><small>재고 증가</small></button>
+        <button class="quick-action emergency" id="homeQuickEmergency" type="button">${appIcon("siren","urgent-mark")}<strong>긴급기록</strong><small>사용량·메모</small></button>
+        <button class="quick-action" id="homeQuickOut" type="button">${appIcon("out")}<strong>출고</strong><small>재고 차감</small></button>
+        <button class="quick-action" id="homeQuickIn" type="button">${appIcon("in")}<strong>입고</strong><small>재고 증가</small></button>
       </div>
     </div>
     <div class="card global-search-card">
@@ -939,12 +956,12 @@ function renderHome(){
     <div class="card">
       <div class="section-title">자주 쓰는 기능</div>
       <div class="home-tool-grid">
-        <button id="homeAllResources" type="button"><span>📦</span><strong>자재·장비</strong><small>전체 현황</small></button>
-        <button id="homeEquipmentRecord" type="button"><span aria-hidden="true">🔍</span><strong>장비 조회</strong><small>관리·사용 이력</small></button>
-        <button id="homeVehicleRecord" type="button"><span class="home-line-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 16.5h14l1-4.5-2-5H6l-2 5 1 4.5Z"/><path d="M4.5 12h15M7 16.5v2m10-2v2M7 8.5l-1 3.5m12-3.5 1 3.5"/></svg></span><strong>차량 기록</strong><small>주행거리</small></button>
+        <button id="homeAllResources" type="button">${appIcon("box")}<strong>자재·장비</strong><small>전체 현황</small></button>
+        <button id="homeEquipmentRecord" type="button">${appIcon("search")}<strong>장비 조회</strong><small>관리·사용 이력</small></button>
+        <button id="homeVehicleRecord" type="button">${appIcon("vehicle")}<strong>차량 기록</strong><small>주행거리</small></button>
         <button id="homeVesselRecord" type="button"><span class="home-line-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15.5h18l-2.5 4h-13L3 15.5Z"/><path d="M7 15.5V9h8l3 6.5M10 9V6h5l2 3M4 21c1.5-1 2.8-1 4.2 0s2.8 1 4.3 0 2.8-1 4.2 0 2.8 1 4.3 0"/></svg></span><strong>방제정 기록</strong><small>엔진·연료</small></button>
-        <button id="homePending" class="${pending ? "" : "quiet-tool"}" type="button"><span class="urgent-mark">${pending ? "🚨" : "✓"}</span><strong>${pending ? `사건 이어하기 · ${pending}건` : "진행 중 사건 없음"}</strong>${latestPending?`<small>${esc(latestPending.officialTitle?latestPending.title:"제목 미정")} · ${esc(fmtDateTime(latestPending.updatedAt||latestPending.createdAt||latestPending.date))}</small>`:""}</button>
-        <button id="homeMemoShortcut" type="button"><span>📝</span><strong>새 메모</strong><small>현장 참고</small></button>
+        <button id="homePending" class="${pending ? "" : "quiet-tool"}" type="button">${pending?appIcon("siren","urgent-mark"):appIcon("check","urgent-mark")}<strong>${pending ? `사건 이어하기 · ${pending}건` : "진행 중 사건 없음"}</strong>${latestPending?`<small>${esc(latestPending.officialTitle?latestPending.title:"제목 미정")} · ${esc(fmtDateTime(latestPending.updatedAt||latestPending.createdAt||latestPending.date))}</small>`:""}</button>
+        <button id="homeMemoShortcut" type="button">${appIcon("note")}<strong>새 메모</strong><small>현장 참고</small></button>
       </div>
     </div>
     <div class="section-head"><div class="section-title">최근 활동</div><button class="link-btn" id="goActivityAll">전체보기 ›</button></div>
@@ -1043,7 +1060,7 @@ function warehouseSummary(w){
 }
 
 function whIcon(){
-  return "🏢";
+  return appIcon("warehouse");
 }
 
 function warehouseViewSwitcher(){
@@ -1372,7 +1389,7 @@ function renderWarehouse(){
   const whSummary = warehouseSummary(selectedWarehouse);
   view.innerHTML = warehouseViewSwitcher() + warehouseActions(selectedWarehouse) + `
     <button class="back" id="backWh" type="button">‹ 보관</button>
-    <div class="card warehouse-summary"><div class="section-head mini-head"><div class="section-title">${esc(selectedWarehouse)}</div><span class="mini-chip">${esc(warehouseKind(selectedWarehouse))}</span></div><div class="warehouse-mini-stats"><span>자재 ${whSummary.materialCount}종</span><span>장비 ${whSummary.equipmentCount}종</span></div><details class="resource-management warehouse-reference"><summary>참고·관리${info.memo?" · 메모 있음":""}</summary><div class="management-content">${info.memo?`<div class="row-sub">📌 중요 메모</div><div class="memo-box">${esc(info.memo)}</div>`:`<div class="row-sub">등록된 참고 메모 없음</div>`}${warehouseFieldMemoHtml(info)}<button class="btn secondary" id="editInfo" type="button">보관장소 정보 수정</button></div></details></div>
+    <div class="card warehouse-summary"><div class="section-head mini-head"><div class="section-title">${esc(selectedWarehouse)}</div><span class="mini-chip">${esc(warehouseKind(selectedWarehouse))}</span></div><div class="warehouse-mini-stats"><span>자재 ${whSummary.materialCount}종</span><span>장비 ${whSummary.equipmentCount}종</span></div><details class="resource-management warehouse-reference"><summary>참고·관리${info.memo?" · 메모 있음":""}</summary><div class="management-content">${info.memo?`<div class="row-sub">${appIcon("pin")} 중요 메모</div><div class="memo-box">${esc(info.memo)}</div>`:`<div class="row-sub">등록된 참고 메모 없음</div>`}${warehouseFieldMemoHtml(info)}<button class="btn secondary" id="editInfo" type="button">보관장소 정보 수정</button></div></details></div>
     ${typeof renderOps === "function" ? renderOps(selectedWarehouse) : ""}
     <div class="card"><div class="tabbar"><button class="tabbtn ${warehouseTab === "material" ? "active" : ""}" id="tabMaterial" type="button">자재</button><button class="tabbtn ${warehouseTab === "equipment" ? "active" : ""}" id="tabEquipment" type="button">장비</button></div>
     ${warehouseTab === "material" ? `<input class="search" id="stockSearch" placeholder="자재 검색"><details class="stock-display-tools"><summary>정렬·표시 설정</summary>${groupToolbar(materialSortMode,"warehouse-material")}</details><div id="stockList"></div><button class="btn secondary" id="addMaterialInline" type="button" style="width:100%;margin-top:12px">+ 신규 추가</button>` : renderWarehouseEquipment(selectedWarehouse)}</div>`;

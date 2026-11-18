@@ -91,10 +91,14 @@ test('removing draft equipment keeps source equipment and stock unchanged',()=>{
     const css=fs.readFileSync(path.join(__dirname,'../style.css'),'utf8'),interfaceCss=fs.readFileSync(path.join(__dirname,'../interface.css'),'utf8');assert.match(css,/:root\[data-theme="dark"\] \.menu-sheet\{background:#152232!important;background-image:none!important;box-shadow:none!important;border:0!important;border-radius:0;filter:none;outline:0\}/);assert.match(interfaceCss,/:root\[data-theme\] \.more\{[^}]*border-radius:12px[^}]*background:transparent/);assert.match(interfaceCss,/:root\[data-theme\] \.stock-line:active\{border-radius:14px;background-clip:padding-box\}/);
   });
   test('equipment lookup shortcut uses a recognizable search icon',()=>{
-    assert.match(source,/<button id="homeEquipmentRecord" type="button"><span aria-hidden="true">🔍<\/span><strong>장비 조회<\/strong>/);
+    assert.match(source,/<button id="homeEquipmentRecord" type="button">\$\{appIcon\("search"\)\}<strong>장비 조회<\/strong>/);
   });
   test('vehicle and vessel shortcuts use simple inline line icons',()=>{
-    assert.match(source,/<button id="homeVehicleRecord" type="button"><span class="home-line-icon" aria-hidden="true"><svg viewBox="0 0 24 24"/);assert.match(source,/<button id="homeVesselRecord" type="button"><span class="home-line-icon" aria-hidden="true"><svg viewBox="0 0 24 24"/);assert.match(fs.readFileSync(path.join(__dirname,'../interface.css'),'utf8'),/\.home-tool-grid \.home-line-icon svg\{display:block;width:24px;height:24px/);
+    assert.match(source,/<button id="homeVehicleRecord" type="button">\$\{appIcon\("vehicle"\)\}/);assert.match(source,/<button id="homeVesselRecord" type="button"><span class="home-line-icon" aria-hidden="true"><svg viewBox="0 0 24 24"/);assert.match(fs.readFileSync(path.join(__dirname,'../interface.css'),'utf8'),/\.app-icon svg,.home-tool-grid \.home-line-icon svg\{display:block;width:24px;height:24px/);
+  });
+  test('home shortcuts use one shared line-icon system without emoji pictograms',()=>{
+    const home=source.slice(source.indexOf('function renderHome()'),source.indexOf('function bindHomeWorkActions('));assert.match(home,/appIcon\("share"\)/);assert.match(home,/appIcon\("siren","urgent-mark"\)/);assert.match(home,/appIcon\("box"\)/);assert.match(home,/appIcon\("note"\)/);assert.doesNotMatch(home,/🚨|📦|🔍|📝|↗|↙|↔/);
+    assert.match(source,/function appIcon\(name,className=""\)/);assert.match(source,/stroke-width="1\.8" stroke-linecap="round" stroke-linejoin="round"/);
   });
   test('mobile bottom navigation stays hidden while an input is focused',()=>{
     assert.match(source,/root\.classList\.toggle\("input-focused",Boolean\(focused\)\)/);assert.match(fs.readFileSync(path.join(__dirname,'../style.css'),'utf8'),/@media\(hover:none\) and \(pointer:coarse\)\{[^}]*:root\.input-focused \.bottom,body\.keyboard-open \.bottom\{visibility:hidden;opacity:0;pointer-events:none;transform:translateY\(110%\)\}/);
