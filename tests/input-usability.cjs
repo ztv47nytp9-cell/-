@@ -84,7 +84,11 @@ test('removing draft equipment keeps source equipment and stock unchanged',()=>{
   });
   test('scroll hides fixed controls and restores them after scrolling',()=>{
     assert.match(source,/body\.classList\.add\("is-scrolling-ui"\)/);assert.match(source,/body\.classList\.remove\("is-scrolling-ui"\)/);
-    const css=fs.readFileSync(path.join(__dirname,'../interface.css'),'utf8');assert.match(css,/body\.is-scrolling-ui :is\(#contextBack,\.back\),:root\[data-theme\] body\.is-scrolling-ui \.register-save-dock #saveRecord\{opacity:0;transform:translate3d\(0,calc\(100% \+ var\(--app-nav-height,76px\) \+ 16px\),0\);pointer-events:none\}/);assert.match(css,/transition:transform \.24s cubic-bezier\(\.22,1,\.36,1\),opacity \.18s ease-out/);assert.match(css,/@media\(prefers-reduced-motion:reduce\)/);
+    const css=fs.readFileSync(path.join(__dirname,'../interface.css'),'utf8');assert.match(css,/:root\[data-theme\] body\.is-scrolling-ui :is\(#contextBack,\.back\),:root\[data-theme\] body\.is-scrolling-ui \.register-save-dock #saveRecord,:root\[data-theme\]\.input-focused \.register-save-dock #saveRecord\{opacity:0;transform:translate3d\(0,calc\(100% \+ var\(--app-nav-height,76px\) \+ 16px\),0\);pointer-events:none\}/);assert.match(css,/transition:transform \.24s cubic-bezier\(\.22,1,\.36,1\),opacity \.18s ease-out/);assert.match(css,/@media\(prefers-reduced-motion:reduce\)/);
+  });
+  test('dark theme is applied before first paint and uses an opaque iOS status bar',()=>{
+    const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');assert.ok(html.indexOf('victor_theme_mode_0_19_0m')<html.indexOf('style.css'));assert.match(html,/resolved==="dark"\?"black":"default"/);assert.match(source,/resolved === "dark" \? "black" : "default"/);
+    const css=fs.readFileSync(path.join(__dirname,'../style.css'),'utf8');assert.match(css,/:root\[data-theme="dark"\] \.menu-sheet\{background:#152232!important;background-image:none!important;box-shadow:none!important;border:0!important;border-radius:0;filter:none;outline:0\}/);
   });
   test('registration draft and no-result search provide compact mobile recovery actions',()=>{
     assert.match(source,/class="callout register-pending-draft"[\s\S]*?필요하면 불러와서 이어서 작성하세요/);assert.match(source,/data-clear-empty-filter/);

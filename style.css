@@ -490,7 +490,8 @@ button:active{filter:brightness(.98)}
 .menu.show .menu-sheet{transform:translateY(0)}
 .menu.closing .menu-sheet{transform:translateY(100%)}
 :root[data-theme="dark"] .menu,:root[data-theme="dark"] .menu.show,:root[data-theme="dark"] .menu.closing{background:#152232!important}
-:root[data-theme="dark"] .menu-sheet{background:#152232;box-shadow:none!important;border:0!important}
+:root[data-theme="dark"] .menu-sheet{background:#152232!important;background-image:none!important;box-shadow:none!important;border:0!important;border-radius:0;filter:none;outline:0}
+:root[data-theme="dark"] .menu,:root[data-theme="dark"] .menu.show,:root[data-theme="dark"] .menu.closing{background-image:none!important;box-shadow:none!important;filter:none;outline:0}
 :root[data-theme="dark"] .help-body{color:#DCE7F1}
 :root[data-theme="dark"] .help-body h3{color:#F1F7FC}
 :root[data-theme="dark"] .help-body li{color:#D4E1EC}

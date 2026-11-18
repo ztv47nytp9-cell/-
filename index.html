@@ -7,10 +7,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Victor">
   <meta name="apple-mobile-web-app-status-bar-style" content="default" id="appleStatusBarMeta">
+  <script>
+    (()=>{try{const mode=localStorage.getItem("victor_theme_mode_0_19_0m")||"auto",hour=new Date().getHours(),resolved=mode==="dark"||mode==="light"?mode:mode==="system"?(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"):(hour>=18||hour<6?"dark":"light");document.documentElement.dataset.theme=resolved;document.documentElement.dataset.themeMode=mode;document.getElementById("themeColorMeta")?.setAttribute("content",resolved==="dark"?"#152232":"#F3F5F8");document.getElementById("appleStatusBarMeta")?.setAttribute("content",resolved==="dark"?"black":"default");}catch(_){}})();
+  </script>
   <link rel="manifest" href="./manifest.json">
   <link rel="apple-touch-icon" href="./icons/icon-180.png">
-  <link rel="stylesheet" href="./style.css?v=02020m129">
-  <link rel="stylesheet" href="./interface.css?v=02020m129">
+  <link rel="stylesheet" href="./style.css?v=02020m130">
+  <link rel="stylesheet" href="./interface.css?v=02020m130">
   <title>Victor</title>
 </head>
 <body>
@@ -132,10 +135,10 @@
 
   <div class="snackbar" id="snackbar" role="status" aria-live="polite"></div>
 
-  <script src="./storage.js?v=02020m129"></script>
-  <script src="./workflow.js?v=02020m129"></script>
-  <script src="./fieldwork.js?v=02020m129"></script>
-  <script src="./app.js?v=02020m129"></script>
+  <script src="./storage.js?v=02020m130"></script>
+  <script src="./workflow.js?v=02020m130"></script>
+  <script src="./fieldwork.js?v=02020m130"></script>
+  <script src="./app.js?v=02020m130"></script>
 </body>
 </html>
 

@@ -151,7 +151,7 @@ function applyThemeMode(mode=readThemeMode()){
   document.documentElement.dataset.themeMode = mode;
   const chromeColor=getComputedStyle(document.documentElement).getPropertyValue("--light").trim();
   document.getElementById("themeColorMeta")?.setAttribute("content",chromeColor||(resolved==="dark"?"#14202E":"#F3F5F8"));
-  document.getElementById("appleStatusBarMeta")?.setAttribute("content", resolved === "dark" ? "black-translucent" : "default");
+  document.getElementById("appleStatusBarMeta")?.setAttribute("content", resolved === "dark" ? "black" : "default");
 }
 
 function saveThemeMode(mode){
