@@ -1291,6 +1291,12 @@ function renderMenuPage(){
         <button type="button" id="pageCloudSettingsBtn">자원연계 설정 <span>연결·PIN 관리</span></button>
       </div>
     </div>
+    <div class="menu-page-section">
+      <div class="menu-label">앱</div>
+      <div class="menu-page-grid single">
+        <button type="button" id="pageRefreshAppBtn">앱 새로고침 <span>최신 앱 확인 · 저장자료 유지</span></button>
+      </div>
+    </div>
     <details class="menu-page-section menu-advanced">
       <summary>복구·앱 관리</summary>
       <div class="menu-page-grid">
@@ -1301,7 +1307,6 @@ function renderMenuPage(){
       </div>
       <div class="menu-page-grid">
         <button type="button" id="pageAppInfoBtn">앱 정보</button>
-        <button type="button" id="pageRefreshAppBtn">앱 새로고침</button>
         <button type="button" id="pageUpdateBtn">업데이트 확인</button>
         <button type="button" id="pageRollbackBtn">이전 앱 버전</button>
       </div>
