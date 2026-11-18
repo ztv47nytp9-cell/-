@@ -912,7 +912,7 @@ function cloudShareNoticeHtml(){
 
 function appIcon(name,className=""){
   const paths={
-    share:'<path d="M7 7 3.5 10.5 7 14"/><path d="M4 10.5h12a4.5 4.5 0 0 1 0 9h-2"/><path d="m17 17 3.5-3.5L17 10"/><path d="M20 13.5H8A4.5 4.5 0 0 1 8 4h2"/>',
+    share:'<path d="M4 8h15m-4-4 4 4-4 4"/><path d="M20 16H5m4-4-4 4 4 4"/>',
     siren:'<path d="M5 17h14l-1.1-7.1a5.95 5.95 0 0 0-11.8 0L5 17Z"/><path d="M3 20h18M12 2V1M4.6 4.1 3.5 3M19.4 4.1 20.5 3"/>',
     out:'<path d="M7 17 17 7M8 7h9v9"/>',in:'<path d="m7 7 10 10M8 17h9V8"/>',
     box:'<path d="m3.5 7 8.5-4 8.5 4v10L12 21l-8.5-4V7Z"/><path d="m3.5 7 8.5 4 8.5-4M12 11v10M8 5l8.5 4"/>',

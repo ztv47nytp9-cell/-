@@ -98,7 +98,7 @@ test('removing draft equipment keeps source equipment and stock unchanged',()=>{
   });
   test('home shortcuts use one shared line-icon system without emoji pictograms',()=>{
     const home=source.slice(source.indexOf('function renderHome()'),source.indexOf('function bindHomeWorkActions('));assert.match(home,/appIcon\("share"\)/);assert.match(home,/appIcon\("siren","urgent-mark"\)/);assert.match(home,/appIcon\("box"\)/);assert.match(home,/appIcon\("note"\)/);assert.doesNotMatch(home,/🚨|📦|🔍|📝|↗|↙|↔/);
-    assert.match(source,/function appIcon\(name,className=""\)/);assert.match(source,/stroke-width="1\.8" stroke-linecap="round" stroke-linejoin="round"/);
+    assert.match(source,/function appIcon\(name,className=""\)/);assert.match(source,/share:'<path d="M4 8h15m-4-4 4 4-4 4"\/><path d="M20 16H5m4-4-4 4 4 4"\/>/);assert.match(source,/stroke-width="1\.8" stroke-linecap="round" stroke-linejoin="round"/);
   });
   test('mobile bottom navigation stays hidden while an input is focused',()=>{
     assert.match(source,/root\.classList\.toggle\("input-focused",Boolean\(focused\)\)/);assert.match(fs.readFileSync(path.join(__dirname,'../style.css'),'utf8'),/@media\(hover:none\) and \(pointer:coarse\)\{[^}]*:root\.input-focused \.bottom,body\.keyboard-open \.bottom\{visibility:hidden;opacity:0;pointer-events:none;transform:translateY\(110%\)\}/);
