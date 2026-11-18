@@ -5585,7 +5585,7 @@ function bindContextBack(){
   let lastScrollCapture=0,captureTimer=0,scrollUiTimer=0,lastTouchPoint=null;
   const markUiScrolling=()=>{
     schedule();document.documentElement.classList.add("is-scrolling-ui");document.body.classList.add("is-scrolling-ui");
-    clearTimeout(scrollUiTimer);scrollUiTimer=setTimeout(()=>{document.documentElement.classList.remove("is-scrolling-ui");document.body.classList.remove("is-scrolling-ui");},760);
+    clearTimeout(scrollUiTimer);scrollUiTimer=setTimeout(()=>{document.documentElement.classList.remove("is-scrolling-ui");document.body.classList.remove("is-scrolling-ui");},150);
     const now=performance.now();if(now-lastScrollCapture>150){rememberListPosition();lastScrollCapture=now;}clearTimeout(captureTimer);captureTimer=setTimeout(rememberListPosition,100);
   };
   const onScroll=()=>markUiScrolling();
