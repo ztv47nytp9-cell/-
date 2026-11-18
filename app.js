@@ -5579,7 +5579,7 @@ function bindContextBack(){
   button.addEventListener("click",()=>{if(!scrollLockReasons.size)goBackInApp();});
   let lastScrollCapture=0,captureTimer=0;
   let scrollUiTimer=0;
-  window.addEventListener("scroll",()=>{schedule();document.body.classList.add("is-scrolling-ui");clearTimeout(scrollUiTimer);scrollUiTimer=setTimeout(()=>document.body.classList.remove("is-scrolling-ui"),320);const now=performance.now();if(now-lastScrollCapture>150){rememberListPosition();lastScrollCapture=now;}clearTimeout(captureTimer);captureTimer=setTimeout(rememberListPosition,100);},{passive:true});
+  window.addEventListener("scroll",()=>{schedule();document.body.classList.add("is-scrolling-ui");clearTimeout(scrollUiTimer);scrollUiTimer=setTimeout(()=>document.body.classList.remove("is-scrolling-ui"),400);const now=performance.now();if(now-lastScrollCapture>150){rememberListPosition();lastScrollCapture=now;}clearTimeout(captureTimer);captureTimer=setTimeout(rememberListPosition,100);},{passive:true});
   window.addEventListener("resize",schedule,{passive:true});
   const observer=new MutationObserver(schedule);observer.observe(view,{childList:true,subtree:true});observer.observe(document.body,{attributes:true,attributeFilter:["class"]});
   observer.observe(document.getElementById("snackbar"),{attributes:true,attributeFilter:["class"]});
