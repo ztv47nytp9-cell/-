@@ -5634,7 +5634,8 @@ function enhanceDetailControls(root=document){
   });
 }
 
-function needsNumericDone(){return document.body.classList.contains("keyboard-open")&&Boolean(document.activeElement?.matches?.('input[type="number"],input[inputmode="numeric"],input[inputmode="decimal"]'));}
+function isIOSDevice(){const ua=navigator.userAgent||"";return /iPhone|iPad|iPod/i.test(ua)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);}
+function needsNumericDone(){return !isIOSDevice()&&document.body.classList.contains("keyboard-open")&&Boolean(document.activeElement?.matches?.('input[type="number"],input[inputmode="numeric"],input[inputmode="decimal"]'));}
 function bindDetailPolish(){
   if("scrollRestoration" in history)history.scrollRestoration="manual";
   bindContextBack();

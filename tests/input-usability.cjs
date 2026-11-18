@@ -88,7 +88,7 @@ test('removing draft equipment keeps source equipment and stock unchanged',()=>{
   });
   test('dark theme is applied before first paint and uses an opaque iOS status bar',()=>{
     const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');assert.ok(html.indexOf('victor_theme_mode_0_19_0m')<html.indexOf('style.css'));assert.match(html,/resolved==="dark"\?"black":"default"/);assert.match(source,/resolved === "dark" \? "black" : "default"/);
-    const css=fs.readFileSync(path.join(__dirname,'../style.css'),'utf8');assert.match(css,/:root\[data-theme="dark"\] \.menu-sheet\{background:#152232!important;background-image:none!important;box-shadow:none!important;border:0!important;border-radius:0;filter:none;outline:0\}/);
+    const css=fs.readFileSync(path.join(__dirname,'../style.css'),'utf8'),interfaceCss=fs.readFileSync(path.join(__dirname,'../interface.css'),'utf8');assert.match(css,/:root\[data-theme="dark"\] \.menu-sheet\{background:#152232!important;background-image:none!important;box-shadow:none!important;border:0!important;border-radius:0;filter:none;outline:0\}/);assert.match(interfaceCss,/:root\[data-theme\] \.more\{[^}]*border-radius:12px[^}]*background:transparent/);
   });
   test('registration draft and no-result search provide compact mobile recovery actions',()=>{
     assert.match(source,/class="callout register-pending-draft"[\s\S]*?필요하면 불러와서 이어서 작성하세요/);assert.match(source,/data-clear-empty-filter/);
