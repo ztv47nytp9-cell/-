@@ -84,11 +84,23 @@ test('removing draft equipment keeps source equipment and stock unchanged',()=>{
   });
   test('scroll hides fixed controls and restores them after scrolling',()=>{
     assert.match(source,/body\.classList\.add\("is-scrolling-ui"\)/);assert.match(source,/body\.classList\.remove\("is-scrolling-ui"\)/);
-    const css=fs.readFileSync(path.join(__dirname,'../interface.css'),'utf8');assert.match(css,/:root\[data-theme\] body\.is-scrolling-ui :is\(#contextBack,\.back\),:root\[data-theme\] body\.is-scrolling-ui \.register-save-dock #saveRecord,:root\[data-theme\]\.input-focused \.register-save-dock #saveRecord\{opacity:0;transform:translate3d\(0,calc\(100% \+ var\(--app-nav-height,76px\) \+ 16px\),0\);pointer-events:none\}/);assert.match(css,/transition:transform \.24s cubic-bezier\(\.22,1,\.36,1\),opacity \.18s ease-out/);assert.match(css,/@media\(prefers-reduced-motion:reduce\)/);
+    const css=fs.readFileSync(path.join(__dirname,'../interface.css'),'utf8');assert.match(css,/:root\[data-theme\] body\.is-scrolling-ui :is\(#contextBack,\.back\),:root\[data-theme\] body\.is-scrolling-ui \.register-save-dock #saveRecord,:root\[data-theme\]\.input-focused \.register-save-dock #saveRecord\{opacity:0;transform:translate3d\(0,calc\(100% \+ var\(--app-nav-height,76px\) \+ 16px\),0\);pointer-events:none\}/);assert.match(css,/transition:transform \.28s cubic-bezier\(\.22,\.75,\.28,1\),opacity \.28s cubic-bezier\(\.22,\.75,\.28,1\)/);assert.match(source,/remove\("is-scrolling-ui"\),320\)/);assert.match(css,/@media\(prefers-reduced-motion:reduce\)/);
   });
   test('dark theme is applied before first paint and uses an opaque iOS status bar',()=>{
     const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');assert.ok(html.indexOf('victor_theme_mode_0_19_0m')<html.indexOf('style.css'));assert.match(html,/resolved==="dark"\?"black":"default"/);assert.match(source,/resolved === "dark" \? "black" : "default"/);
-    const css=fs.readFileSync(path.join(__dirname,'../style.css'),'utf8'),interfaceCss=fs.readFileSync(path.join(__dirname,'../interface.css'),'utf8');assert.match(css,/:root\[data-theme="dark"\] \.menu-sheet\{background:#152232!important;background-image:none!important;box-shadow:none!important;border:0!important;border-radius:0;filter:none;outline:0\}/);assert.match(interfaceCss,/:root\[data-theme\] \.more\{[^}]*border-radius:12px[^}]*background:transparent/);
+    const css=fs.readFileSync(path.join(__dirname,'../style.css'),'utf8'),interfaceCss=fs.readFileSync(path.join(__dirname,'../interface.css'),'utf8');assert.match(css,/:root\[data-theme="dark"\] \.menu-sheet\{background:#152232!important;background-image:none!important;box-shadow:none!important;border:0!important;border-radius:0;filter:none;outline:0\}/);assert.match(interfaceCss,/:root\[data-theme\] \.more\{[^}]*border-radius:12px[^}]*background:transparent/);assert.match(interfaceCss,/:root\[data-theme\] \.stock-line:active\{border-radius:14px;background-clip:padding-box\}/);
+  });
+  test('equipment lookup shortcut uses a recognizable search icon',()=>{
+    assert.match(source,/<button id="homeEquipmentRecord" type="button"><span aria-hidden="true">🔍<\/span><strong>장비 조회<\/strong>/);
+  });
+  test('vehicle and vessel shortcuts use simple inline line icons',()=>{
+    assert.match(source,/<button id="homeVehicleRecord" type="button"><span class="home-line-icon" aria-hidden="true"><svg viewBox="0 0 24 24"/);assert.match(source,/<button id="homeVesselRecord" type="button"><span class="home-line-icon" aria-hidden="true"><svg viewBox="0 0 24 24"/);assert.match(fs.readFileSync(path.join(__dirname,'../interface.css'),'utf8'),/\.home-tool-grid \.home-line-icon svg\{display:block;width:24px;height:24px/);
+  });
+  test('mobile bottom navigation stays hidden while an input is focused',()=>{
+    assert.match(source,/root\.classList\.toggle\("input-focused",Boolean\(focused\)\)/);assert.match(fs.readFileSync(path.join(__dirname,'../style.css'),'utf8'),/@media\(hover:none\) and \(pointer:coarse\)\{[^}]*:root\.input-focused \.bottom,body\.keyboard-open \.bottom\{visibility:hidden;opacity:0;pointer-events:none;transform:translateY\(110%\)\}/);
+  });
+  test('all-materials view can hide and reveal zero-stock items independently',()=>{
+    assert.match(source,/showZeroStockInAllMaterials/);assert.match(source,/visibleRows=showZero\?rows:rows\.filter\(item=>Number\(item\.total\|\|0\)>0\)/);assert.match(source,/id="toggleAllMaterialZero"/);assert.match(source,/0재고 품목 보기를 켜면 전체 목록을 볼 수 있습니다/);
   });
   test('registration draft and no-result search provide compact mobile recovery actions',()=>{
     assert.match(source,/class="callout register-pending-draft"[\s\S]*?필요하면 불러와서 이어서 작성하세요/);assert.match(source,/data-clear-empty-filter/);

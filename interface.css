@@ -46,6 +46,10 @@ button{touch-action:manipulation}
 .quick-action{min-height:90px;border-radius:16px}
 .quick-action strong,.home-tool-grid strong{font-size:15px;font-weight:650}
 .quick-action small,.home-tool-grid small{font-size:12px;color:var(--muted);font-weight:500}
+.home-tool-grid .home-line-icon{display:grid;place-items:center;width:24px;height:24px;color:var(--blue2)}
+.home-tool-grid .home-line-icon svg{display:block;width:24px;height:24px;overflow:visible}
+.resource-view-options{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 10px}
+.resource-view-options>span{font-size:12px;line-height:1.4;color:var(--muted)}
 :root[data-theme] .quick-action.emergency{background:#FEF4EE;border-color:#E9CEBF;color:#914B2E}
 :root[data-theme="dark"] .quick-action.emergency{background:#343135;border-color:#5D5049;color:#E5BEA5}
 :root[data-theme] :is(.list-row,.wh-outer){background:var(--card);color:var(--text);border-bottom-color:var(--border)}
@@ -90,6 +94,7 @@ button{touch-action:manipulation}
 :root[data-theme] :is(button,.btn,.choice-card,.nav,.list-row){transition:transform .13s ease,opacity .13s ease}
 :root[data-theme] button:active:not(:disabled){transform:scale(.98)}
 :root[data-theme] :is(button.list-row,.row-main,.stock-line,.group-heading,.nav,.menu-page-grid button):active{transform:none;background:var(--surface-pressed)}
+:root[data-theme] .stock-line:active{border-radius:14px;background-clip:padding-box}
 :root[data-theme] :is(button,input,select,textarea,summary):focus-visible{outline:2px solid var(--focus);outline-offset:3px}
 :root[data-theme] :is(input,select,textarea):focus-visible{outline-offset:1px;border-color:var(--focus)}
 .snackbar{max-width:min(520px,calc(100vw - 32px));bottom:calc(82px + env(safe-area-inset-bottom));border-radius:18px;padding:12px 16px;min-height:46px;line-height:1.45;font-weight:600;box-shadow:0 6px 22px rgba(8,20,34,.14);border:1px solid rgba(255,255,255,.12);transition:opacity .18s ease,transform .18s ease;transform:translateX(-50%) translateY(8px)}
@@ -424,7 +429,7 @@ html{scroll-padding-bottom:calc(var(--app-nav-height,76px) + 80px)}
 :root[data-theme] #contextBack:active{background:var(--surface-pressed);transform:scale(.97)}
 :root[data-theme] .btn:active:not(:disabled){transform:scale(.985)}
 /* Keep floating controls readable while reducing their visual weight during scroll. */
-:root[data-theme] :is(#contextBack,.back),:root[data-theme] .register-save-dock #saveRecord{transition:transform .24s cubic-bezier(.22,1,.36,1),opacity .18s ease-out,background-color .14s ease,border-color .14s ease,box-shadow .14s ease;will-change:transform,opacity}
+:root[data-theme] :is(#contextBack,.back),:root[data-theme] .register-save-dock #saveRecord{transition:transform .28s cubic-bezier(.22,.75,.28,1),opacity .28s cubic-bezier(.22,.75,.28,1),background-color .14s ease,border-color .14s ease,box-shadow .14s ease;will-change:transform,opacity}
 :root[data-theme] body.is-scrolling-ui :is(#contextBack,.back),:root[data-theme] body.is-scrolling-ui .register-save-dock #saveRecord,:root[data-theme].input-focused .register-save-dock #saveRecord{opacity:0;transform:translate3d(0,calc(100% + var(--app-nav-height,76px) + 16px),0);pointer-events:none}
 @media(prefers-reduced-motion:reduce){:root[data-theme] :is(#contextBack,.back),:root[data-theme] .register-save-dock #saveRecord{transition-duration:.01ms}}
 :root[data-theme] .content:has(.register-save-dock){padding-bottom:calc(76px + env(safe-area-inset-bottom))}

@@ -116,8 +116,9 @@ textarea{min-height:74px;resize:vertical}
 .item-box{background:#fff;border:1px solid var(--border);border-radius:16px;padding:13px;margin-top:9px}
 .emptybox{border:1px solid var(--border);background:#fff;border-radius:15px;padding:30px 12px;text-align:center;color:#98A2B3}
 .callout{background:#FFF7E8;border:1px solid #FED7AA;color:#7A3B00;border-radius:14px;padding:12px 13px;font-size:13px;line-height:1.45;margin-bottom:12px}
-.bottom{position:fixed;z-index:30;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--border);padding:7px max(8px,env(safe-area-inset-left)) calc(7px + env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-right));display:grid;grid-template-columns:repeat(5,1fr);transition:transform .24s cubic-bezier(.2,.8,.2,1)}
+.bottom{position:fixed;z-index:30;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--border);padding:7px max(8px,env(safe-area-inset-left)) calc(7px + env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-right));display:grid;grid-template-columns:repeat(5,1fr);transition:transform .24s cubic-bezier(.2,.8,.2,1),opacity .16s ease,visibility .16s ease}
 body.keyboard-open .bottom{transform:translateY(110%);pointer-events:none}
+@media(hover:none) and (pointer:coarse){:root.input-focused .bottom,body.keyboard-open .bottom{visibility:hidden;opacity:0;pointer-events:none;transform:translateY(110%)}}
 .nav{border:0;background:transparent;color:#344054;font-size:13px;font-weight:750;padding:12px 4px;border-radius:12px}
 .nav.active{color:var(--blue);font-weight:900}
 .nav.active::after{content:"";display:block;width:24px;height:3px;background:var(--blue);border-radius:99px;margin:7px auto 0}

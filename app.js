@@ -940,9 +940,9 @@ function renderHome(){
       <div class="section-title">자주 쓰는 기능</div>
       <div class="home-tool-grid">
         <button id="homeAllResources" type="button"><span>📦</span><strong>자재·장비</strong><small>전체 현황</small></button>
-        <button id="homeEquipmentRecord" type="button"><span>▣</span><strong>장비 조회</strong><small>관리·사용 이력</small></button>
-        <button id="homeVehicleRecord" type="button"><span>↗</span><strong>차량 기록</strong><small>주행거리</small></button>
-        <button id="homeVesselRecord" type="button"><span>≈</span><strong>방제정 기록</strong><small>엔진·연료</small></button>
+        <button id="homeEquipmentRecord" type="button"><span aria-hidden="true">🔍</span><strong>장비 조회</strong><small>관리·사용 이력</small></button>
+        <button id="homeVehicleRecord" type="button"><span class="home-line-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 16.5h14l1-4.5-2-5H6l-2 5 1 4.5Z"/><path d="M4.5 12h15M7 16.5v2m10-2v2M7 8.5l-1 3.5m12-3.5 1 3.5"/></svg></span><strong>차량 기록</strong><small>주행거리</small></button>
+        <button id="homeVesselRecord" type="button"><span class="home-line-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15.5h18l-2.5 4h-13L3 15.5Z"/><path d="M7 15.5V9h8l3 6.5M10 9V6h5l2 3M4 21c1.5-1 2.8-1 4.2 0s2.8 1 4.3 0 2.8-1 4.2 0 2.8 1 4.3 0"/></svg></span><strong>방제정 기록</strong><small>엔진·연료</small></button>
         <button id="homePending" class="${pending ? "" : "quiet-tool"}" type="button"><span class="urgent-mark">${pending ? "🚨" : "✓"}</span><strong>${pending ? `사건 이어하기 · ${pending}건` : "진행 중 사건 없음"}</strong>${latestPending?`<small>${esc(latestPending.officialTitle?latestPending.title:"제목 미정")} · ${esc(fmtDateTime(latestPending.updatedAt||latestPending.createdAt||latestPending.date))}</small>`:""}</button>
         <button id="homeMemoShortcut" type="button"><span>📝</span><strong>새 메모</strong><small>현장 참고</small></button>
       </div>
@@ -1120,7 +1120,8 @@ function openCategoryManager(kind){
 
 function renderAllMaterialsView(){
   queueMicrotask(()=>attachResourceTools());
-  return `${resourceFilterControls(cats,"자재명·규격·메모 검색")}${groupToolbar(materialSortMode,"materials")}<div class="btn-row"><button class="btn secondary compact" id="toggleResourceSelection" type="button">${resourceSelectionMode?"선택 종료":"선택 모드"}</button><button class="btn secondary compact" id="manageCategories" type="button">분류 관리</button></div><div class="filter-result resource-result" id="allMaterialCount"></div><div id="allMaterialList"></div><div id="bulkResourceActions"></div>`;
+  state.ui=state.ui||{};
+  return `${resourceFilterControls(cats,"자재명·규격·메모 검색")}<div class="resource-view-options"><button class="btn gray compact" id="toggleAllMaterialZero" type="button" aria-pressed="${Boolean(state.ui.showZeroStockInAllMaterials)}">${state.ui.showZeroStockInAllMaterials?"0재고 숨기기":"0재고 품목 보기"}</button><span>보유 수량이 없는 품목은 기본 숨김</span></div>${groupToolbar(materialSortMode,"materials")}<div class="btn-row"><button class="btn secondary compact" id="toggleResourceSelection" type="button">${resourceSelectionMode?"선택 종료":"선택 모드"}</button><button class="btn secondary compact" id="manageCategories" type="button">분류 관리</button></div><div class="filter-result resource-result" id="allMaterialCount"></div><div id="allMaterialList"></div><div id="bulkResourceActions"></div>`;
 }
 
 function renderAllMaterialList(){
@@ -1138,10 +1139,10 @@ function renderAllMaterialList(){
     return {...item,total,locations};
   });
   rows.sort((a,b)=>materialSortMode==="qty"?b.total-a.total:materialSortMode==="recent"?String(b.updatedAt||"").localeCompare(String(a.updatedAt||"")):a.name.localeCompare(b.name,"ko"));
-  const totalQty=rows.reduce((sum,item)=>sum+Number(item.total||0),0);
-  const zeroCount=rows.filter(item=>Number(item.total||0)===0).length;
-  document.getElementById("allMaterialCount").textContent = `검색 결과 ${rows.length}종 · 총 ${Number(totalQty).toLocaleString("ko-KR")} · 0재고 ${zeroCount}종`;
-  const forceOpen=Boolean(query);target.innerHTML=rows.length?cats.map(cat=>{const grouped=rows.filter(item=>item.cat===cat);if(!grouped.length)return "";const content=grouped.map(item=>`<div class="list-row ${item.total===0?"zero-stock":""}">${resourceSelectionMode?`<input class="resource-check" data-select-material="${esc(item.name)}" type="checkbox" ${selectedResources.has(`material:${item.name}`)?"checked":""}>`:""}<button class="row-main" data-all-material="${esc(item.name)}" type="button"><div><div class="row-title">${esc(item.name)} ${stockBadge(item)}${isTodayChanged(item)?` <span class="today-chip">오늘 수정</span>`:""}</div><div class="row-sub">${item.spec?esc(item.spec)+" · ":""}${item.locations.length?esc(item.locations.slice(0,2).map(placeLabel).join(", "))+(item.locations.length>2?` 외 ${item.locations.length-2}곳`:""):"보유 창고 없음"}</div></div><div class="stock-qty">${materialQtyText(item.total,item.unit,item)}</div></button></div>`).join("");return groupedSection("materials",cat,`${grouped.length}종`,content,forceOpen);}).join(""):`<div class="emptybox resource-empty">검색 결과가 없습니다.${resourceFiltersActive()?`<button class="btn secondary compact" data-clear-empty-filter type="button">검색 조건 지우기</button>`:""}</div>`;
+  const totalQty=rows.reduce((sum,item)=>sum+Number(item.total||0),0),zeroCount=rows.filter(item=>Number(item.total||0)===0).length,showZero=Boolean(state.ui?.showZeroStockInAllMaterials),visibleRows=showZero?rows:rows.filter(item=>Number(item.total||0)>0);
+  document.getElementById("allMaterialCount").textContent = `검색 결과 ${visibleRows.length}종 · 총 ${Number(totalQty).toLocaleString("ko-KR")}${zeroCount?` · 0재고 ${zeroCount}종 ${showZero?"포함":"숨김"}`:""}`;
+  const zeroToggle=document.getElementById("toggleAllMaterialZero");if(zeroToggle){zeroToggle.textContent=showZero?"0재고 숨기기":"0재고 품목 보기";zeroToggle.setAttribute("aria-pressed",String(showZero));zeroToggle.hidden=!showZero&&!zeroCount;}
+  const forceOpen=Boolean(query);target.innerHTML=visibleRows.length?cats.map(cat=>{const grouped=visibleRows.filter(item=>item.cat===cat);if(!grouped.length)return "";const content=grouped.map(item=>`<div class="list-row ${item.total===0?"zero-stock":""}">${resourceSelectionMode?`<input class="resource-check" data-select-material="${esc(item.name)}" type="checkbox" ${selectedResources.has(`material:${item.name}`)?"checked":""}>`:""}<button class="row-main" data-all-material="${esc(item.name)}" type="button"><div><div class="row-title">${esc(item.name)} ${stockBadge(item)}${isTodayChanged(item)?` <span class="today-chip">오늘 수정</span>`:""}</div><div class="row-sub">${item.spec?esc(item.spec)+" · ":""}${item.locations.length?esc(item.locations.slice(0,2).map(placeLabel).join(", "))+(item.locations.length>2?` 외 ${item.locations.length-2}곳`:""):"보유 창고 없음"}</div></div><div class="stock-qty">${materialQtyText(item.total,item.unit,item)}</div></button></div>`).join("");return groupedSection("materials",cat,`${grouped.length}종`,content,forceOpen);}).join(""):`<div class="emptybox resource-empty">${zeroCount&&!showZero?"보유 수량이 있는 품목이 없습니다. 0재고 품목 보기를 켜면 전체 목록을 볼 수 있습니다.":"검색 결과가 없습니다."}${resourceFiltersActive()?`<button class="btn secondary compact" data-clear-empty-filter type="button">검색 조건 지우기</button>`:""}</div>`;
   target.querySelector("[data-clear-empty-filter]")?.addEventListener("click",()=>document.getElementById("clearResourceFilters")?.click());
   bindGroupedSections(renderAllMaterialList);target.querySelectorAll("[data-all-material]").forEach(button=>button.addEventListener("click",()=>{if(!resourceSelectionMode)openAllMaterialDetail(button.dataset.allMaterial);}));target.querySelectorAll("[data-select-material]").forEach(input=>input.addEventListener("change",()=>{const key=`material:${input.dataset.selectMaterial}`;input.checked?selectedResources.add(key):selectedResources.delete(key);renderBulkResourceActions();}));renderBulkResourceActions();
 }
@@ -1352,6 +1353,7 @@ function renderWarehouse(){
     if(warehouseViewMode === "materials"){
       bindResourceFilters(renderAllMaterialList);
       bindResourceGroupControls(renderAllMaterialList);
+      document.getElementById("toggleAllMaterialZero")?.addEventListener("click",()=>{state.ui=state.ui||{};state.ui.showZeroStockInAllMaterials=!Boolean(state.ui.showZeroStockInAllMaterials);save();renderAllMaterialList();});
       renderAllMaterialList();
     }else if(warehouseViewMode === "equipment"){
       bindResourceFilters(renderAllEquipmentList);
@@ -2269,7 +2271,15 @@ async function performSaveRecord(){
 
 function summarizeItems(items,equipmentItems=[],flow=""){ 
   const parts=(items || []).slice(0,2).map(i => {
-    if(i.before !== undefined && i.after !== undefined) return `${i.name} ${materialQtyText(i.before,i.unit,i)} → ${materialQtyText(i.after,i.unit,i)}`;
+    if(i.before !== undefined && i.after !== undefined){
+      const before=recordedNumber(i.before),after=recordedNumber(i.after);
+      if(before!==null&&after!==null){
+        const difference=after-before,movement=flow==="이송"?(recordedNumber(i.qty)??Math.abs(difference)):Math.abs(difference);
+        const action=flow==="입고"?"증가":flow==="이송"?"이송":flow==="재고수정"?(difference>0?"증가":difference<0?"감소":"변동 없음"): ["출고","사고","긴급"].includes(flow)?"소모":"";
+        const change=action?(action==="변동 없음"?action:`${action} ${materialQtyText(movement,i.unit,i)}`):"";
+        return `${i.name} ${materialQtyText(before,i.unit,i)} → ${materialQtyText(after,i.unit,i)}${change?` · ${change}`:""}`;
+      }
+    }
     return `${i.name} ${materialQtyText(i.qty,i.unit,i)}`;
   });
   (equipmentItems || []).slice(0,Math.max(0,2-parts.length)).forEach(item=>parts.push(`${item.name} ${item.qty}대 ${flow==="입고"?"반납":flow==="이송"?"이송":"사용"}`));
@@ -5552,7 +5562,7 @@ function bindContextBack(){
   button.addEventListener("click",()=>{if(!scrollLockReasons.size)goBackInApp();});
   let lastScrollCapture=0,captureTimer=0;
   let scrollUiTimer=0;
-  window.addEventListener("scroll",()=>{schedule();document.body.classList.add("is-scrolling-ui");clearTimeout(scrollUiTimer);scrollUiTimer=setTimeout(()=>document.body.classList.remove("is-scrolling-ui"),220);const now=performance.now();if(now-lastScrollCapture>150){rememberListPosition();lastScrollCapture=now;}clearTimeout(captureTimer);captureTimer=setTimeout(rememberListPosition,100);},{passive:true});
+  window.addEventListener("scroll",()=>{schedule();document.body.classList.add("is-scrolling-ui");clearTimeout(scrollUiTimer);scrollUiTimer=setTimeout(()=>document.body.classList.remove("is-scrolling-ui"),320);const now=performance.now();if(now-lastScrollCapture>150){rememberListPosition();lastScrollCapture=now;}clearTimeout(captureTimer);captureTimer=setTimeout(rememberListPosition,100);},{passive:true});
   window.addEventListener("resize",schedule,{passive:true});
   const observer=new MutationObserver(schedule);observer.observe(view,{childList:true,subtree:true});observer.observe(document.body,{attributes:true,attributeFilter:["class"]});
   observer.observe(document.getElementById("snackbar"),{attributes:true,attributeFilter:["class"]});
