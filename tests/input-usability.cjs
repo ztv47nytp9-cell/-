@@ -101,6 +101,7 @@ test('removing draft equipment keeps source equipment and stock unchanged',()=>{
   });
   test('all-materials view can hide and reveal zero-stock items independently',()=>{
     assert.match(source,/showZeroStockInAllMaterials/);assert.match(source,/visibleRows=showZero\?rows:rows\.filter\(item=>Number\(item\.total\|\|0\)>0\)/);assert.match(source,/id="toggleAllMaterialZero"/);assert.match(source,/0재고 품목 보기를 켜면 전체 목록을 볼 수 있습니다/);
+    const css=fs.readFileSync(path.join(__dirname,'../interface.css'),'utf8');assert.match(css,/:root\[data-theme\] #allMaterialList \.list-row\{min-height:0;padding:6px 8px\}/);assert.match(css,/:root\[data-theme\] #allMaterialList \.row-main\{min-height:56px;padding:8px 10px;border-radius:12px\}/);assert.match(css,/:root\[data-theme\] \.warehouse-list-row:active\{border-radius:14px;background-clip:padding-box\}/);assert.match(css,/:root\[data-theme\] \.warehouse-list-row\{transition:background-color \.14s ease,border-radius \.16s cubic-bezier\(\.22,\.75,\.28,1\)/);
   });
   test('registration draft and no-result search provide compact mobile recovery actions',()=>{
     assert.match(source,/class="callout register-pending-draft"[\s\S]*?필요하면 불러와서 이어서 작성하세요/);assert.match(source,/data-clear-empty-filter/);
