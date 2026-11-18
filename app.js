@@ -5582,9 +5582,25 @@ function bindContextBack(){
   };
   const schedule=()=>{if(!frame)frame=requestAnimationFrame(sync);};
   button.addEventListener("click",()=>{if(!scrollLockReasons.size)goBackInApp();});
-  let lastScrollCapture=0,captureTimer=0;
-  let scrollUiTimer=0;
-  document.addEventListener("scroll",()=>{schedule();document.body.classList.add("is-scrolling-ui");clearTimeout(scrollUiTimer);scrollUiTimer=setTimeout(()=>document.body.classList.remove("is-scrolling-ui"),240);const now=performance.now();if(now-lastScrollCapture>150){rememberListPosition();lastScrollCapture=now;}clearTimeout(captureTimer);captureTimer=setTimeout(rememberListPosition,100);},{passive:true,capture:true});
+  let lastScrollCapture=0,captureTimer=0,scrollUiTimer=0,lastTouchPoint=null;
+  const markUiScrolling=()=>{
+    schedule();document.documentElement.classList.add("is-scrolling-ui");document.body.classList.add("is-scrolling-ui");
+    clearTimeout(scrollUiTimer);scrollUiTimer=setTimeout(()=>{document.documentElement.classList.remove("is-scrolling-ui");document.body.classList.remove("is-scrolling-ui");},420);
+    const now=performance.now();if(now-lastScrollCapture>150){rememberListPosition();lastScrollCapture=now;}clearTimeout(captureTimer);captureTimer=setTimeout(rememberListPosition,100);
+  };
+  const onScroll=()=>markUiScrolling();
+  // iOS standalone PWA may dispatch root scroll on window rather than through
+  // document capture. Keep both root and nested-scroll coverage.
+  window.addEventListener("scroll",onScroll,{passive:true});
+  document.addEventListener("scroll",onScroll,{passive:true,capture:true});
+  view.addEventListener("touchstart",event=>{const touch=event.touches?.[0];lastTouchPoint=touch?{x:touch.clientX,y:touch.clientY}:null;},{passive:true,capture:true});
+  view.addEventListener("touchmove",event=>{
+    const touch=event.touches?.[0];if(!touch||!lastTouchPoint)return;
+    const dx=touch.clientX-lastTouchPoint.x,dy=touch.clientY-lastTouchPoint.y;lastTouchPoint={x:touch.clientX,y:touch.clientY};
+    if(Math.abs(dy)>3&&Math.abs(dy)>Math.abs(dx)*1.15&&document.documentElement.scrollHeight>innerHeight+1)markUiScrolling();
+  },{passive:true,capture:true});
+  const clearTouchPoint=()=>{lastTouchPoint=null;};
+  view.addEventListener("touchend",clearTouchPoint,{passive:true,capture:true});view.addEventListener("touchcancel",clearTouchPoint,{passive:true,capture:true});
   window.addEventListener("resize",schedule,{passive:true});
   const observer=new MutationObserver(schedule);observer.observe(view,{childList:true,subtree:true});observer.observe(document.body,{attributes:true,attributeFilter:["class"]});
   observer.observe(document.getElementById("snackbar"),{attributes:true,attributeFilter:["class"]});
