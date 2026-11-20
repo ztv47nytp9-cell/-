@@ -244,7 +244,8 @@ function equipmentUseConflict(entries,excludeId="",{forTransfer=false}={}){
   for(const [id,qty] of totals){const gear=state.equipment.find(item=>item.id===id),using=outstanding.get(id)||0;if(!gear)continue;const service=equipmentServiceState(gear),available=!forTransfer&&service.blocked?0:Math.max(0,Number(gear.qty||0)-using-(forTransfer?0:service.unavailable));if(forTransfer&&qty<Number(gear.qty)&&(service.blocked||service.unavailable))return `${gear.name} · 운용 불가 장비는 일부 이송 전 수량·상태를 분리해주세요`;if(qty>available)return `${gear.name} · 사용 가능 ${available}대${!forTransfer&&service.reason?` · ${service.reason}`:` · 미반납 ${using}대`}`;}
   return "";
 }
-function clearAllHistoryFilters(){historyPlaceFilter="all";historyTypeFilter="all";historySearchQuery="";historyDateFilter="all";historyFlowFilter="all";historyCustomFrom="";historyCustomTo="";renderHistory();}
+function resetHistoryFilters(){historyFilter="all";historyPlaceFilter="all";historyTypeFilter="all";historySearchQuery="";historyDateFilter="all";historyFlowFilter="all";historyCustomFrom="";historyCustomTo="";historyFiltersOpen=false;}
+function clearAllHistoryFilters(){resetHistoryFilters();renderHistory();}
 function openMaterialInfoForm(name){
   const item=itemOf(name);if(!item)return;
   openEntryModal(`${entryHeader("자재 정보·분류 수정",name)}<div class="form"><label>품목명<input id="materialEditName" value="${esc(name)}"></label><label>분류<select id="materialEditCategory">${cats.map(cat=>`<option ${cat===item.cat?"selected":""}>${esc(cat)}</option>`).join("")}</select></label><label>규격<input id="materialEditSpec" value="${esc(item.spec||"")}"></label><label>최소수량 (전체 재고 기준 · 선택)<input id="materialMinimum" type="number" inputmode="decimal" min="0" value="${Number(item.minStock||0)}"></label><details><summary>창고별 최소수량 (선택)</summary>${warehouses.map(w=>`<label>${esc(w)}<input type="number" min="0" inputmode="decimal" data-place-min="${esc(w)}" value="${esc(String(item.minimumByPlace?.[w]??""))}"></label>`).join("")}</details><label>메모<textarea id="materialEditMemo">${esc(item.memo||"")}</textarea></label><button class="btn primary" id="saveMaterialInfo" type="button">저장</button></div>`);
@@ -278,10 +279,7 @@ function renderHistory(){
   grid.insertAdjacentHTML("beforeend",`<label>장소<select id="historyPlaceFilter"><option value="all">전체 장소</option>${historyPlaceChoices().map(place=>`<option value="${esc(place.name)}" ${place.name===historyPlaceFilter?"selected":""}>${esc(place.label)}</option>`).join("")}</select></label><label>업무 구분<select id="historyTypeFilter"><option value="all">전체 구분</option>${["사고","훈련","작업","기타"].map(type=>`<option ${type===historyTypeFilter?"selected":""}>${type}</option>`).join("")}</select></label>`);
   document.getElementById("historyPlaceFilter").addEventListener("change",event=>{historyPlaceFilter=event.target.value;renderHistory();});
   document.getElementById("historyTypeFilter").addEventListener("change",event=>{historyTypeFilter=event.target.value;renderHistory();});
-  const count=document.getElementById("historyResultCount");
-  if((historyPlaceFilter!=="all"||historyTypeFilter!=="all"||historySearchQuery)&&!document.getElementById("clearHistoryFilter"))count.insertAdjacentHTML("beforeend",'<button class="link-btn" id="clearHistoryFilter" type="button">필터 초기화</button>');
-  const reset=document.getElementById("clearHistoryFilter");if(reset)reset.onclick=clearAllHistoryFilters;
-  if(historyDateFilter==="custom"&&historyCustomFrom&&historyCustomTo&&historyCustomFrom>historyCustomTo)count.textContent="시작일과 종료일을 확인해주세요";
+  // Result count and reset are rendered together by renderBaseHistory.
 }
 let pendingFormBaseline="",pendingFormRecordId="";
 let currentUpdateRegistration=null;

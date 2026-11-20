@@ -438,6 +438,17 @@ html{scroll-padding-bottom:calc(var(--app-nav-height,76px) + 80px)}
 .cloud-share-form .share-local-save{padding:4px 0;gap:6px 12px}
 .cloud-main-actions>button>small{font-size:13px;line-height:1.5;opacity:1}
 .cloud-main-actions>button>strong{font-size:15px;line-height:1.4}
+.cloud-share-form.share-idle :is(.cloud-main-actions,.share-local-save,.share-status-brief,.share-copy-version,.share-scope-note){display:none}
+.cloud-share-form.share-receive .cloud-main-actions{grid-template-columns:1fr}
+.cloud-share-form.share-receive #cloudUploadNow{min-height:44px;display:block;padding:8px}
+.share-receive #cloudUploadNow :is(span,small){display:none}
+.share-diff-list{white-space:normal;margin-top:12px}
+.share-diff-row{display:flex;align-items:baseline;justify-content:space-between;gap:4px 12px;border-top:1px solid var(--border);padding:10px 0;overflow-wrap:anywhere}
+.share-diff-row>span:first-child{min-width:0}
+.share-diff-value{color:var(--muted);font-variant-numeric:tabular-nums;text-align:end}
+.share-diff-value strong{color:var(--text)}
+.share-diff-list summary{cursor:pointer;padding:12px 0}
+@media(max-width:380px){.share-diff-row{align-items:stretch;flex-direction:column}.share-diff-value{text-align:start}}
 .cloud-share-form .share-mini-summary>span>small{font-size:13px;line-height:1.6}
 .cloud-share-form .share-detail-group{margin-top:16px}
 .history-tabs [data-hfilter="review"]{grid-column:1 / -1;min-height:44px}
@@ -472,4 +483,11 @@ html{scroll-padding-bottom:calc(var(--app-nav-height,76px) + 80px)}
 }
 fieldset.register-type-options{min-width:0;margin:0;padding:0;border:0;display:flex;gap:4px;flex-wrap:wrap}
 .register-type-options legend{margin-bottom:6px}
+.history-filter-caption{font-size:13px;font-weight:600;color:var(--muted);line-height:1.4;margin:0 0 5px}
+.history-tabs+.history-filter-caption{margin-top:12px}
+@media(max-width:420px){
+  fieldset.register-type-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+  fieldset.register-type-options button{min-height:44px;white-space:normal}
+}
+:is(.summary-value,.stock-qty,.history-tab){font-variant-numeric:tabular-nums}
 .register-type-options button[aria-pressed="true"]{outline:2px solid var(--blue2);outline-offset:-2px;color:var(--blue2)}
