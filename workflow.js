@@ -514,13 +514,27 @@ function homeWorkSummaryHtml(){
   <details class="home-work-recent"><summary>최근 업무</summary>${recent?`<button class="list-row" data-detail="${recent.id}" type="button"><div><div class="row-title">최근 출고 · ${esc(recent.title)}</div><div class="row-sub">${fmtDateTime(recent.occurredAt||recent.createdAt)}</div></div></button>`:`<div class="row-sub">출고 기록 없음</div>`}${maintenance?`<div class="stock-line"><div>최근 점검 · ${esc(maintenance.place)}<div class="row-sub">${esc(maintenance.content)} · ${fmtDate(maintenance.date)}</div></div></div>`:""}${operations?`<button class="list-row" data-home-asset="${esc(operations.place)}" type="button"><div><div class="row-title">최근 운행 · ${esc(operations.place)}</div><div class="row-sub">${fmtDate(operations.date)} · ${esc(operations.purpose||operations.memo||"기록 보기")}</div></div></button>`:""}<button type="button" class="btn secondary compact" id="handoverReport">교대 요약 복사</button></details>`;
 }
 function handoverText(date){
-  const records=state.records.filter(r=>r.date===date&&r.status==="pending"),gear=outstandingEquipmentRows().filter(row=>row.record.date===date);
-  const section=(title,rows)=>title+" ("+rows.length+")\n"+(rows.join("\n")||"없음");
-  return [date+" 등록분 · 현재 상태 기준",section("진행 중 사건",records.filter(r=>r.type==="사고"&&!r.stockReview).map(r=>r.title)),section("재고 미반영",records.filter(r=>r.type!=="사고"||r.stockReview).map(r=>r.title)),section("미반납 장비",gear.map(row=>row.record.title+" · "+row.item.name+" "+row.remaining+"대"))].join("\n\n");
+  if(!date)return "기준일을 선택하세요.";
+  const groups=[[],[]];
+  function add(record,label){
+    if(!record.date||record.date>date)return;
+    groups[record.date===date?0:1].push({date:record.date,label});
+  }
+  for(const record of state.records||[]){
+    if(record.status==="pending")add(record,recordStateLabel(record)+" · "+(record.title||"제목 없음"));
+  }
+  for(const {record,item,remaining} of outstandingEquipmentRows()){
+    add(record,"미반납 · "+item.name+" "+remaining+"대 · "+(record.title||"제목 없음"));
+  }
+  return [date+" 교대 요약 · 현재 상태 기준",...groups.map((rows,index)=>{
+    const title=index?"이전부터 미완료":"선택일 등록 · 미완료";
+    const lines=rows.sort((a,b)=>a.date.localeCompare(b.date)).map(row=>(index?row.date+" · ":"")+row.label);
+    return title+" ("+rows.length+")\n"+(lines.join("\n")||"없음");
+  })].join("\n\n");
 }
 function bindHomeWorkActions(){
   document.getElementById("handoverReport")?.addEventListener("click",()=>{
-    openEntryModal(`${entryHeader("교대 요약","선택한 날짜에 등록한 업무의 현재 상태")}<label>등록일<input type="date" id="shiftDate" value="${todayISO()}"></label><textarea id="shiftText" readonly rows="12"></textarea><button type="button" class="btn primary" id="shiftCopy">요약 복사</button>`);
+    openEntryModal(`${entryHeader("교대 요약","기준일까지 등록한 업무 중 지금 남은 항목입니다.")}<label>기준일<input type="date" id="shiftDate" value="${todayISO()}"></label><textarea id="shiftText" readonly rows="12"></textarea><button type="button" class="btn primary" id="shiftCopy">요약 복사</button>`);
     const date=document.getElementById("shiftDate"),out=document.getElementById("shiftText");date.oninput=()=>out.value=handoverText(date.value);date.oninput();document.getElementById("shiftCopy").onclick=async()=>{try{await navigator.clipboard.writeText(out.value);showSnack("교대 요약 복사 완료");}catch{out.focus();out.select();showSnack("선택한 요약을 복사해주세요");}};
   });
   document.getElementById("homeEquipmentRecord")?.addEventListener("click",()=>openStorageView("equipment"));
