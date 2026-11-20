@@ -485,6 +485,7 @@ fieldset.register-type-options{min-width:0;margin:0;padding:0;border:0;display:f
 .register-type-options legend{margin-bottom:6px}
 .history-filter-caption{font-size:13px;font-weight:600;color:var(--muted);line-height:1.4;margin:0 0 5px}
 .history-tabs+.history-filter-caption{margin-top:12px}
+:is(.history-tabs,.history-date-buttons) button[aria-pressed="true"]{text-decoration:underline;text-underline-offset:.25em;text-decoration-thickness:2px}
 @media(max-width:420px){
   fieldset.register-type-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
   fieldset.register-type-options button{min-height:44px;white-space:normal}

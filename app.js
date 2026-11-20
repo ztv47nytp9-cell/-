@@ -258,7 +258,7 @@ function bindGroupedSections(rerender){
   }));
   view.querySelectorAll("[data-groups-all]").forEach(button=>button.addEventListener("click",event=>{const keys=[...view.querySelectorAll("[data-group-toggle]")].map(toggle=>toggle.dataset.groupToggle),collapse=event.currentTarget.dataset.groupsAll==="collapse";keys.forEach(key=>collapsedGroups()[key]=collapse);save();rerender();}));
 }
-function groupToolbar(sortMode,scope){return `<div class="group-toolbar"><label>정렬<select data-group-sort="${scope}"><option value="name" ${sortMode==="name"?"selected":""}>이름순</option><option value="qty" ${sortMode==="qty"?"selected":""}>수량순</option><option value="recent" ${sortMode==="recent"?"selected":""}>최근 수정순</option></select></label><button class="btn gray compact" data-groups-all="expand" type="button">전체 펼치기</button><button class="btn gray compact" data-groups-all="collapse" type="button">전체 접기</button></div>`;}
+function groupToolbar(sortMode,scope){return `<div class="group-toolbar"><label>정렬<select data-group-sort="${scope}"><option value="name" ${sortMode==="name"?"selected":""}>이름순</option><option value="qty" ${sortMode==="qty"?"selected":""}>${(scope==="materials"||scope==="warehouse-material")?"단위별 수량순":"수량순"}</option><option value="recent" ${sortMode==="recent"?"selected":""}>최근 수정순</option></select></label><button class="btn gray compact" data-groups-all="expand" type="button">전체 펼치기</button><button class="btn gray compact" data-groups-all="collapse" type="button">전체 접기</button></div>`;}
 function isTodayChanged(item){const raw=String(item.updatedAt||item.updated||"");if(/^\d{4}-\d{2}-\d{2}$/.test(raw))return raw===todayISO();const d=new Date(raw);return Number.isFinite(d.getTime())&&d.toDateString()===new Date().toDateString();}
 function listedGearQty(item){return item.qty==null||String(item.qty).trim()===""||!Number.isFinite(Number(item.qty))?null:Number(item.qty);}
 function gearQtyLabel(item){const qty=listedGearQty(item);return qty===null?"수량 미확인":qty+"대";}
@@ -460,12 +460,12 @@ function lowStockCount(){
 }
 
 function getRecent(n=3){
-  return [...state.records].sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id)).slice(0,n);
+  return [...state.records].sort(compareRecordTime).slice(0,n);
 }
 
 function recordRow(r){
-  const cls = r.status === "pending" ? "red" : (r.type === "사고" ? "blue" : (r.type.includes("지급") ? "green" : "orange"));
-  const statusText = r.stockReview&&r.status==="pending" ? "재고 확인 필요" : r.status === "pending" ? "진행중" : r.type;
+  const cls = r.status === "pending" ? "red" : (r.type === "사고" ? "blue" : (String(r.type||"").includes("지급") ? "green" : "orange"));
+  const statusText = r.stockReview&&r.status==="pending" ? "재고 확인 필요" : r.status === "pending" ? "진행중" : (r.type||"유형 미기록");
   const count=(r.items||[]).length+(r.equipmentItems||[]).length;
   const place=r.location?.detail || recordWarehouseText(r);
   return `<button class="list-row" data-detail="${r.id}" type="button">
@@ -1022,13 +1022,19 @@ function globalSearchRows(){
     }
   });
   catalog.forEach(item => {
-    if([item.name,item.spec,item.memo,item.cat].join(" ").toLowerCase().includes(query)){
-      const total=warehouses.reduce((sum,w)=>sum+Number(state.stock[w]?.[item.name]||0),0);
-      rows.push({kind:"material",id:item.name,title:item.name,sub:`자재 · ${item.spec || item.cat} · ${materialQtyText(total,item.unit,item)}`});
+    const itemText=[item.name,item.spec,item.memo,item.cat].join(" ").toLowerCase();
+    const tokens=query.split(/\s+/),placeTokens=tokens.filter(t=>!itemText.includes(t));
+    const scoped=placeTokens.length&&tokens.some(t=>itemText.includes(t))?warehouses.filter(w=>placeTokens.every(t=>(w+" "+placeLabel(w)).toLowerCase().includes(t))):[];
+    if(!placeTokens.length||scoped.length){
+      const places=(scoped.length?scoped:warehouses).filter(w=>Number(state.stock[w]?.[item.name]||0)>0);
+      if(item.archived&&!places.length)return;
+      const total=(scoped.length?scoped:warehouses).reduce((sum,w)=>sum+Number(state.stock[w]?.[item.name]||0),0);
+      rows.push({kind:"material",id:item.name,title:item.name,sub:`자재 · ${item.spec || item.cat} · ${materialQtyText(total,item.unit,item)} · ${places.length?placeLabel(places[0])+(places.length>1?` 외 ${places.length-1}곳`:""):"보유 창고 없음"}`});
     }
   });
   (state.equipment || []).forEach(item => {
-    if(equipmentSearchText(item).includes(query)) rows.push({kind:"equipment",id:item.id,title:item.name,sub:`장비 · ${item.place || "보관 미지정"} · ${Number(item.qty||0)}대`});
+    if(item.archived&&Number(item.qty||0)===0)return;
+    if(query.split(/\s+/).every(t=>equipmentSearchText(item).includes(t))) rows.push({kind:"equipment",id:item.id,title:item.name,sub:`장비 · ${item.place || "보관 미지정"} · ${gearQtyLabel(item)}${(item.managementNo||item.managementNumber)&&state.equipment.some(x=>x.id!==item.id&&x.name===item.name)?` · 관리번호 ${item.managementNo||item.managementNumber}`:""}`});
   });
   return rows
     .map(row=>({...row,score:row.title.toLowerCase()===query?0:row.title.toLowerCase().startsWith(query)?1:2}))
@@ -1159,7 +1165,7 @@ function renderAllMaterialList(){
     const locations = selectedWarehouses.filter(name => Number(state.stock[name]?.[item.name] || 0) > 0);
     return {...item,total,locations};
   });
-  rows.sort((a,b)=>materialSortMode==="qty"?b.total-a.total:materialSortMode==="recent"?String(b.updatedAt||"").localeCompare(String(a.updatedAt||"")):a.name.localeCompare(b.name,"ko"));
+  rows.sort((a,b)=>materialSortMode==="qty"?(String(a.unit||"").localeCompare(String(b.unit||""),"ko")||b.total-a.total):materialSortMode==="recent"?String(b.updatedAt||"").localeCompare(String(a.updatedAt||"")):a.name.localeCompare(b.name,"ko"));
   const zeroCount=rows.filter(item=>Number(item.total||0)===0).length,showZero=Boolean(state.ui?.showZeroStockInAllMaterials),visibleRows=showZero?rows:rows.filter(item=>Number(item.total||0)>0);
   const totals=new Map();
   for(const item of visibleRows){if(item.total!==0){const unit=item.unit||"단위 미지정";totals.set(unit,addQuantities(totals.get(unit)||0,item.total));}}
@@ -1213,11 +1219,12 @@ function renderAllEquipmentList(){
     if(allResourceCategory !== "all" && item.cat !== allResourceCategory) return false;
     if(allResourceWarehouse !== "all" && item.place !== allResourceWarehouse) return false;
     return !query || equipmentSearchText(item).includes(query);
-  }).sort((a,b)=>equipmentSortMode==="qty"?Number(b.qty||0)-Number(a.qty||0):equipmentSortMode==="recent"?String(b.updatedAt||"").localeCompare(String(a.updatedAt||"")):a.name.localeCompare(b.name,"ko"));
+  }).sort((a,b)=>equipmentSortMode==="qty"?((listedGearQty(b)??-Infinity)-(listedGearQty(a)??-Infinity)||a.name.localeCompare(b.name,"ko")):equipmentSortMode==="recent"?String(b.updatedAt||"").localeCompare(String(a.updatedAt||"")):a.name.localeCompare(b.name,"ko"));
   const equipmentQtyTotal=rows.reduce((sum,item)=>sum+(listedGearQty(item)??0),0);
   const equipmentPlaceCount=new Set(rows.map(item=>item.place||"보관 미지정")).size;
-  document.getElementById("allEquipmentCount").textContent = `검색 결과 ${rows.length}건 · 총 ${equipmentQtyTotal}대${rows.some(i=>listedGearQty(i)===null)?` · 수량 미확인 ${rows.filter(i=>listedGearQty(i)===null).length}건`:''} · ${equipmentPlaceCount}곳`;
-  const forceOpen=Boolean(query);target.innerHTML=rows.length?equipmentCategories.map(cat=>{const grouped=rows.filter(item=>(item.cat||"기타장비")===cat);if(!grouped.length)return "";const content=grouped.map(item=>`<div class="list-row ${listedGearQty(item)===0?"zero-stock":""}">${resourceSelectionMode?`<input class="resource-check" data-select-equipment="${item.id}" type="checkbox" ${selectedResources.has(`equipment:${item.id}`)?"checked":""}>`:""}<button class="row-main" data-all-equipment="${item.id}" type="button"><div><div class="row-title">${esc(item.name)}${isTodayChanged(item)?` <span class="today-chip">오늘 수정</span>`:""}</div><div class="row-sub">${esc(item.spec||item.detail||item.model||"규격 없음")} · ${esc(item.place||"보관 미지정")}${item.memo||item.etc?" · "+esc(item.memo||item.etc):""}</div></div><div class="stock-qty">${gearQtyLabel(item)}</div></button></div>`).join("");return groupedSection("equipment",cat,`${grouped.length}건`,content,forceOpen);}).join(""):`<div class="emptybox resource-empty">검색 결과가 없습니다.${resourceFiltersActive()?`<button class="btn secondary compact" data-clear-empty-filter type="button">검색 조건 지우기</button>`:""}</div>`;
+  const unknown=rows.filter(i=>listedGearQty(i)===null).length;
+  document.getElementById("allEquipmentCount").textContent = [`검색 결과 ${rows.length}건`,rows.length>unknown?`${unknown?"확인된 수량":"총"} ${equipmentQtyTotal}대`:"",unknown?`수량 미확인 ${unknown}건`:"",`${equipmentPlaceCount}곳`].filter(Boolean).join(" · ");
+  const forceOpen=Boolean(query);target.innerHTML=rows.length?equipmentCategories.map(cat=>{const grouped=rows.filter(item=>(item.cat||"기타장비")===cat);if(!grouped.length)return "";const content=grouped.map(item=>`<div class="list-row ${listedGearQty(item)===0?"zero-stock":""}">${resourceSelectionMode?`<input class="resource-check" data-select-equipment="${item.id}" type="checkbox" ${selectedResources.has(`equipment:${item.id}`)?"checked":""}>`:""}<button class="row-main" data-all-equipment="${item.id}" type="button"><div><div class="row-title">${esc(item.name)}${item.managementNo||item.managementNumber?rows.some(x=>x!==item&&x.name===item.name)?` <small>${esc(item.managementNo||item.managementNumber)}</small>`:"":""}${isTodayChanged(item)?` <span class="today-chip">오늘 수정</span>`:""}</div><div class="row-sub">${esc(item.spec||item.detail||item.model||"규격 없음")} · ${esc(item.place||"보관 미지정")}${item.memo||item.etc?" · "+esc(item.memo||item.etc):""}</div></div><div class="stock-qty">${gearQtyLabel(item)}</div></button></div>`).join("");return groupedSection("equipment",cat,`${grouped.length}건`,content,forceOpen);}).join(""):`<div class="emptybox resource-empty">검색 결과가 없습니다.${resourceFiltersActive()?`<button class="btn secondary compact" data-clear-empty-filter type="button">검색 조건 지우기</button>`:""}</div>`;
   target.querySelector("[data-clear-empty-filter]")?.addEventListener("click",()=>document.getElementById("clearResourceFilters")?.click());
   bindGroupedSections(renderAllEquipmentList);target.querySelectorAll("[data-all-equipment]").forEach(button=>button.addEventListener("click",()=>{if(!resourceSelectionMode)openEquipment(button.dataset.allEquipment);}));target.querySelectorAll("[data-select-equipment]").forEach(input=>input.addEventListener("change",()=>{const key=`equipment:${input.dataset.selectEquipment}`;input.checked?selectedResources.add(key):selectedResources.delete(key);renderBulkResourceActions();}));renderBulkResourceActions();
 }
@@ -1445,7 +1452,7 @@ function renderWarehouse(){
 
 function renderWarehouseEquipment(place){
   queueMicrotask(attachEquipmentAvailabilityRows);
-  const list=(state.equipment||[]).filter(item=>item.place===place&&(state.ui?.showZeroStockInWarehouse||listedGearQty(item)!==0));const groups=equipmentCategories.map(cat=>{const rows=list.filter(item=>(item.cat||"기타장비")===cat).sort((a,b)=>equipmentSortMode==="qty"?Number(b.qty||0)-Number(a.qty||0):equipmentSortMode==="recent"?String(b.updatedAt||"").localeCompare(String(a.updatedAt||"")):a.name.localeCompare(b.name,"ko"));if(!rows.length)return"";return groupedSection(`warehouse-equipment-${place}`,cat,`${rows.length}건`,rows.map(item=>`<button class="list-row ${listedGearQty(item)===0?"zero-stock":""}" data-equip="${item.id}" type="button"><div><div class="row-title">${esc(item.name)}${isTodayChanged(item)?` <span class="today-chip">오늘 수정</span>`:""}</div><div class="row-sub">${esc(item.spec||item.detail||"규격 없음")} · ${gearQtyLabel(item)}${item.memo||item.etc?" · "+esc(item.memo||item.etc):""}</div></div><div class="chev">›</div></button>`).join(""));}).join("");return `<div><button class="btn gray compact" id="gearZeroToggle" type="button" aria-pressed="${!state.ui?.showZeroStockInWarehouse}">0재고 숨기기 · ${state.ui?.showZeroStockInWarehouse?"꺼짐":"켜짐"}</button>${groupToolbar(equipmentSortMode,"warehouse-equipment")}${groups||`<div class="emptybox">표시할 장비가 없습니다.</div>`}<button class="btn secondary" id="addEquip" type="button" style="width:100%;margin-top:12px">+ 신규 추가</button></div>`;
+  const list=(state.equipment||[]).filter(item=>item.place===place&&(state.ui?.showZeroStockInWarehouse||listedGearQty(item)!==0));const groups=equipmentCategories.map(cat=>{const rows=list.filter(item=>(item.cat||"기타장비")===cat).sort((a,b)=>equipmentSortMode==="qty"?((listedGearQty(b)??-Infinity)-(listedGearQty(a)??-Infinity)||a.name.localeCompare(b.name,"ko")):equipmentSortMode==="recent"?String(b.updatedAt||"").localeCompare(String(a.updatedAt||"")):a.name.localeCompare(b.name,"ko"));if(!rows.length)return"";return groupedSection(`warehouse-equipment-${place}`,cat,`${rows.length}건`,rows.map(item=>`<button class="list-row ${listedGearQty(item)===0?"zero-stock":""}" data-equip="${item.id}" type="button"><div><div class="row-title">${esc(item.name)}${isTodayChanged(item)?` <span class="today-chip">오늘 수정</span>`:""}</div><div class="row-sub">${esc(item.spec||item.detail||"규격 없음")} · ${gearQtyLabel(item)}${item.memo||item.etc?" · "+esc(item.memo||item.etc):""}</div></div><div class="chev">›</div></button>`).join(""));}).join("");return `<div><button class="btn gray compact" id="gearZeroToggle" type="button" aria-pressed="${!state.ui?.showZeroStockInWarehouse}">0재고 숨기기 · ${state.ui?.showZeroStockInWarehouse?"꺼짐":"켜짐"}</button>${groupToolbar(equipmentSortMode,"warehouse-equipment")}${groups||`<div class="emptybox">표시할 장비가 없습니다.</div>`}<button class="btn secondary" id="addEquip" type="button" style="width:100%;margin-top:12px">+ 신규 추가</button></div>`;
 }
 
 function warehouseFieldMemoHtml(info={}){
@@ -1551,7 +1558,7 @@ function renderStockList(){
   const html = cats.map(cat => {
     const items = catalog.filter(i => i.cat === cat && (showZero || Number(state.stock[selectedWarehouse]?.[i.name]||0)>0) && (!q || [i.name,i.cat,i.spec,i.memo].filter(Boolean).join(" ").toLocaleLowerCase("ko-KR").includes(q)));
     if(!items.length) return "";
-    const sorted=items.sort((a,b)=>materialSortMode==="qty"?Number(state.stock[selectedWarehouse]?.[b.name]||0)-Number(state.stock[selectedWarehouse]?.[a.name]||0):materialSortMode==="recent"?String(b.updatedAt||"").localeCompare(String(a.updatedAt||"")):a.name.localeCompare(b.name,"ko"));return groupedSection(`warehouse-material-${selectedWarehouse}`,cat,`${items.length}종`,sorted.map(i => `
+    const sorted=items.sort((a,b)=>materialSortMode==="qty"?(String(a.unit||"").localeCompare(String(b.unit||""),"ko")||Number(state.stock[selectedWarehouse]?.[b.name]||0)-Number(state.stock[selectedWarehouse]?.[a.name]||0)):materialSortMode==="recent"?String(b.updatedAt||"").localeCompare(String(a.updatedAt||"")):a.name.localeCompare(b.name,"ko"));return groupedSection(`warehouse-material-${selectedWarehouse}`,cat,`${items.length}종`,sorted.map(i => `
       <button class="stock-line ${Number(state.stock[selectedWarehouse]?.[i.name]||0)===0?"zero-stock":""}" data-stock="${esc(i.name)}" type="button">
         <div>
           <div class="stock-name">${esc(i.name)}${isTodayChanged(i)?` <span class="today-chip">오늘 수정</span>`:""}</div>
@@ -2332,7 +2339,7 @@ function openSavedRecord(id,message,before){
 }
 
 function summarizeItems(items,equipmentItems=[],flow=""){ 
-  const parts=(items || []).slice(0,2).map(i => {
+  const parts=(items || []).slice(0,equipmentItems?.length?1:2).map(i => {
     if(i.before !== undefined && i.after !== undefined){
       const before=recordedNumber(i.before),after=recordedNumber(i.after);
       if(before!==null&&after!==null){
@@ -2349,10 +2356,14 @@ function summarizeItems(items,equipmentItems=[],flow=""){
   return (parts.join(" · ") || "품목 없음")+(total>parts.length?` 외 ${total-parts.length}건`:"");
 }
 
+function compareRecordTime(a,b){
+  const stamp=r=>Date.parse(r.occurredAt||(r.date&&r.time?recordedAt(r.date,r.time):r.createdAt))||0;
+  return String(b.date||"").localeCompare(String(a.date||""))||stamp(b)-stamp(a)||String(b.id||"").localeCompare(String(a.id||""));
+}
 function historyDateGroups(records){
-  const groups = {};
+  const groups = Object.create(null);
   records.forEach(r => {
-    const d = r.date || todayISO();
+    const d = r.date || "";
     if(!groups[d]) groups[d] = [];
     groups[d].push(r);
   });
@@ -2380,7 +2391,7 @@ function historyDateMatches(record){
 function historyFlowMatches(record){
   if(historyFlowFilter === "all") return true;
   if(historyFlowFilter === "긴급") return Boolean(record.quick || record.flow === "긴급");
-  return record.flow === historyFlowFilter;
+  return (record.pendingFlow||record.flow) === historyFlowFilter;
 }
 
 function recordWarehouseNames(record,{target=false}={}){
@@ -2434,7 +2445,7 @@ function updateHistoryResultCount(total){
   }
 }
 function renderBaseHistory(){
-  const all = [...state.records].sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id));
+  const all = [...state.records].sort(compareRecordTime);
   const counts = {all:all.length,pending:all.filter(r=>r.status === "pending"&&!r.stockReview).length,review:all.filter(r=>r.status==="pending"&&r.stockReview).length,done:all.filter(r=>r.status !== "pending").length};
   if(historyFilter==="review"&&!counts.review)historyFilter="all";
   let filtered = all.filter(record => historyStatusMatches(record));
@@ -2462,6 +2473,7 @@ function renderBaseHistory(){
     <div class="filter-result" id="historyResultCount" role="status"></div>
     <div id="histList">${renderHistoryListHtml(filtered)}</div>
   `;
+  view.querySelectorAll("[data-hfilter],[data-history-date]").forEach(button=>button.setAttribute("aria-pressed",String(button.classList.contains("active"))));
   view.querySelectorAll("[data-hfilter]").forEach(button => button.addEventListener("click", () => { historyFilter=button.dataset.hfilter; renderHistory(); }));
   view.querySelectorAll("[data-history-date]").forEach(button=>button.addEventListener("click",()=>{historyDateFilter=button.dataset.historyDate;if(historyDateFilter==="custom"&&!historyCustomFrom&&!historyCustomTo){historyCustomFrom=monthStartISO();historyCustomTo=todayISO();}renderHistory();}));
   document.getElementById("historyCustomFrom")?.addEventListener("change",event=>{historyCustomFrom=event.target.value;renderHistory();});
@@ -2489,7 +2501,7 @@ function baseHistoryListHtml(records){
   }
   const defs=["처리 필요","자재·장비 함께 기록","자재 입·출고","장비 사용·반납","재고실사·재고수정","창고 간 이동","기타 기록"];
   const typeOf=r=>r.status==="pending"?"처리 필요":r.flow==="재고수정"?"재고실사·재고수정":r.flow==="이송"?"창고 간 이동":(r.items||[]).length&&(r.equipmentItems||[]).length?"자재·장비 함께 기록":(r.equipmentItems||[]).length?"장비 사용·반납":["입고","출고","긴급"].includes(r.flow)?"자재 입·출고":"기타 기록";
-  return defs.map(type=>{const typeRows=records.filter(record=>typeOf(record)===type);if(!typeRows.length)return"";const content=historyDateGroups(typeRows).map(g=>`<div class="history-date-label">${fmtDate(g.date)}</div><div class="list-card">${g.records.map(r => `
+  return defs.map(type=>{const typeRows=records.filter(record=>typeOf(record)===type);if(!typeRows.length)return"";const content=historyDateGroups(typeRows).map(g=>`<div class="history-date-label">${g.date?fmtDate(g.date):"날짜 미기록"}</div><div class="list-card">${g.records.map(r => `
         <button class="list-row" data-detail="${r.id}" type="button">
           <div>
             <div><span class="badge ${r.status === "pending" ? "red" : (r.flow === "입고" ? "green" : r.flow === "재고수정" ? "orange" : "blue")}">${r.status === "pending" ? recordStateLabel(r) : esc(r.flow || r.type)}</span></div>
@@ -3518,7 +3530,7 @@ function vehicleMonthlyDistance(place){const month=todayISO().slice(0,7);return 
 
 function vesselMonthlyMileage(place){const month=todayISO().slice(0,7);return effectiveOpLogs(place).filter(log=>String(log.date||"").slice(0,7)===month).reduce((sum,log)=>sum+Number(log.mileageDiff||0),0);}
 function vesselFuelTotals(place){const now=todayISO(),month=now.slice(0,7),year=now.slice(0,4),logs=effectiveOpLogs(place);return {current:Number(state.assetOps?.[place]?.fuelBase||0),month:logs.filter(log=>String(log.date||"").slice(0,7)===month).reduce((sum,log)=>sum+Number(log.fuel||0),0),year:logs.filter(log=>String(log.date||"").slice(0,4)===year).reduce((sum,log)=>sum+Number(log.fuel||0),0)};}
-function vesselFuelRows(place){const rows=[...(state.assetOps?.[place]?.fuelLogs||[])].slice(-5).reverse();return rows.length?rows.map(log=>`<div class="row-sub">${fmtDate(log.date)} · ${Number(log.amount||0)>0?"+":""}${Number(log.amount||0)}L${log.memo?` · ${esc(log.memo)}`:""}</div>`).join(""):`<div class="row-sub">연료 수급 이력이 없습니다.</div>`;}
+function vesselFuelRows(place){const rows=[...(state.assetOps?.[place]?.fuelLogs||[])].reverse().sort((a,b)=>String(b.date||"").localeCompare(String(a.date||""))).slice(0,5);return rows.length?rows.map(log=>`<div class="row-sub">${fmtDate(log.date)} · ${Number(log.amount||0)>0?"+":""}${Number(log.amount||0)}L${log.memo?` · ${esc(log.memo)}`:""}</div>`).join(""):`<div class="row-sub">연료 수급 이력이 없습니다.</div>`;}
 function vesselMonthlySummary(place,month=todayISO().slice(0,7)){const logs=effectiveOpLogs(place).filter(log=>String(log.date||"").slice(0,7)===month);return {logs,count:logs.length,mileage:logs.reduce((sum,log)=>sum+Number(log.mileageDiff||0),0),port:logs.reduce((sum,log)=>sum+Number(log.portDiff||0),0),starboard:logs.reduce((sum,log)=>sum+Number(log.starboardDiff||0),0)};}
 
 function renderOps(place){
@@ -3815,7 +3827,7 @@ function openEquipment(id, options={}){
   document.getElementById("headTitle").innerHTML = `<div class="page-title">장비 상세</div><div class="date">${esc(item.name)}</div>`;
   if(options.push!==false){scrollToTop();animatePageChange(page,"equipmentDetail",{detail:true});}
   const legacy = [item.model ? `모델 ${item.model}` : "",item.battery ? `배터리 ${item.battery}` : "",item.fuel ? `연료 ${item.fuel}` : "",item.status && item.status !== "정상" ? `상태 ${item.status}` : ""].filter(Boolean);
-  const usage=[...state.records].filter(record=>(record.equipmentItems || []).some(entry=>entry.id===item.id)).sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id));
+  const usage=[...state.records].filter(record=>(record.equipmentItems || []).some(entry=>entry.id===item.id)).sort(compareRecordTime);
   const maintenance=[...(item.maintenance || [])].sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id));
   const accessories=[...(item.accessories || [])].sort((a,b)=>a.name.localeCompare(b.name,"ko"));
   const moves=[...(item.moves || [])].sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id));
