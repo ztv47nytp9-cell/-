@@ -3971,22 +3971,34 @@ function askConfirm(title,message,confirmText="확인",danger=false,details=[]){
 
 function requestUploadPin(title="올리기 PIN 확인",subtitle="내 자료 올리기 권한 확인"){
   return new Promise(resolve=>{
-    modalConfirmResolver=value=>resolve(value===false?null:value);
+    const dialog=document.getElementById("entryDialog"),retained=document.createDocumentFragment(),scroll=dialog.scrollTop;
+    const restore=!!dialog.querySelector("#cloudUploadNow");
+    if(restore)while(dialog.firstChild)retained.append(dialog.firstChild);
     openEntryModal(`${entryHeader(title,subtitle)}
       <div class="form">
         <label>PIN<input id="uploadPinInput" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" placeholder="숫자 4자리"></label>
         <div class="entry-actions"><button class="btn gray" id="cancelUploadPin" type="button">취소</button><button class="btn primary" id="acceptUploadPin" type="button">확인</button></div>
       </div>`);
     const finish=value=>{
-      const resolver=modalConfirmResolver;
+      if(modalConfirmResolver!==finish)return;
       modalConfirmResolver=null;
-      document.getElementById("entryModal").classList.remove("show");
-      document.getElementById("entryDialog").innerHTML="";
-      unlockPageScroll("entry");
-      if(resolver)resolver(value);
+      if(restore){dialog.replaceChildren(retained);dialog.scrollTop=scroll;dialog.focus({preventScroll:true});}
+      else closeEntryModal();
+      resolve(value===false?null:value);
     };
+    modalConfirmResolver=finish;
     document.getElementById("cancelUploadPin")?.addEventListener("click",()=>finish(null));
-    document.getElementById("acceptUploadPin")?.addEventListener("click",()=>finish(document.getElementById("uploadPinInput")?.value||""));
+    const input=document.getElementById("uploadPinInput"),accept=document.getElementById("acceptUploadPin");
+    const error=document.createElement("small");error.setAttribute("role","status");input.after(error);
+    accept.addEventListener("click",async()=>{
+      if(accept.disabled)return;
+      const pin=input.value;accept.disabled=true;
+      const ok=/^\d{4}$/.test(pin)&&await verifyCloudUploadPin(pin);
+      if(modalConfirmResolver!==finish)return;
+      if(ok){finish(pin);return;}
+      accept.disabled=false;input.value="";error.textContent="숫자 4자리 PIN을 다시 입력해주세요.";input.focus();
+    });
+    input.addEventListener("keydown",event=>{if(event.key==="Enter"){event.preventDefault();accept.click();}});
     bindPinNumberInput("uploadPinInput");
     document.getElementById("uploadPinInput")?.focus();
   });
@@ -4734,8 +4746,18 @@ function cloudDashboardHtml(latest=null,{loading=false,error=""}={}){
 }
 
 function bindCloudDashboard(){
-  document.getElementById("cloudApplyNow")?.addEventListener("click",()=>{closeEntryModal();loadCloudShareSnapshot();});
-  document.getElementById("cloudUploadNow")?.addEventListener("click",()=>{closeEntryModal();uploadCloudShareSnapshot();});
+  for(const [id,action] of [["cloudApplyNow",loadCloudShareSnapshot],["cloudUploadNow",uploadCloudShareSnapshot]]){
+    const button=document.getElementById(id);
+    button?.addEventListener("click",async()=>{
+      if(button.disabled)return;
+      const active=()=>document.getElementById(id)===button;
+      const controls=[...button.closest(".cloud-share-form").querySelectorAll("button")].filter(el=>!el.disabled);
+      const label=button.querySelector("strong"),original=label.textContent;
+      controls.forEach(el=>el.disabled=true);label.textContent="공유본 확인 중…";
+      try{if(await action(active)&&active())closeEntryModal();}
+      finally{controls.forEach(el=>el.disabled=false);label.textContent=original;}
+    });
+  }
   document.getElementById("cloudUndoNow")?.addEventListener("click",()=>{closeEntryModal();restoreCloudApplySafetyPoint();});
   document.getElementById("cloudRefreshNow")?.addEventListener("click",()=>refreshCloudShareWithPopup());
   document.getElementById("cloudPinNow")?.addEventListener("click",()=>openUploadPinSettings());
@@ -4895,14 +4917,15 @@ async function checkCloudShareNotice({force=false,notify=false,silent=false}={})
   }
 }
 
-async function uploadCloudShareSnapshot(){return runWorkflow("cloud-upload",performUploadCloudShareSnapshot);}
-async function performUploadCloudShareSnapshot(){
+async function uploadCloudShareSnapshot(active){return runWorkflow("cloud-upload",()=>performUploadCloudShareSnapshot(active));}
+async function performUploadCloudShareSnapshot(active=()=>true){
   closeMenu();
   const config=cloudReadConfig();
   if(!cloudShareReady(config)){openCloudShareSettings();showFeedback("info","클라우드 설정을 확인해주세요");return;}
   try{
     if(!currentCloudUploadPinHash()){
       const synced=await syncCloudUploadPinFromLatest();
+      if(!active())return;
       if(synced) showFeedback("info","클라우드 PIN 설정을 불러왔습니다");
     }
     if(!currentCloudUploadPinHash()){
@@ -4922,6 +4945,7 @@ async function performUploadCloudShareSnapshot(){
     }
     // No write without a successful read: never overwrite an unknown remote state.
     const latest=await fetchLatestCloudShareSnapshot();
+    if(!active())return;
     const warnings=uploadWarningLines(snapshot,latest);
     if(!await askConfirm("내 자료 올리기 확인",`${uploadPreviewText(snapshot,latest)}\n\n현재 내 보관 현황을 클라우드 공유자료로 올릴까요?`,"다음"))return;
     if(warnings.length && !await askConfirm("주의사항 재확인",`${warnings.join("\n")}\n\n그래도 계속 올릴까요?`,"계속"))return;
@@ -4930,9 +4954,11 @@ async function performUploadCloudShareSnapshot(){
     if(!await verifyCloudUploadPin(pin)){showFeedback("error","PIN이 맞지 않습니다");return;}
     if(!sourceUnchanged()){showFeedback("warning","확인 중 내 자료나 연결 설정이 바뀌었습니다 · 다시 올려주세요");return;}
     const current=await fetchLatestCloudShareSnapshot();
+    if(!active())return;
     if(JSON.stringify(current)!==JSON.stringify(latest)){showFeedback("warning","다른 기기의 공유자료가 바뀌었습니다 · 최신 자료 확인 후 다시 올려주세요");return;}
     const payload={site_id:config.siteId,title:config.title,snapshot,updated_at:new Date().toISOString()};
     const existing=await supabaseRest(`resource_snapshots?select=id,updated_at&site_id=eq.${encodeURIComponent(config.siteId)}&snapshot->>kind=eq.victor-resource-share&order=updated_at.desc.nullslast,created_at.desc.nullslast,id.desc&limit=1`,{cloudConfig:config});
+    if(!active())return;
     if(!sourceUnchanged()){showFeedback("warning","확인 중 내 자료가 바뀌었습니다 · 다시 올려주세요");return;}
     let written;
     if(existing?.[0]?.id){
@@ -4954,15 +4980,17 @@ async function performUploadCloudShareSnapshot(){
     cloudShareNotice={kind:"same",summary:snapshotSummary(snapshot),snapshot};
     showFeedback("success","클라우드에 올렸습니다 · 다른 기기에서 바로 적용 가능");
     if(page==="home") renderHome();
+    return true;
   }catch(error){console.warn("[Victor] 클라우드 공유 업로드 실패",error);showFeedback("error",cloudErrorMessage(error));}
 }
 
-async function loadCloudShareSnapshot(){
+async function loadCloudShareSnapshot(active=()=>true){
   closeMenu();
   try{
     const sharedSnapshot=await fetchLatestCloudShareSnapshot();
+    if(!active())return;
     if(!sharedSnapshot){showFeedback("info","아직 클라우드 공유자료가 없습니다");return;}
-    await applySharedSnapshot(sharedSnapshot,"클라우드 공유자료");
+    return await applySharedSnapshot(sharedSnapshot,"클라우드 공유자료");
   }catch(error){console.warn("[Victor] 클라우드 공유 조회 실패",error);showFeedback("error",cloudErrorMessage(error));}
 }
 
