@@ -847,6 +847,7 @@ function createCloudApplySafetyPoint(snapshot){
   try{
     localStorage.setItem(CLOUD_APPLY_SAFETY_KEY,JSON.stringify({
       label:"공유자료 가져오기 전",
+      shareHistory:Object.fromEntries(["lastAppliedAt","lastAppliedSource","lastAppliedCloudAt","lastAppliedDeviceName","lastAppliedFromDevice","shareBase"].map(k=>[k,readCloudShareMeta()[k]??null])),
       createdAt:new Date().toISOString(),
       cloudAt:snapshot?.cloudUpdatedAt || snapshot?.cloudSharedAt || snapshot?.createdAt || "",
       state:JSON.parse(JSON.stringify(state))
@@ -868,7 +869,7 @@ async function restoreCloudApplySafetyPoint(){
   state=normalize(point.state);
   if(!saveStateTransaction(beforeState,"되돌리기 저장에 실패했습니다. 현재 자료는 그대로 유지됩니다"))return;
   localStorage.removeItem(CLOUD_APPLY_SAFETY_KEY);
-  saveCloudShareMeta({lastAppliedAt:null,lastAppliedSource:null,lastAppliedCloudAt:null});
+  saveCloudShareMeta(point.shareHistory||{lastAppliedAt:null,lastAppliedSource:null,lastAppliedCloudAt:null,shareBase:null});
   refreshGlobals(state);
   page="home";
   updateBottomNav();
@@ -3964,7 +3965,7 @@ function askConfirm(title,message,confirmText="확인",danger=false,details=[]){
     modalConfirmResolver=finish;
     openEntryModal(`${entryHeader(title,"내용을 확인해주세요")}<div class="confirm-message">${esc(message)}</div><div class="entry-actions"><button class="btn gray" id="cancelConfirm" type="button">취소</button><button class="btn ${danger?"solid-danger":"primary"}" id="acceptConfirm" type="button">${esc(confirmText)}</button></div>`);
     document.getElementById("cancelConfirm")?.addEventListener("click",()=>finish(false));
-    if(details.length){const section=document.createElement("details"),label=document.createElement("summary"),lines=document.createElement("div");label.textContent="재고 변경 내역 "+details.length+"건";lines.style.whiteSpace="pre-line";lines.textContent=details.join("\n");section.append(label,lines);dialog.querySelector(".entry-actions").before(section);}
+    if(details.length){const section=document.createElement("details"),label=document.createElement("summary"),lines=document.createElement("div");label.textContent="변경 내역 "+details.length+"건";lines.style.whiteSpace="pre-line";lines.textContent=details.join("\n");section.append(label,lines);dialog.querySelector(".entry-actions").before(section);}
     document.getElementById("acceptConfirm")?.addEventListener("click",()=>finish(true));
   });
 }
@@ -4265,16 +4266,26 @@ function cloudSnapshotTime(snapshot){
   return snapshot?.cloudUpdatedAt || snapshot?.cloudSharedAt || snapshot?.createdAt || "";
 }
 
+function shareCanonical(value){
+  return JSON.stringify(value,(_key,v)=>v&&typeof v==="object"&&!Array.isArray(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]])):v);
+}
+// Compact change indicator for the UI only; writes still check the server row version.
+function shareFingerprint(resource){
+  const str=shareCanonical(resource);let a=2166136261,b=5381;
+  for(let i=0;i<str.length;i++){a=Math.imul(a^str.charCodeAt(i),16777619);b=Math.imul(b,33)^str.charCodeAt(i);}
+  return [str.length,a,b].join(":");
+}
+function shareBaseline(snapshot,resource){
+  return {scope:snapshot.cloudScope,version:snapshot.cloudRowVersion,id:snapshot.cloudRowId,local:shareFingerprint(resource)};
+}
 function cloudStatusLabel(latest){
   if(!latest) return "아직 확인 안 됨";
-  const cloudTime=dateMs(cloudSnapshotTime(latest));
-  const meta=readCloudShareMeta();
-  const localTime=Math.max(dateMs(latestLocalResourceAt())||0,dateMs(meta.lastUploadedAt)||0,dateMs(meta.lastAppliedCloudAt)||0);
-  if(!Number.isFinite(cloudTime) || !cloudTime) return "아직 확인 안 됨";
-  if(!Number.isFinite(localTime) || !localTime) return "클라우드 자료가 최신";
-  if(cloudTime > localTime + 1000) return "클라우드 자료가 최신";
-  if(localTime > cloudTime + 1000) return "내 자료가 최신";
-  return "이미 최신";
+  const local=buildCloudResourceState(),remote=resourceStateFromSnapshot(latest);
+  if(shareCanonical(local)===shareCanonical(remote))return "이미 최신";
+  const base=readCloudShareMeta().shareBase;
+  if(!base||!base.version||!latest.cloudRowVersion||base.scope!==latest.cloudScope)return "차이 확인 필요";
+  const mine=base.local!==shareFingerprint(local),theirs=base.version!==latest.cloudRowVersion||base.id!==latest.cloudRowId;
+  return mine&&theirs?"양쪽 자료 변경":mine?"내 자료가 최신":theirs?"클라우드 자료가 최신":"이미 최신";
 }
 
 function materialQtyMap(resource){
@@ -4345,13 +4356,36 @@ function compareSharedSnapshot(snapshot){
   const currentMaterials=materialQtyMap(current);
   const nextMaterials=materialQtyMap(next);
   const materialKeys=new Set([...currentMaterials.keys(),...nextMaterials.keys()]);
+  const units=new Map([...(current.catalog||[]),...(next.catalog||[])].map(item=>[item.name,item.unit||""]));
   let materialQtyChanges=0;const materialDiffs=[];
-  materialKeys.forEach(key=>{const before=currentMaterials.get(key)||0,after=nextMaterials.get(key)||0;if(before!==after){materialQtyChanges++;materialDiffs.push(`${key.replace("|||"," · ")}: ${before} → ${after}`);}});
+  materialKeys.forEach(key=>{const before=currentMaterials.get(key)||0,after=nextMaterials.get(key)||0;if(before!==after){materialQtyChanges++;materialDiffs.push(`${key.replace("|||"," · ")}: ${before} → ${after} ${units.get(key.split("|||")[1])||""}`.trim());}});
   const currentEquipment=equipmentCompareMap(current);
   const nextEquipment=equipmentCompareMap(next);
   const equipmentKeys=new Set([...currentEquipment.keys(),...nextEquipment.keys()]);
   let equipmentChanges=0;
   equipmentKeys.forEach(key=>{if((currentEquipment.get(key)||"")!==(nextEquipment.get(key)||""))equipmentChanges++;});
+  const localCatalog=new Map((current.catalog||[]).map(item=>[item.name,item])),remoteCatalog=new Map((next.catalog||[]).map(item=>[item.name,item]));
+  for(const name of new Set([...localCatalog.keys(),...remoteCatalog.keys()])){
+    if(!remoteCatalog.has(name))materialDiffs.push("이 기기에만 있는 자재 · "+name);
+    else if(!localCatalog.has(name))materialDiffs.push("신규 자재 · "+name);
+    else if(shareCanonical(localCatalog.get(name))!==shareCanonical(remoteCatalog.get(name)))materialDiffs.push("자재 정보 변경 · "+name);
+  }
+  const gearDiffs=[];
+  const localGear=new Map((current.equipment||[]).map(item=>[item.id,item]));
+  for(const item of next.equipment||[]){
+    const prior=localGear.get(item.id);
+    if(!prior||shareCanonical(prior)!==shareCanonical(item))gearDiffs.push((prior?"장비 변경 · ":"장비 추가 · ")+item.name+(prior&&shareCanonical(prior.maintenance)!==shareCanonical(item.maintenance)?" · 정비내역 변경":""));
+    localGear.delete(item.id);
+  }
+  for(const item of localGear.values())gearDiffs.push("장비 제외 · "+item.name);
+  equipmentChanges=Math.max(gearDiffs.length,equipmentChanges);
+  materialDiffs.push(...gearDiffs);
+  for(const place of nextWarehouses){
+    if(currentWarehouses.has(place)&&shareCanonical(current.warehouseInfos?.[place])!==shareCanonical(next.warehouseInfos?.[place]))materialDiffs.push("창고 정보 변경 · "+place);
+  }
+  for(const place of new Set([...Object.keys(current.assetOps||{}),...Object.keys(next.assetOps||{})])){
+    if(shareCanonical(current.assetOps?.[place])!==shareCanonical(next.assetOps?.[place]))materialDiffs.push("운용자료 변경 · "+place);
+  }
   return {addedWarehouses,removedWarehouses,materialQtyChanges,materialDiffs,equipmentChanges,next};
 }
 
@@ -4364,8 +4398,9 @@ function shareApplyPreviewText(snapshot,changes=compareSharedSnapshot(snapshot))
     `없어지는 보관장소: ${changes.removedWarehouses.length}곳${changes.removedWarehouses.length?` (${changes.removedWarehouses.slice(0,3).join(", ")}${changes.removedWarehouses.length>3?" 외":""})`:""}`,
     `수량이 바뀌는 자재: ${changes.materialQtyChanges}건`,
     `바뀌는 장비: ${changes.equipmentChanges}건`,
+    `전체 변경 내역: ${changes.materialDiffs.length}건`,
     `현재 장비 연결이 없어지는 과거 기록: ${sharedHistoricalLinkCount(changes.next)}건 (기록 내용 유지)`,
-    "유지됨: 기존 이력, 메모",
+    "이 기기에 유지: 등록 이력·개인 메모",
     "적용 전 자동 안전지점이 생성됩니다."
   ].join("\n") + snapshotCautionText(snapshot);
 }
@@ -4376,11 +4411,13 @@ function uploadWarningLines(snapshot,latest=null){
   if(snapshotTotalQuantity(snapshot)===0)warnings.push("총 보관량이 0입니다.");
   if(latest){
     const latestSummary=snapshotSummary(latest);
-    if(latestSummary.materials>0 && summary.materials<Math.max(3,Math.floor(latestSummary.materials*0.5)))warnings.push("자재 종류가 기존 클라우드 자료보다 크게 적습니다.");
-    if(latestSummary.equipment>0 && summary.equipment<Math.floor(latestSummary.equipment*0.5))warnings.push("장비 수가 기존 클라우드 자료보다 크게 적습니다.");
+    if(latestSummary.materials>0 && summary.materials<=latestSummary.materials*0.5)warnings.push(`자재 ${latestSummary.materials}종 → ${summary.materials}종`);
+    if(latestSummary.equipment>0 && summary.equipment<=latestSummary.equipment*0.5)warnings.push(`장비 ${latestSummary.equipment}대 → ${summary.equipment}대`);
     const cloudTime=dateMs(cloudSnapshotTime(latest));
     const localTime=dateMs(latestLocalResourceAt());
-    if(cloudTime && (!localTime || cloudTime>localTime+1000))warnings.push("클라우드 자료가 내 자료보다 최신일 수 있습니다.");
+    const status=cloudStatusLabel(latest);
+    if(status==="양쪽 자료 변경")warnings.push("양쪽에서 수정했습니다. 보내면 공유본의 변경 내용을 덮어씁니다.");
+    else if(status==="클라우드 자료가 최신"||(status==="차이 확인 필요"&&cloudTime&&(!localTime||cloudTime>localTime+1000)))warnings.push("공유자료가 내 자료보다 최신일 수 있습니다.");
   }
   return warnings;
 }
@@ -4391,12 +4428,12 @@ function uploadPreviewText(snapshot,latest=null){
   const warnings=uploadWarningLines(snapshot,latest);
   return [
     `공유자료: ${cloudReadConfig().title}`,
-    `올릴 기준: ${fmtDateTime(snapshot.createdAt)}`,
+    `내 자료 기준: ${fmtDateTime(latestLocalResourceAt()||snapshot.createdAt)}`,
     `보관장소: ${summary.warehouses}곳`,
     `자재: ${summary.materials}종`,
     `장비: ${summary.equipment}개`,
     `보유 수량: ${snapshotQuantitySummary(snapshot)}`,
-    latestSummary?`현재 클라우드: ${fmtDateTime(latestSummary.date)} · 자재 ${latestSummary.materials}종 · 장비 ${latestSummary.equipment}개`:"현재 클라우드: 자료 없음 또는 미확인",
+    latestSummary?`현재 공유본: ${fmtDateTime(latestSummary.date)} · 자재 ${latestSummary.materials}종 · 장비 ${latestSummary.equipment}대`:"첫 공유 · 아직 공유본이 없습니다",
     warnings.length?`주의: ${warnings.join(" / ")}`:"주의: 특별한 이상 없음",
     "이 작업은 다른 기기의 공유자료를 바꿉니다."
   ].join("\n");
@@ -4474,6 +4511,9 @@ async function performApplySharedSnapshot(snapshot,source){
   const linkIssues=sharedResourceLinkIssues(next);
   if(linkIssues.length){showLinkedWork("공유자료 적용 보류",linkIssues.map(issue=>issue.message).slice(0,5).join("\n"),{records:linkIssues.map(issue=>issue.record)});return false;}
   const changesPreview=compareSharedSnapshot(snapshot);
+  const keptNames=new Set(next.catalog.map(item=>item.name));
+  const missing=(state.catalog||[]).filter(item=>!keptNames.has(item.name));
+  if(missing.length){showFeedback("warning",`가져오기 보류 · 이 기기에만 있는 자재 ${missing.length}종: ${missing.slice(0,3).map(item=>item.name).join(", ")}`);return false;}
   if(!await askConfirm(`${source} 적용 미리보기`,`${shareApplyPreviewText(snapshot,changesPreview)}\n\n현재 앱의 보관·자재·장비 내용이 이 자료로 바뀝니다.\n계속할까요?`,"적용",false,changesPreview.materialDiffs))return false;
   if(sourceState!==JSON.stringify(state)||sourceDisk!==localStorage.getItem(KEY)){showFeedback("warning","확인 중 자료가 바뀌었습니다 · 최신 자료를 다시 확인해주세요");return false;}
   const beforeState=JSON.stringify(state);
@@ -4513,6 +4553,7 @@ async function performApplySharedSnapshot(snapshot,source){
     pinPatch.uploadPinUpdatedAt=snapshot.uploadPinUpdatedAt || "";
   }
   saveCloudShareMeta({lastAppliedAt:new Date().toISOString(),lastAppliedSource:source,lastAppliedCloudAt:snapshot?.cloudUpdatedAt || snapshot?.cloudSharedAt || snapshot?.createdAt || "",lastAppliedDeviceName:victorDeviceLabel(),lastAppliedFromDevice:snapshot?.cloudUploadedBy || snapshot?.createdBy || "",...pinPatch});
+  if(snapshot.cloudScope)saveCloudShareMeta({shareBase:shareBaseline(snapshot,buildCloudResourceState())});
   cloudShareNotice=null;
   showFeedback("success","공유자료를 현재 앱에 적용했습니다");
   return true;
@@ -4701,6 +4742,8 @@ function cloudDashboardHtml(latest=null,{loading=false,error=""}={}){
   const status=loading?"클라우드 확인 중":error?"확인 실패":cloudStatusLabel(latest);
   const statusTitle=loading?"확인 중":error?"확인 실패":!latest?"공유자료 없음":status==="클라우드 자료가 최신"?"새 자료 있음":status==="내 자료가 최신"?"올리기 가능":status==="이미 최신"?"최신 상태":"확인 필요";
   const statusHint=loading?"최신 상태를 확인하고 있습니다":error?"최신 확인을 다시 눌러주세요":!latest?"내 자료를 올려 공유하세요":status==="클라우드 자료가 최신"?"가져오면 반영됩니다":status==="내 자료가 최신"?"올리면 공유됩니다":status==="이미 최신"?"할 작업 없음":"최신 확인을 눌러주세요";
+  const compareFirst=!!latest&&!loading&&!error&&["양쪽 자료 변경","차이 확인 필요"].includes(status);
+  const sendFirst=!loading&&!error&&(!latest||status==="내 자료가 최신");
   const cloudLabel=loading||error?"이전 확인자료":"공유자료";
   const cloudLine=cloudSummary?`자재 ${cloudSummary.materials}종 · 장비 ${cloudSummary.equipment}대`:(loading?"확인 중":error?"미확인":"자료 없음");
   const localLine=`자재 ${localSummary.materials}종 · 장비 ${localSummary.equipment}대`;
@@ -4709,21 +4752,23 @@ function cloudDashboardHtml(latest=null,{loading=false,error=""}={}){
     <div class="form cloud-share-form">
       <div class="share-status-card ${latest&&!loading&&!error?"ready":""}" role="status" aria-live="polite">
         <div class="share-status-label">${esc(config.title)}</div>
-        <div class="share-status-title">${esc(statusTitle)}</div>
-        <div class="share-status-brief">${esc(statusHint)}</div>
+        <div class="share-status-title">${esc(compareFirst?status:statusTitle)}</div>
+        <div class="share-status-brief">${esc(compareFirst?"보내거나 받기 전에 변경 내용을 확인하세요.":statusHint)}</div>
         <div class="share-time-note">${esc(lastAction)}</div>
         ${cloudSummary?`<div class="share-copy-version">공유본 기준 ${esc(fmtShareTime(latest.cloudRowVersion||cloudSummary.date))}</div>`:""}
       </div>
       ${error?`<div class="callout">${esc(error)}</div>`:""}
       <div class="share-local-save"><strong>${state.savedAt?"이 기기 저장됨":"이 기기 자료"}</strong><span>${state.savedAt?esc(fmtShareTime(state.savedAt)):"첫 저장 전"} · 자동 전송 안 함</span></div>
+      ${compareFirst?'<button class="btn primary" id="cloudCompareNow" type="button">차이 확인</button>':""}
       <div class="cloud-main-actions">
-        <button class="btn primary" id="cloudApplyNow" type="button" ${loading||error||!latest?"disabled":""}><span aria-hidden="true">↓</span><strong>공유자료 받기</strong><small>이 기기에 반영</small></button>
-        <button class="btn secondary" id="cloudUploadNow" type="button" ${loading||error?"disabled":""}><span aria-hidden="true">↑</span><strong>내 자료 보내기</strong><small>공유자료 변경</small></button>
+        <button class="btn ${sendFirst||compareFirst?"secondary":"primary"}" id="cloudApplyNow" type="button" ${loading||error||!latest||status==="이미 최신"?"disabled":""}><span aria-hidden="true">↓</span><strong>공유자료 받기</strong><small>이 기기에 반영</small></button>
+        <button class="btn ${sendFirst?"primary":"secondary"}" id="cloudUploadNow" type="button" ${loading||error||status==="이미 최신"?"disabled":""}><span aria-hidden="true">↑</span><strong>내 자료 보내기</strong><small>공유자료 변경</small></button>
       </div>
       <div class="cloud-sub-actions">
         <button class="btn gray" id="cloudRefreshNow" type="button" ${loading?"disabled":""}>${loading?"확인 중…":"최신 확인"}</button>
       </div>
-      <div class="row-sub share-scope-note">자원만 공유 · 이력·메모는 이 기기에 보관</div>
+      ${safety&&undo.allowed?'<button class="btn gray cloud-restore" id="cloudUndoNow" type="button">최근 가져오기 되돌리기</button>':""}
+      <div class="row-sub share-scope-note">공유: 재고·장비·창고 메모·운용자료<br>이 기기에 유지: 등록 이력·개인 메모</div>
       <details class="cloud-detail-fold">
         <summary>자료 비교·관리</summary>
         <div class="share-mini-summary"><span><strong>내 자료</strong><small>${esc(localLine)}</small></span><span><strong>${esc(cloudSummary?cloudLabel:"공유자료")}</strong><small>${esc(cloudLine)}</small></span></div>
@@ -4740,12 +4785,17 @@ function cloudDashboardHtml(latest=null,{loading=false,error=""}={}){
           <span><strong>되돌리기</strong><br>${esc(undo.label)}${safety?.createdAt?`<br>${esc(fmtShareTime(safety.createdAt))}`:""}</span>
         </div></div>
         <div class="cloud-settings-actions"><button class="btn gray" id="cloudPinNow" type="button">PIN 설정</button><button class="btn gray" id="cloudSettingsNow" type="button">연결 설정</button></div>
-        ${safety?`<button class="btn gray cloud-restore" id="cloudUndoNow" type="button" ${undo.allowed?"":"disabled"} title="${esc(undo.reason)}">가져오기 되돌리기</button>`:""}
+        ${safety&&!undo.allowed?`<div class="row-sub">${esc(undo.reason)}</div>`:""}
       </details>
     </div>`;
 }
 
-function bindCloudDashboard(){
+function bindCloudDashboard(latest){
+  document.getElementById("cloudCompareNow")?.addEventListener("click",()=>{
+    if(!latest)return;
+    const diff=compareSharedSnapshot(latest);
+    askConfirm("공유본과 비교",shareApplyPreviewText(latest,diff),"확인",false,diff.materialDiffs);
+  });
   for(const [id,action] of [["cloudApplyNow",loadCloudShareSnapshot],["cloudUploadNow",uploadCloudShareSnapshot]]){
     const button=document.getElementById(id);
     button?.addEventListener("click",async()=>{
@@ -4771,7 +4821,7 @@ function renderCloudDashboard(latest,options={},preserve=false){
   openEntryModal(cloudDashboardHtml(latest,options));
   const fold=dialog.querySelector(".cloud-detail-fold");if(fold)fold.open=expanded;
   dialog.scrollTop=scroll;
-  bindCloudDashboard();
+  bindCloudDashboard(latest);
 }
 
 function openCloudShareActions(force=false){
@@ -4789,7 +4839,9 @@ async function refreshCloudDashboard(notify=false,preserve=false){
   const revision=entryModalRevision;
   const isCurrent=()=>requestId===cloudDashboardRequestId&&revision===entryModalRevision&&document.getElementById("entryModal").classList.contains("show")&&Boolean(document.getElementById("cloudApplyNow"));
   try{
-    const snapshot=await fetchLatestCloudShareSnapshot();
+    const cfg=cloudReadConfig(),canReuse=known?.cloudScope===JSON.stringify([cfg.url,cfg.siteId])&&known.cloudRowVersion;
+    const head=canReuse?await cloudShareHead(cfg):null;
+    const snapshot=canReuse&&!head?null:canReuse&&head.id===known.cloudRowId&&head.updated_at===known.cloudRowVersion?known:await fetchLatestCloudShareSnapshot();
     if(requestId!==cloudDashboardRequestId)return;
     cloudShareNotice=snapshot?{kind:isCloudSnapshotNewer(snapshot)?"new":"same",summary:snapshotSummary(snapshot),snapshot}:null;
     if(!isCurrent())return;
@@ -4861,8 +4913,14 @@ async function supabaseRest(path,options={}){
 }
 
 async function testCloudShareConnection(){
-  try{await supabaseRest("resource_snapshots?select=id&limit=1",{cloudConfig:cloudShareConfig()});showFeedback("success","Supabase 연결 성공");}
+  try{const head=await cloudShareHead(cloudShareConfig());showFeedback("success",head?"읽기 연결됨 · 공유자료 있음":"읽기 연결됨 · 아직 첫 공유 전");}
   catch(error){console.warn("[Victor] Supabase 연결 실패",error);showFeedback("error",cloudErrorMessage(error));}
+}
+
+async function cloudShareHead(config){
+  const rows=await supabaseRest(`resource_snapshots?select=id,updated_at&site_id=eq.${encodeURIComponent(config.siteId)}&snapshot->>kind=eq.victor-resource-share&order=updated_at.desc.nullslast,created_at.desc.nullslast,id.desc&limit=1`,{cloudConfig:config});
+  if(!Array.isArray(rows))throw new Error("공유자료 형식 오류");
+  return rows[0]||null;
 }
 
 async function fetchLatestCloudShareSnapshot(){
@@ -4880,6 +4938,7 @@ async function fetchLatestCloudShareSnapshot(){
     materials:Array.isArray(snapshot.materials)?snapshot.materials:[],
     equipment:Array.isArray(snapshot.equipment)?snapshot.equipment:[],
     title:row.title||snapshot.title,
+    cloudScope:JSON.stringify([config.url,config.siteId]),
     cloudRowId:typeof row.id==="string"?row.id:"",
     cloudRowVersion:row.updated_at??null,
     createdAt:snapshot.createdAt||row.updated_at||row.created_at,
@@ -4947,20 +5006,22 @@ async function performUploadCloudShareSnapshot(active=()=>true){
     const latest=await fetchLatestCloudShareSnapshot();
     if(!active())return;
     const warnings=uploadWarningLines(snapshot,latest);
-    if(!await askConfirm("내 자료 올리기 확인",`${uploadPreviewText(snapshot,latest)}\n\n현재 내 보관 현황을 클라우드 공유자료로 올릴까요?`,"다음"))return;
-    if(warnings.length && !await askConfirm("주의사항 재확인",`${warnings.join("\n")}\n\n그래도 계속 올릴까요?`,"계속"))return;
+    if(!await askConfirm(warnings.length?"변경사항 확인":"내 자료 보내기",uploadPreviewText(snapshot,latest),"확인 후 PIN 입력",!!warnings.length))return;
     const pin=await requestUploadPin();
     if(pin===null)return;
     if(!await verifyCloudUploadPin(pin)){showFeedback("error","PIN이 맞지 않습니다");return;}
     if(!sourceUnchanged()){showFeedback("warning","확인 중 내 자료나 연결 설정이 바뀌었습니다 · 다시 올려주세요");return;}
     const current=await fetchLatestCloudShareSnapshot();
     if(!active())return;
-    if(JSON.stringify(current)!==JSON.stringify(latest)){showFeedback("warning","다른 기기의 공유자료가 바뀌었습니다 · 최신 자료 확인 후 다시 올려주세요");return;}
+    if(JSON.stringify(current)!==JSON.stringify(latest)){showFeedback("warning","다른 기기의 공유자료가 바뀌었습니다 · 보내지 않았습니다");if(current&&typeof document!=="undefined"&&document.getElementById("cloudUploadNow")){renderCloudDashboard(current,{},true);const diff=compareSharedSnapshot(current);await askConfirm("바뀐 공유본 비교",shareApplyPreviewText(current,diff),"확인",false,diff.materialDiffs);}return;}
     const payload={site_id:config.siteId,title:config.title,snapshot,updated_at:new Date().toISOString()};
     const existing=await supabaseRest(`resource_snapshots?select=id,updated_at&site_id=eq.${encodeURIComponent(config.siteId)}&snapshot->>kind=eq.victor-resource-share&order=updated_at.desc.nullslast,created_at.desc.nullslast,id.desc&limit=1`,{cloudConfig:config});
     if(!active())return;
     if(!sourceUnchanged()){showFeedback("warning","확인 중 내 자료가 바뀌었습니다 · 다시 올려주세요");return;}
     let written;
+    if(!current && existing?.length)throw new Error("다른 기기에서 첫 공유자료를 올렸습니다 · 다시 비교해주세요");
+    snapshot.transferId=uid();
+    try{
     if(existing?.[0]?.id){
       const row=existing[0],version=row.updated_at??null,expected=current&&Object.prototype.hasOwnProperty.call(current,"cloudRowVersion")?current.cloudRowVersion:current?.cloudUpdatedAt;
       if(current?.cloudRowId&&(current.cloudRowId!==row.id||expected!==version))throw new Error("다른 기기의 공유자료가 바뀌었습니다 · 최신 자료 확인 후 다시 올려주세요");
@@ -4974,9 +5035,16 @@ async function performUploadCloudShareSnapshot(active=()=>true){
       written=await supabaseRest("resource_snapshots",{cloudConfig:config,method:"POST",headers:{"Content-Type":"application/json","Prefer":"return=representation"},body:JSON.stringify(payload)});
       if(!Array.isArray(written)||written.length!==1||!written[0].id)throw new Error("전송 결과 미확인 · 최신 자료를 다시 확인해주세요");
     }
+    }catch(error){
+      if(!error.cloudUncertain && !String(error.message).includes("결과 미확인"))throw error;
+      const confirmed=await fetchLatestCloudShareSnapshot().catch(()=>null);
+      if(confirmed?.transferId!==snapshot.transferId)throw error;
+      written=[{id:confirmed.cloudRowId,updated_at:confirmed.cloudUpdatedAt}];
+    }
     const uploadedAt=written[0].updated_at||payload.updated_at;
     snapshot.cloudSharedAt=uploadedAt;snapshot.cloudUpdatedAt=uploadedAt;
-    saveCloudShareMeta({lastUploadedAt:uploadedAt,lastUploadedSiteId:config.siteId,lastUploadedDeviceName:victorDeviceLabel()});
+    Object.assign(snapshot,{cloudScope:JSON.stringify([config.url,config.siteId]),cloudRowId:written[0].id,cloudRowVersion:uploadedAt});
+    saveCloudShareMeta({shareBase:shareBaseline(snapshot,snapshot.resourceState),lastUploadedAt:uploadedAt,lastUploadedSiteId:config.siteId,lastUploadedDeviceName:victorDeviceLabel()});
     cloudShareNotice={kind:"same",summary:snapshotSummary(snapshot),snapshot};
     showFeedback("success","클라우드에 올렸습니다 · 다른 기기에서 바로 적용 가능");
     if(page==="home") renderHome();

@@ -8,7 +8,7 @@ const upload=source.slice(source.indexOf('async function performUploadCloudShare
 const response=(status=200,body='[]',headers={})=>({status,ok:status>=200&&status<300,headers:{get:name=>headers[name]||null},text:async()=>body});
 function fixture(fetch){
   const timers=new Set(),requests=[],navigator={onLine:true};
-  const context=vm.createContext({navigator,AbortController,Date,Error,JSON,Number,String,Object,Math,RegExp,
+  const context=vm.createContext({navigator,uid:()=>"test-transfer",shareBaseline:()=>({}),AbortController,Date,Error,JSON,Number,String,Object,Math,RegExp,
     setTimeout:(fn,ms)=>{const id=setTimeout(()=>{timers.delete(id);fn();},ms);timers.add(id);return id;},
     clearTimeout:id=>{timers.delete(id);clearTimeout(id);},
     cloudShareConfig:()=>({url:'https://mock.invalid',key:'test-only',siteId:'mock'}),
@@ -22,14 +22,15 @@ let passed=0;
 async function test(name,run){await run();passed++;console.log('PASS '+name);}
 async function fails(f,options){try{await f.request(options);assert.fail('must reject');}catch(error){assert.notEqual(error.code,'ERR_ASSERTION');return error;}finally{assert.equal(f.timers.size,0,'request timers must be cleaned');}}
 function uploadFixture(mode){
-  let version='2026-10-18T00:00:00.000Z',attempt=0;
+  let version='2026-10-18T00:00:00.000Z',attempt=0,stored=null;
   const feedback=[],saved=[];
   const f=fixture((url,options)=>{
     if(options.method==='GET'){
       attempt++;
       if(mode==='read-fail'||mode==='recover'&&attempt===1)return response(503);
-      return response(200,JSON.stringify(mode==='insert'?[]:[{id:'row',site_id:'mock',title:'Mock',updated_at:version,snapshot:{kind:'victor-resource-share',materials:[],equipment:[]}}]));
+      return response(200,JSON.stringify(mode==='insert'?[]:[{id:'row',site_id:'mock',title:'Mock',updated_at:version,snapshot:stored||{kind:'victor-resource-share',materials:[],equipment:[]}}]));
     }
+    if(mode==='lost-response'){stored=JSON.parse(options.body).snapshot;throw new TypeError('Failed to fetch');}
     if(mode==='write-fail')return response(503);
     return response(200,JSON.stringify(mode==='conflict'?[]:[{id:'row',updated_at:'2026-10-18T00:00:01.000Z'}]));
   });
@@ -70,7 +71,7 @@ function uploadFixture(mode){
   await test('interrupted body is an error, not empty success',async()=>{const f=fixture(()=>({status:200,ok:true,text:async()=>{throw new Error('body interrupted');}}));await fails(f);assert.equal(f.requests.length,1);});
   await test('network failure does not claim paused or wrong URL',async()=>{const f=fixture(()=>{throw new TypeError('Failed to fetch');});const e=await fails(f);assert.match(f.message(e),/프로젝트 상태/);assert.doesNotMatch(f.message(e),/일시중지되었습니다|키가 맞지|URL을 확인/);});
   await test('transport has no local storage or resource mutation',async()=>{assert.doesNotMatch(transport,/localStorage|\bstate\b|save\(|applySharedSnapshot/);});
-  for(const mode of ['normal','recover','insert'])await test('upload workflow '+mode+' writes exactly once',async()=>{const f=uploadFixture(mode);await f.run();assert.equal(f.writes().length,1);assert.equal(f.saved.length,1);assert.equal(f.feedback.at(-1).kind,'success');assert.equal(f.context.state.stock.synthetic,20);if(mode!=='insert')assert.match(f.writes()[0].url,/updated_at=eq\./);assert.equal(f.timers.size,0);});
+  for(const mode of ['normal','recover','insert','lost-response'])await test('upload workflow '+mode+' writes exactly once',async()=>{const f=uploadFixture(mode);await f.run();assert.equal(f.writes().length,1);assert.equal(f.saved.length,1);assert.equal(f.feedback.at(-1).kind,'success');assert.equal(f.context.state.stock.synthetic,20);if(mode!=='insert')assert.match(f.writes()[0].url,/updated_at=eq\./);assert.equal(f.timers.size,0);});
   for(const mode of ['read-fail','bad-pin','remote-change','local-change'])await test('upload workflow '+mode+' never writes',async()=>{const f=uploadFixture(mode);await f.run();assert.equal(f.writes().length,0);assert.equal(f.saved.length,0);assert.notEqual(f.feedback.at(-1).kind,'success');assert.equal(f.timers.size,0);});
   for(const mode of ['write-fail','conflict'])await test('upload workflow '+mode+' is neither retried nor marked successful',async()=>{const f=uploadFixture(mode);await f.run();assert.equal(f.writes().length,1);assert.equal(f.saved.length,0);assert.equal(f.feedback.at(-1).kind,'error');assert.equal(f.context.state.stock.synthetic,20);assert.equal(f.timers.size,0);});
   await test('release assets, version and stored data schema stay consistent',async()=>{
