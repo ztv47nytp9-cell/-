@@ -3953,7 +3953,7 @@ function closeEntryModal(){
 
 function restoreEntryFocus(){const target=entryReturnFocus;entryReturnFocus=null;if(target?.isConnected&&target.getClientRects().length&&!target.disabled)target.focus?.({preventScroll:true});}
 
-function askConfirm(title,message,confirmText="확인",danger=false,details=[]){
+function askConfirm(title,message,confirmText="확인",danger=false,details=[],{readOnly=false}={}){
   if(modalConfirmResolver)return Promise.resolve(false);
   return new Promise(resolve=>{
     const dialog=document.getElementById("entryDialog"),modal=document.getElementById("entryModal");
@@ -3963,7 +3963,7 @@ function askConfirm(title,message,confirmText="확인",danger=false,details=[]){
     if(wasOpen)while(dialog.firstChild)retained.append(dialog.firstChild);
     const finish=value=>{modalConfirmResolver=null;dialog.replaceChildren();entryFormBaseline=retainedBaseline;entryExtraDirtyCheck=retainedDirtyCheck;if(wasOpen){dialog.append(retained);dialog.scrollTop=scroll;modal.classList.add("show");if(retainedFocus?.isConnected&&dialog.contains(retainedFocus))retainedFocus.focus({preventScroll:true});else dialog.focus({preventScroll:true});}else{modal.classList.remove("show");unlockPageScroll("entry");restoreEntryFocus();}resolve(value);};
     modalConfirmResolver=finish;
-    openEntryModal(`${entryHeader(title,"내용을 확인해주세요")}<div class="confirm-message">${esc(message)}</div><div class="entry-actions"><button class="btn gray" id="cancelConfirm" type="button">취소</button><button class="btn ${danger?"solid-danger":"primary"}" id="acceptConfirm" type="button">${esc(confirmText)}</button></div>`);
+    openEntryModal(`${entryHeader(title,readOnly?"조회만 합니다 · 저장된 자료는 바뀌지 않습니다":"내용을 확인해주세요")}<div class="confirm-message">${esc(message)}</div><div class="entry-actions">${readOnly?"":'<button class="btn gray" id="cancelConfirm" type="button">취소</button>'}<button class="btn ${danger?"solid-danger":"primary"}" id="acceptConfirm" type="button">${esc(confirmText)}</button></div>`);
     document.getElementById("cancelConfirm")?.addEventListener("click",()=>finish(false));
     if(details.length){const section=document.createElement("details"),label=document.createElement("summary"),lines=document.createElement("div");label.textContent="변경 내역 "+details.length+"건";lines.style.whiteSpace="pre-line";lines.textContent=details.join("\n");section.append(label,lines);dialog.querySelector(".entry-actions").before(section);}
     document.getElementById("acceptConfirm")?.addEventListener("click",()=>finish(true));
@@ -4357,7 +4357,7 @@ function compareSharedSnapshot(snapshot){
   const nextMaterials=materialQtyMap(next);
   const materialKeys=new Set([...currentMaterials.keys(),...nextMaterials.keys()]);
   const units=new Map([...(current.catalog||[]),...(next.catalog||[])].map(item=>[item.name,item.unit||""]));
-  let materialQtyChanges=0;const materialDiffs=[];
+  let materialQtyChanges=0;const materialDiffs=[...addedWarehouses.map(name=>"보관장소 추가 · "+name),...removedWarehouses.map(name=>"보관장소 제외 · "+name)];
   materialKeys.forEach(key=>{const before=currentMaterials.get(key)||0,after=nextMaterials.get(key)||0;if(before!==after){materialQtyChanges++;materialDiffs.push(`${key.replace("|||"," · ")}: ${before} → ${after} ${units.get(key.split("|||")[1])||""}`.trim());}});
   const currentEquipment=equipmentCompareMap(current);
   const nextEquipment=equipmentCompareMap(next);
@@ -4794,7 +4794,10 @@ function bindCloudDashboard(latest){
   document.getElementById("cloudCompareNow")?.addEventListener("click",()=>{
     if(!latest)return;
     const diff=compareSharedSnapshot(latest);
-    askConfirm("공유본과 비교",shareApplyPreviewText(latest,diff),"확인",false,diff.materialDiffs);
+    const lines=["받을 경우 · 현재 기기 → 공유본",...diff.materialDiffs.slice(0,3)];
+    if(!diff.materialDiffs.length)lines.push("표시할 자원 변경 내역이 없습니다.");
+    if(diff.materialDiffs.length>3)lines.push("그 밖의 변경 "+(diff.materialDiffs.length-3)+"건");
+    askConfirm("공유본과 비교",lines.join("\n"),"자원연계로 돌아가기",false,diff.materialDiffs.length>3?diff.materialDiffs:[],{readOnly:true});
   });
   for(const [id,action] of [["cloudApplyNow",loadCloudShareSnapshot],["cloudUploadNow",uploadCloudShareSnapshot]]){
     const button=document.getElementById(id);
