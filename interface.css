@@ -517,3 +517,29 @@ fieldset.register-type-options{min-width:0;margin:0;padding:0;border:0;display:f
 }
 :is(.summary-value,.stock-qty,.history-tab){font-variant-numeric:tabular-nums}
 .register-type-options button[aria-pressed="true"]{outline:2px solid var(--blue2);outline-offset:-2px;color:var(--blue2)}
+
+/* Keep caption/control spacing equal for both history filter groups. */
+.history-filter-caption{margin:0 0 8px}
+.history-tabs{margin:0 0 16px}
+.history-tabs+.history-filter-caption{margin-top:0}
+.history-filter-caption+.history-date-buttons{margin:0 0 16px}
+.history-tabs:has([data-hfilter="review"]:not([hidden])){grid-template-columns:repeat(2,minmax(0,1fr))}
+.history-tabs [data-hfilter="review"]{grid-column:auto}
+.history-tabs [hidden]{display:none}
+.form details.field-card:has(#recTime)>summary{display:flex;align-items:center;gap:8px;box-sizing:border-box;padding:0;min-height:44px}
+.form details.field-card:has(#recTime)>.location-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:8px 0 0;margin:0}
+.form details.field-card:has(#recTime) .location-grid input{width:100%;min-width:0;box-sizing:border-box;margin:6px 0 0}
+.form details.field-card:has(#recTime)>.btn{margin:12px 0 0}
+@media(max-width:360px){.form details.field-card:has(#recTime)>.location-grid{grid-template-columns:1fr}}
+@media(min-width:600px){.history-tabs:has([data-hfilter="review"]:not([hidden])){grid-template-columns:repeat(4,minmax(0,1fr))}}
+
+/* Only the warehouse survey list: keep quick actions in a consistent column. */
+#view:has(#surveyListPlace) details.card>summary{padding-block:4px}
+#view:has(#surveyListPlace) details.card[open]>summary{margin-bottom:8px}
+#view:has(#surveyListPlace) .batch-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px 12px;padding:10px 0;margin:0}
+#view:has(#surveyListPlace) .batch-row>strong{min-width:0;overflow-wrap:anywhere}
+#view:has(#surveyListPlace) .batch-row .btn-row{justify-content:flex-end;gap:8px;margin:0}
+#view:has(#surveyListPlace) [data-match-group]{margin-top:8px;width:100%}
+@media(max-width:360px){#view:has(#surveyListPlace) .batch-row{grid-template-columns:minmax(0,1fr)}#view:has(#surveyListPlace) .batch-row .btn-row{justify-content:flex-start}}
+.cloud-share-form .cloud-detail-fold[open] .share-detail-group{box-sizing:border-box}
+@media(min-width:900px){.cloud-share-form .cloud-detail-fold[open]{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.cloud-share-form .cloud-detail-fold[open]>*{grid-column:1/-1}.cloud-share-form .cloud-detail-fold[open] .share-detail-group{grid-column:auto;display:block;width:auto;margin:0}}

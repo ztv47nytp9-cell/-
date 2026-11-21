@@ -2516,16 +2516,16 @@ function updateHistoryResultCount(total){
 }
 function renderBaseHistory(){
   const all = state.records.filter(historyDateMatches).sort(compareRecordTime);
-  const counts = {all:all.length,pending:0,review:0,done:0};
-  for(const r of all)counts[r.status==="pending"?(r.stockReview?"review":"pending"):"done"]++;
-  const filtered = all.filter(record => historyStatusMatches(record) && historyFlowMatches(record) && historySearchMatches(record));
+  const matching=()=>all.filter(record=>historyFlowMatches(record)&&historySearchMatches(record));
+  const countStates=rows=>{const counts={all:rows.length,pending:0,review:0,done:0};for(const r of rows)counts[r.status==="pending"?(r.stockReview?"review":"pending"):"done"]++;return counts;};
+  const scoped=matching(),counts=countStates(scoped),filtered=scoped.filter(r=>historyStatusMatches(r));
   view.innerHTML = `
     <div class="history-filter-caption" id="historyStatusCaption">처리 상태</div>
     <div class="history-tabs" role="group" aria-labelledby="historyStatusCaption">
       <button class="history-tab ${historyFilter === "all" ? "active" : ""}" data-hfilter="all" type="button">전체 ${counts.all}</button>
       <button class="history-tab ${historyFilter === "pending" ? "active" : ""}" data-hfilter="pending" type="button">진행중 ${counts.pending}</button>
       <button class="history-tab ${historyFilter === "done" ? "active" : ""}" data-hfilter="done" type="button">완료 ${counts.done}</button>
-      ${counts.review||historyFilter==="review"?`<button class="history-tab ${historyFilter==="review"?"active":""}" data-hfilter="review" type="button">재고 확인 ${counts.review}</button>`:""}
+      <button class="history-tab ${historyFilter==="review"?"active":""}" data-hfilter="review" type="button" ${!counts.review&&historyFilter!=="review"?"hidden":""}>재고 확인 ${counts.review}</button>
     </div>
     <div class="history-filter-caption" id="historyPeriodCaption">조회 기간</div>
     <div class="history-date-buttons" role="group" aria-labelledby="historyPeriodCaption">
@@ -2552,7 +2552,8 @@ function renderBaseHistory(){
   updateHistoryResultCount(filtered.length);
   document.getElementById("histSearch")?.addEventListener("input", () => {
     historySearchQuery = document.getElementById("histSearch").value;
-    const searched = all.filter(record => historyStatusMatches(record) && historyDateMatches(record) && historyFlowMatches(record) && historySearchMatches(record));
+    const rows=matching(),totals=countStates(rows),searched=rows.filter(r=>historyStatusMatches(r));
+    view.querySelectorAll("[data-hfilter]").forEach(button=>{const k=button.dataset.hfilter;button.textContent=({all:"전체",pending:"진행중",review:"재고 확인",done:"완료"})[k]+" "+totals[k];button.hidden=k==="review"&&!totals.review&&historyFilter!==k;});
     updateHistoryResultCount(searched.length);
     document.getElementById("histList").innerHTML = renderHistoryListHtml(searched);
     // updateHistoryResultCount already bound the reset action.
