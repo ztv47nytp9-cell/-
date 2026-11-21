@@ -177,6 +177,7 @@ function attachRecordExtras(id){
   if(page!=="history"||view.dataset.recordId!==id||!document.getElementById("deleteRecord")||document.getElementById("recordReport"))return;
   const button=document.createElement("button");button.id="recordReport";button.className="btn secondary";button.type="button";button.textContent="보고용 요약";button.onclick=()=>{if(pendingFormDirty()){showFeedback("info","변경 내용을 저장한 뒤 요약을 열어주세요");return;}openRecordReport(id);};
   document.getElementById("backHist")?.after(button);
+  const transfer=state.records.find(r=>r.id===id&&r.flow==="이송");if(transfer){const places=[...new Set([...(transfer.items||[]).map(i=>itemWarehouse(i,transfer.warehouse)),transfer.warehouse,transfer.targetWarehouse].filter(w=>warehouses.includes(w)))];const nav=document.createElement("div");nav.className="btn-row";for(const p of places){const link=document.createElement("button");link.className="btn secondary compact";link.textContent=(p===transfer.targetWarehouse?"도착 · ":"출발 · ")+p;link.onclick=()=>openAssetPlace(p);nav.append(link);}button.after(nav);}
 }
 const pendingRowDrafts=new Map();
 function pendingDisplayRecord(record){
@@ -512,6 +513,7 @@ function homeWorkSummaryHtml(){
   return `${events.length||review||shortages?`<section class="home-attention"><strong>확인 필요</strong>${review}${events.length?`<button class="list-row" id="homePendingList" type="button">${events.length===1?`이어서 확인 · ${esc(events[0].title||"제목 미정")}`:`진행·미반영 업무 ${events.length}건`} ›</button>`:""}${shortages?`<button class="list-row" id="homeStockAttention" type="button">부족 품목 ${shortages}종 ›</button>`:""}</section>`:""}
   <details class="home-work-recent"><summary>교대·업무 요약</summary>${recent?`<button class="list-row" data-detail="${recent.id}" type="button"><div><div class="row-title">최근 출고 · ${esc(recent.title)}</div><div class="row-sub">${fmtDateTime(recent.occurredAt||recent.createdAt)}</div></div></button>`:`<div class="row-sub">출고 기록 없음</div>`}${maintenance?`<div class="stock-line"><div>최근 점검 · ${esc(maintenance.place)}<div class="row-sub">${esc(maintenance.content)} · ${fmtDate(maintenance.date)}</div></div></div>`:""}${operations?`<button class="list-row" data-home-asset="${esc(operations.place)}" type="button"><div><div class="row-title">최근 운행 · ${esc(operations.place)}</div><div class="row-sub">${fmtDate(operations.date)} · ${esc(operations.purpose||operations.memo||"기록 보기")}</div></div></button>`:""}<button type="button" class="btn secondary compact" id="handoverReport">교대 요약 보기</button></details>`;
 }
+function handoverPendingAt(r,date){if(!date||(r.date&&r.date>date))return false;if(r.status==="pending")return true;if(r.type!=="사고"||!r.appliedAt)return false;const end=new Date(r.appliedAt);return Number.isFinite(+end)&&end.toLocaleDateString("sv-SE",{timeZone:"Asia/Seoul"})>date;}
 function handoverText(date){
   if(!date)return "기준일을 선택하세요.";
   const groups=[[],[],[]],titles=new Map();
@@ -522,12 +524,12 @@ function handoverText(date){
     groups[!record.date?2:record.date===date?0:1].push({date:record.date,label,priority,key,record});
   }
   for(const record of state.records||[]){
-    if(record.status==="pending")add(record,recordStateLabel(record)+" · "+(record.title||"제목 없음"),record.stockReview?0:1);
+    if(handoverPendingAt(record,date))add(record,(record.status==="pending"?recordStateLabel(record):"당시 진행 중 · 현재 종결")+" · "+(record.title||"제목 없음"),record.stockReview?0:1);
   }
   for(const {record,item,remaining} of outstandingEquipmentRows()){
     add(record,"미반납 · "+item.name+" "+remaining+"대 · "+(item.place||item.warehouse||record.warehouse||"창고 미기록")+" · "+(record.title||"제목 없음"),2);
   }
-  return [date+" 교대 요약 · 현재 상태 기준",...groups.filter((rows,i)=>i<2||rows.length).map((rows,index)=>{
+  return [date+" 교대 요약 · 사건은 선택일 기준 / 미반납은 현재 상태 기준",...groups.filter((rows,i)=>i<2||rows.length).map((rows,index)=>{
     const title=["선택일 등록 · 미완료","이전부터 미완료","날짜 확인 필요"][index];
     const lines=rows.sort((a,b)=>a.priority-b.priority||String(a.date||"").localeCompare(String(b.date||""))).map(row=>(index===1?row.date+" · ":"")+row.label+(titles.get(row.key).size>1?" · "+detail(row.record):""));
     return title+" ("+rows.length+")\n"+(lines.join("\n")||"없음");
@@ -536,7 +538,7 @@ function handoverText(date){
 function bindHomeWorkActions(){
   document.getElementById("handoverReport")?.addEventListener("click",()=>{
     openEntryModal(`${entryHeader("교대 요약","기준일까지 등록한 업무 중 지금 남은 항목입니다.")}<label>기준일<input type="date" id="shiftDate" value="${todayISO()}"></label><textarea id="shiftText" readonly rows="12"></textarea><div id="shiftCases"></div><button type="button" class="btn primary" id="shiftCopy">요약 복사</button>`);
-    const date=document.getElementById("shiftDate"),out=document.getElementById("shiftText");date.oninput=()=>{out.value=handoverText(date.value);const box=document.getElementById("shiftCases"),pending=(state.records||[]).filter(r=>date.value&&r.status==="pending"&&r.type==="사고"&&(!r.date||r.date<=date.value));box.innerHTML=pending.length?`<details><summary>진행 중 사건 열기 · ${pending.length}건</summary>${pending.map(r=>`<button class="list-row" type="button" data-shift-case="${esc(r.id)}">${esc(r.title||"제목 없음")} · ${esc(r.warehouse||r.date||"날짜 미기록")}</button>`).join("")}</details>`:"";box.querySelectorAll("[data-shift-case]").forEach(b=>b.onclick=()=>{closeEntryModal();openDetail(b.dataset.shiftCase);});document.getElementById("shiftCopy").disabled=!date.value||!date.validity.valid;};date.oninput();document.getElementById("shiftCopy").onclick=async()=>{try{await navigator.clipboard.writeText(out.value);showSnack("교대 요약 복사 완료");}catch{out.focus();out.select();showSnack("선택한 요약을 복사해주세요");}};
+    const date=document.getElementById("shiftDate"),out=document.getElementById("shiftText");date.oninput=()=>{out.value=handoverText(date.value);const box=document.getElementById("shiftCases"),pending=(state.records||[]).filter(r=>date.value&&r.type==="사고"&&handoverPendingAt(r,date.value));box.innerHTML=pending.length?`<details><summary>진행 중 사건 열기 · ${pending.length}건</summary>${pending.map(r=>`<button class="list-row" type="button" data-shift-case="${esc(r.id)}">${esc(r.title||"제목 없음")} · ${esc([r.warehouse,r.date||"날짜 미기록"].filter(Boolean).join(" · "))}</button>`).join("")}</details>`:"";box.querySelectorAll("[data-shift-case]").forEach(b=>b.onclick=()=>{closeEntryModal();openDetail(b.dataset.shiftCase);});document.getElementById("shiftCopy").disabled=!date.value||!date.validity.valid;};date.oninput();document.getElementById("shiftCopy").onclick=async()=>{try{await navigator.clipboard.writeText(out.value);showSnack("교대 요약 복사 완료");}catch{out.focus();out.select();showSnack("선택한 요약을 복사해주세요");}};
   });
   document.getElementById("homeEquipmentRecord")?.addEventListener("click",()=>openStorageView("equipment"));
   document.getElementById("homeStockAttention")?.addEventListener("click",openStockAttention);

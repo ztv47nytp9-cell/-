@@ -34,6 +34,7 @@ const server=http.createServer((req,res)=>{
     await page.evaluate(()=>{applyAppUpdate();});await page.click('#acceptConfirm');await page.waitForFunction(expected=>document.title===expected,'Victor '+release);await page.waitForFunction(()=>appStarted);
     assert.equal(await page.evaluate(()=>state.memos.some(m=>m.id==='pwa-data')),true);
     assert.ok(await page.evaluate(()=>readSafetyPoints().some(p=>p.label==='앱 업데이트 전')));console.log('PASS staged update, snapshot and data preservation');
+    await context.setOffline(true);await page.reload({waitUntil:'domcontentloaded'});await page.waitForFunction(()=>appStarted);assert.equal(await page.title(),'Victor '+release);assert.ok(await page.evaluate(()=>state.memos.some(m=>m.id==='pwa-data')));await context.setOffline(false);
     await page.evaluate(()=>{rollbackAppVersion();});await page.click('#acceptConfirm');await page.waitForFunction(expected=>document.title===expected,'Victor '+baseRelease);await page.waitForFunction(()=>appStarted);
     assert.equal(await page.evaluate(()=>state.memos.some(m=>m.id==='pwa-data')),true);console.log('PASS previous cached application rollback');
     release=baseRelease+2;failAsset=true;await page.evaluate(async()=>{const reg=await navigator.serviceWorker.getRegistration();await reg.update();});

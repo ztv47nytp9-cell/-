@@ -1562,11 +1562,11 @@ function renamedSurveyWarehouse(survey,oldName,newName){
   return next;
 }
 
-function renderStockList(){
+function renderStockList(revealQuery=""){
   const q = (document.getElementById("stockSearch")?.value || "").trim().toLocaleLowerCase("ko-KR");
   const el = document.getElementById("stockList");
   state.ui=state.ui||{};
-  const showZero=Boolean(state.ui.showZeroStockInWarehouse);
+  const showZero=Boolean(state.ui.showZeroStockInWarehouse)||(!!q&&q===revealQuery);
   const hiddenZeroCount=catalog.filter(item=>Number(state.stock[selectedWarehouse]?.[item.name]||0)===0&&(!q||[item.name,item.cat,item.spec,item.memo].filter(Boolean).join(" ").toLocaleLowerCase("ko-KR").includes(q))).length;
   const html = cats.map(cat => {
     const items = catalog.filter(i => i.cat === cat && (showZero || Number(state.stock[selectedWarehouse]?.[i.name]||0)>0) && (!q || [i.name,i.cat,i.spec,i.memo].filter(Boolean).join(" ").toLocaleLowerCase("ko-KR").includes(q)));
@@ -1583,6 +1583,7 @@ function renderStockList(){
   const emptyMessage=q?(!showZero&&hiddenZeroCount?`일치하는 ${hiddenZeroCount}종은 0재고로 숨겨져 있습니다.`:"조건에 맞는 자재가 없습니다."):"보관 중인 자재가 없습니다.";
   el.innerHTML = `<button class="btn gray compact" id="toggleZeroStock" type="button" style="margin:0 0 8px" aria-pressed="${!showZero}">0재고 숨기기 · ${showZero?"꺼짐":"켜짐"}${hiddenZeroCount?` (${hiddenZeroCount}종)`:""}</button>` + (html || `<div class="emptybox">${emptyMessage}</div>`);
   bindGroupedSections(renderStockList);
+  if(q&&!html&&!showZero&&hiddenZeroCount){const b=document.createElement("button");b.type="button";b.className="btn secondary compact";b.textContent=`0재고에서 ${hiddenZeroCount}종 보기`;b.onclick=()=>renderStockList(q);el.append(b);}
   document.getElementById("toggleZeroStock")?.addEventListener("click",()=>{state.ui=state.ui||{};state.ui.showZeroStockInWarehouse=!showZero;save();renderStockList();});
   el.querySelectorAll("[data-stock]").forEach(b => b.addEventListener("click", () => editStock(b.dataset.stock)));
 }
@@ -1853,13 +1854,15 @@ function updateStockAfterPreview(){
   const target=document.getElementById("stockAfterPreview");if(!target)return;
   if(registerMode!=="normal"||!["출고","이송"].includes(registerFlow)){target.innerHTML="";return;}
   const warehouse=document.getElementById("recWarehouse")?.value||"";
-  const rows=draftItems.filter(item=>Number(item.qty)>0).map(item=>{const place=itemWarehouse(item,warehouse),before=Number(state.stock[place]?.[item.name]||0),after=addQuantities(before,-Number(item.qty||0));return `<div class="row-sub">${esc(place)} · ${esc(item.name)} · ${after<0?`<strong>확인 필요 · ${materialQtyText(-after,item.unit,item)} 부족</strong>`:`${materialQtyText(before,item.unit,item)} → <strong>${materialQtyText(after,item.unit,item)}</strong>`}</div>`;});
+  const groups=new Map();for(const item of draftItems.filter(i=>Number(i.qty)>0)){const place=itemWarehouse(item,warehouse),names=groups.get(place)||new Map();names.set(item.name,{...item,qty:addQuantities(names.get(item.name)?.qty||0,item.qty)});groups.set(place,names);}const rows=Array.from(groups,([place,names])=>`<strong>${esc(place)}${place!==warehouse?" · 별도 보관장소":""}</strong>`+Array.from(names.values()).map(item=>{const place=itemWarehouse(item,warehouse),before=Number(state.stock[place]?.[item.name]||0),after=addQuantities(before,-Number(item.qty||0));return `<div class="row-sub">${esc(item.name)} · ${after<0?`<strong>확인 필요 · ${materialQtyText(-after,item.unit,item)} 부족</strong>`:`${materialQtyText(before,item.unit,item)} → <strong>${materialQtyText(after,item.unit,item)}</strong>`}${after<0?" · "+warehouses.filter(w=>w!==place&&Number(state.stock[w]?.[item.name])>0).map(w=>esc(w)+" "+materialQtyText(state.stock[w][item.name],item.unit,item)).join(" / "):""}</div>`;}).join(""));
   const dest=document.getElementById("recTargetWarehouse")?.value;
+  document.querySelectorAll("#itemArea [data-qty]").forEach(input=>{const row=draftItems[Number(input.dataset.qty)],host=input.closest(".item-box");if(!row||!host)return;let hint=host.querySelector(".transfer-balance");if(registerFlow!=="이송"||!dest||!(Number(row.qty)>0)){hint?.remove();return;}if(!hint){hint=document.createElement("div");hint.className="row-sub transfer-balance";input.closest("label").after(hint);}const from=itemWarehouse(row,warehouse),send=groups.get(from)?.get(row.name)?.qty||0,receive=Array.from(groups.values()).reduce((n,g)=>addQuantities(n,g.get(row.name)?.qty||0),0),a=Number(state.stock[from]?.[row.name]||0),b=Number(state.stock[dest]?.[row.name]||0);hint.textContent=from===dest?"출발·도착 보관장소가 같습니다":`${from} ${a} → ${addQuantities(a,-send)} / ${dest} ${b} → ${addQuantities(b,receive)} ${row.unit}`;});
   const route=document.getElementById("transferRouteSummary");if(route){const m=draftItems.filter(i=>Number(i.qty)>0),g=draftEquipmentItems.filter(i=>Number(i.qty)>0);const sources=[...new Set([...m.map(i=>itemWarehouse(i,warehouse)),...g.map(i=>i.fromPlace||i.place||warehouse)])];route.textContent=registerFlow==="이송"&&dest?`${sources.join(", ")||warehouse} → ${dest} · 자재 ${m.length}종 · 장비 ${g.reduce((n,i)=>n+Number(i.qty),0)}대`:"";const save=document.getElementById("saveRecord");if(save)save.dataset.route=route.textContent;}
   if(registerFlow==="이송"&&dest){const totals=new Map();for(const it of draftItems.filter(i=>Number(i.qty)>0)){totals.set(it.name,addQuantities(totals.get(it.name)||0,it.qty));}for(const [name,qty] of totals){const it=itemOf(name);if(!it)continue;const before=Number(state.stock[dest]?.[name]||0);rows.push(`<div class="row-sub">도착 · ${esc(dest)} · ${esc(name)} · ${materialQtyText(before,it.unit,it)} → <strong>${materialQtyText(addQuantities(before,qty),it.unit,it)}</strong></div>`);}}
   target.innerHTML=rows.length?`<div class="callout"><strong>재고 반영 미리보기</strong>${rows.join("")}${recordStockIssues({flow:registerFlow,warehouse,items:draftItems,equipmentItems:draftEquipmentItems}).length?'<div class="row-sub">부족하면 확인 기록으로 저장됩니다 · 현재 재고 유지</div>':""}</div>`:"";
 }
 
+function warnDuplicateDraft(){const seen=new Set();for(const [i,row] of draftItems.entries()){const key=JSON.stringify([row.name,itemWarehouse(row,document.getElementById("recWarehouse")?.value)]);if(seen.has(key)){showFeedback("info",`자재 ${i+1} · 같은 창고에 동일 품목이 있습니다`);return true;}seen.add(key);}return false;}
 function mergeDuplicateDraftItems({notify=false}={}){
   const seen = new Map();
   let merged = false;
@@ -1868,7 +1871,7 @@ function mergeDuplicateDraftItems({notify=false}={}){
     const key=`${item.name}|${itemWarehouse(item,document.getElementById("recWarehouse")?.value||warehouses[0])}`;
     if(seen.has(key)){
       const target = seen.get(key);
-      target.qty = Number(target.qty || 0) + Number(item.qty || 0);
+      target.qty = addQuantities(target.qty||0,item.qty||0);
       merged = true;
     }else{
       seen.set(key,{...item});
@@ -2069,7 +2072,7 @@ function openRegisterNewEquipmentForm(){
 function equipmentRegisterLabel(equipment){
   const spec=equipment.spec || equipment.detail || "규격 미입력";
   const model=equipment.model && equipment.model!==spec ? ` · ${equipment.model}` : "";
-  return `[${placeLabel(equipment.place)}] ${equipment.name} · ${spec}${model} · ${equipmentAvailabilityText(equipment)}${equipment.managementNo||equipment.managementNumber?" · "+(equipment.managementNo||equipment.managementNumber):""}`;
+  return `[${placeLabel(equipment.place)}] ${equipment.name}${equipment.managementNo||equipment.managementNumber?" · "+(equipment.managementNo||equipment.managementNumber):""} · ${spec}${model} · ${equipmentAvailabilityText(equipment)}`;
 }
 
 function renderEquipmentItems(){
@@ -2130,7 +2133,7 @@ function renderItems(){
         <div class="register-item-heading"><strong>자재 ${idx+1}</strong><button class="btn gray compact" data-remove="${idx}" type="button" aria-label="등록에서 ${esc(it.name)} 줄 빼기">이 줄 빼기</button></div>
         <label>분류<select data-cat="${idx}">${cats.map(c=>`<option value="${c}" ${it.cat===c?"selected":""}>${c}</option>`).join("")}</select></label>
         <label>자재<select data-name="${idx}">${activeMaterials(it.name).filter(x=>x.cat===it.cat).map(x=>`<option value="${esc(x.name)}" ${it.name===x.name?"selected":""}>${esc(x.name)}${x.archived?" · 보관 처리":""}</option>`).join("")}</select></label>
-        <label>${registerMode==="quick"?"사용 보관장소":registerFlow==="입고"?"입고 보관장소":registerFlow==="이송"?"출발 보관장소":"자재 보관장소"}<select data-item-warehouse="${idx}">${warehouses.map(place=>`<option value="${esc(place)}" ${itemWarehouse(it,document.getElementById("recWarehouse")?.value||warehouses[0])===place?"selected":""}>${esc(place)} · ${Number(state.stock[place]?.[it.name]||0)}${esc(it.unit||"")}</option>`).join("")}</select></label>
+        <label>${registerMode==="quick"?"사용 보관장소":registerFlow==="입고"?"입고 보관장소":registerFlow==="이송"?"출발 보관장소":"자재 보관장소"}<select data-item-warehouse="${idx}">${(registerFlow==="입고"?warehouses:[...warehouses].sort((a,b)=>Number(Number(state.stock[b]?.[it.name])>0)-Number(Number(state.stock[a]?.[it.name])>0))).map(place=>`<option value="${esc(place)}" ${itemWarehouse(it,document.getElementById("recWarehouse")?.value||warehouses[0])===place?"selected":""}>${esc(place)} · ${Number(state.stock[place]?.[it.name]||0)}${esc(it.unit||"")}</option>`).join("")}</select></label>
         <button class="link-btn" type="button" data-next-place="${idx}">다음 자재도 이 창고</button>
         <label>수량 (${esc(it.unit)})<input type="number" inputmode="${integerUnit(it.unit)?"numeric":"decimal"}" min="0" step="${integerUnit(it.unit)?"1":"0.1"}" data-qty="${idx}" value="${it.qty ?? ""}" placeholder="수량 입력" aria-label="${esc(it.name)} 수량 (${esc(it.unit)})"></label>
         ${current?`<div class="register-stock-now"><span>${esc(current.label)}</span><strong>${materialQtyText(current.qty,it.unit,it)}</strong></div>`:""}
@@ -2156,7 +2159,7 @@ function renderItems(){
     draftItems[idx].unit = f.unit;
     draftItems[idx].kind = f.kind;
     draftItems[idx].warehouse = itemWarehouse(draftItems[idx],document.getElementById("recWarehouse")?.value||warehouses[0]);
-    mergeDuplicateDraftItems({notify:true});
+    warnDuplicateDraft();
     scheduleRegisterDraft();
     renderItems();
   }));
@@ -2164,12 +2167,13 @@ function renderItems(){
   area.querySelectorAll("[data-item-warehouse]").forEach(select=>select.addEventListener("change",()=>{
     const index=Number(select.dataset.itemWarehouse);
     draftItems[index].warehouse=select.value;
-    mergeDuplicateDraftItems({notify:true});
+    warnDuplicateDraft();
     scheduleRegisterDraft();
     renderItems();
     updateRegisterDraftSummary();
     updateStockAfterPreview();
   }));
+  if(!area.dataset.quantityNav){area.dataset.quantityNav="1";area.addEventListener("keydown",e=>{if(e.key!=="Enter"||e.isComposing||!e.target.matches("[data-qty]"))return;const next=area.querySelector(`[data-qty="${Number(e.target.dataset.qty)+1}"]`);if(next){e.preventDefault();e.stopPropagation();next.focus();next.select();}},true);}
   area.querySelectorAll("[data-qty]").forEach(i => i.addEventListener("input", () => {
     let val = String(i.value || "").replace(/[^0-9.]/g,"");
     const parts = val.split(".");
@@ -2216,7 +2220,8 @@ async function performSaveRecord(append=false){
   const memo = document.getElementById("recMemo").value.trim();
   const location=collectRegisterLocation();
   const evidence=collectRegisterEvidence();
-  mergeDuplicateDraftItems();
+  if(warnDuplicateDraft()&&!await askConfirm("중복 자재 확인","같은 창고의 같은 품목을 합산해 저장할까요?","합산"))return;
+  if(mergeDuplicateDraftItems()){renderItems();updateRegisterDraftSummary();}
   const items = draftItems.map(x => ({...x, warehouse:itemWarehouse(x,warehouse||warehouses[0]), qty:integerUnit(x.unit)?Math.round(Number(x.qty || 0)):Number(x.qty || 0)})).filter(x => x.qty > 0);
   const equipmentItems = draftEquipmentItems.reduce((rows,item)=>{const existing=rows.find(row=>row.id===item.id);if(existing)existing.qty=Number(existing.qty||0)+Number(item.qty||0);else rows.push({...item});return rows;},[]).map(x => ({...x,qty:Math.round(Number(x.qty || 0))})).filter(x=>x.qty>0);
   const checklist=[];
@@ -2232,7 +2237,7 @@ async function performSaveRecord(append=false){
   }
   if(registerMode === "normal" && registerFlow === "이송"){
     if(!warehouse||!targetWarehouse){ showFeedback("error","출발·도착 보관을 선택해주세요"); return; }
-    if(items.some(item=>item.warehouse===targetWarehouse)){ showFeedback("error",`${targetWarehouse}에서 출발하는 자재는 같은 보관장소로 이송할 수 없습니다`); return; }
+    if(items.some(item=>item.warehouse===targetWarehouse)){ fieldError(`[data-item-warehouse="${draftItems.findIndex(i=>Number(i.qty)>0&&itemWarehouse(i,warehouse)===targetWarehouse)}"]`,"출발·도착 보관장소가 같습니다"); return; }
     if(warehouse===targetWarehouse&&equipmentItems.length){ showFeedback("error","장비 출발 보관과 도착 보관을 다르게 선택해주세요"); return; }
     const wrongPlaceEquipment=equipmentItems.find(entry=>state.equipment.find(item=>item.id===entry.id)?.place!==warehouse);
     if(wrongPlaceEquipment){ showFeedback("error","이송 장비는 출발 보관에 있는 장비만 선택할 수 있습니다"); return; }
@@ -2837,7 +2842,7 @@ async function performSavePendingEdits(id, shouldApply=false, silent=false, excl
     return false;
   }
   const action=r.type==="사고"?"사건 종결":"재고 반영";
-  if(!await askConfirm(action,form.items.length?`선택한 보관장소별 재고에 자재를 ${pendingFlow==="입고"?"입고 반영":"차감"}할까요?`:"자재 차감 없이 기록을 확정할까요?",action)) return false;
+  if(!await askConfirm(action,form.items.length?`이번에 ${pendingFlow==="입고"?"입고 반영":"차감"}할 수량\n${form.items.map(i=>`${i.warehouse} · ${i.name} ${qtyText(i.qty,i.unit)}`).join("\n")}`:"자재 차감 없이 기록을 확정할까요?",action)) return false;
   if(JSON.stringify(state)!==undoState){showFeedback("warning","확인 중 자료가 바뀌었습니다 · 다시 확인해주세요");return false;}
   r.title = form.title;
   r.officialTitle = true;
@@ -3492,8 +3497,8 @@ async function undoLastSurvey(){
 let fastSurveyReturnWarehouse="";
 function enterFastSurvey(warehouse=""){
   const survey=ensureFastSurveyState();
-  if(warehouse&&survey?.active&&survey.items[survey.index||0]?.warehouse!==warehouse){
-    const index=survey.items.findIndex(item=>item.warehouse===warehouse);
+  if(survey?.active){
+    const place=warehouse||survey.items[survey.index||0]?.warehouse,unseen=item=>!survey.checked?.[`${item.warehouse}|${item.name}`];let index=survey.items.findIndex(item=>item.warehouse===place&&unseen(item));if(index<0)index=warehouse?survey.items.findIndex(item=>item.warehouse===warehouse):survey.items.findIndex(unseen);
     if(index>=0){const before=JSON.stringify(state);survey.index=index;if(!saveStateTransaction(before,"실사 진행 위치를 저장하지 못했습니다"))return false;}
   }
   fastSurveyReturnWarehouse=warehouse;renderFastSurvey();scrollToTop();
@@ -4458,6 +4463,7 @@ function shareApplyPreviewText(snapshot,changes=compareSharedSnapshot(snapshot))
   const summary=snapshotSummary(snapshot);
   return [
     `자료: ${summary.title}`,
+    ...Array.from(changes.quantities||[]).filter(([,q])=>q.before>0&&q.after===0).map(([line])=>"0재고로 변경 · "+line),
     `공유 기준: ${fmtDateTime(summary.date)}`,
     `새로 생기는 보관장소: ${changes.addedWarehouses.length}곳${changes.addedWarehouses.length?` (${changes.addedWarehouses.slice(0,3).join(", ")}${changes.addedWarehouses.length>3?" 외":""})`:""}`,
     `없어지는 보관장소: ${changes.removedWarehouses.length}곳${changes.removedWarehouses.length?` (${changes.removedWarehouses.slice(0,3).join(", ")}${changes.removedWarehouses.length>3?" 외":""})`:""}`,
@@ -4518,6 +4524,7 @@ function snapshotSummaryText(snapshot,{includeCaution=false}={}){
   const summary=snapshotSummary(snapshot);
   return [
     `자료: ${summary.title}`,
+    ...Array.from(changes.quantities||[]).filter(([,q])=>q.before>0&&q.after===0).map(([line])=>"0재고로 변경 · "+line),
     `공유 기준: ${fmtDateTime(summary.date)}`,
     `보관장소: ${summary.warehouses}곳`,
     `자재: ${summary.materials}종`,
@@ -4580,6 +4587,7 @@ async function performApplySharedSnapshot(snapshot,source){
   const missing=(state.catalog||[]).filter(item=>!keptNames.has(item.name));
   if(missing.length){showFeedback("warning",`가져오기 보류 · 이 기기에만 있는 자재 ${missing.length}종: ${missing.slice(0,3).map(item=>item.name).join(", ")}`);return false;}
   if(!await askConfirm(`${source} 적용 미리보기`,`${shareApplyPreviewText(snapshot,changesPreview)}\n\n현재 앱의 보관·자재·장비 내용이 이 자료로 바뀝니다.\n계속할까요?`,"적용",false,changesPreview.materialDiffs))return false;
+  if(source==="클라우드 공유자료"&&snapshot.cloudRowId){const head=await cloudShareHead(cloudReadConfig());if(!head||head.id!==snapshot.cloudRowId||head.updated_at!==snapshot.cloudRowVersion){showFeedback("warning","공유본이 변경되었습니다 · 새 자료를 다시 비교해주세요");return false;}}
   if(sourceState!==JSON.stringify(state)||sourceDisk!==localStorage.getItem(KEY)){showFeedback("warning","확인 중 자료가 바뀌었습니다 · 최신 자료를 다시 확인해주세요");return false;}
   const beforeState=JSON.stringify(state);
   let previousSafetyPoint=null;
@@ -4866,6 +4874,7 @@ function bindCloudDashboard(latest){
       const q=diff.quantities.get(line);
       return q?`<div class="share-diff-row"><span>${esc(q.name)}</span><span class="share-diff-value">${esc(q.before)} → <strong>${esc(q.after)} ${esc(q.unit)}</strong></span></div>`:`<div class="share-diff-row"><span>${esc(line)}</span></div>`;
     };
+    const zeros=Array.from(diff.quantities).filter(([,q])=>q.before>0&&q.after===0).map(([line])=>line);if(zeros.length)box.insertAdjacentHTML("beforeend",`<div class="callout"><strong>0재고로 변경 · ${zeros.length}종</strong>${zeros.slice(0,3).map(row).join("")}</div>`);
     const lines=diff.materialDiffs;
     if(lines.length>3){
       const groups=new Map(),places=[...new Set([...warehouses,...(diff.next?.warehouses||[])])];for(const line of lines){const place=diff.quantities.get(line)?.warehouse||diff.diffPlaces.get(line)||places.find(w=>["창고 정보 변경 · ","보관장소 추가 · ","보관장소 제외 · ","운용자료 변경 · "].some(prefix=>line===prefix+w))||"공통·기타";if(!groups.has(place))groups.set(place,[]);groups.get(place).push(line);}
@@ -4926,7 +4935,7 @@ async function refreshCloudDashboard(notify=false,preserve=false){
     renderCloudDashboard(snapshot,{checkedAt:new Date().toISOString()},true);
     if(notify){
       const status=cloudStatusLabel(snapshot);
-      showFeedback(!snapshot?"info":status==="이미 최신"?"success":"info",!snapshot?"공유자료 없음":`${status} · ${fmtDateTime(snapshotSummary(snapshot).date)}`);
+      showFeedback(!snapshot?"info":status==="이미 최신"?"success":"info",!snapshot?"공유자료 없음":snapshot===known?`변경 없음 · ${localTimeNow()} 확인`:`${status} · 자료 기준 ${fmtDateTime(snapshotSummary(snapshot).date)}`);
     }
   }catch(error){
     if(!isCurrent())return;

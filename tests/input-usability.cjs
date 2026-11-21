@@ -2,7 +2,7 @@
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),assert=require('node:assert/strict');
 const source=fs.readFileSync(path.join(__dirname,'../app.js'),'utf8');
 const slice=(from,to)=>source.slice(source.indexOf(from),source.indexOf(to));
-function element(dataset={}){return {dataset,value:'',handlers:{},writes:0,html:'',set innerHTML(value){this.writes++;this.html=value;},get innerHTML(){return this.html;},addEventListener(type,handler){this.handlers[type]=handler;}};}
+function element(dataset={}){return {dataset,value:'',handlers:{},writes:0,html:'',set innerHTML(value){this.writes++;this.html=value;},get innerHTML(){return this.html;},addEventListener(type,handler){const prev=this.handlers[type];this.handlers[type]=prev?(...args)=>{prev(...args);handler(...args);}:handler;}};}
 function fixture(){
   const qty=element({qty:'0'}),name=element({name:'0'}),cat=element({cat:'0'}),warehouse=element({itemWarehouse:'0'}),remove=element({remove:'0'}),clear=element({qtyClear:'0'}),plus=[1,5,10].map(n=>element({qtyIndex:'0',qtyAdd:String(n)})),cans=element({canQty:'0'}),result=element(),area=element(),equipmentArea=element(),summary=element(),preview=element();
   const nodes={'[data-cat]':[cat],'[data-name]':[name],'[data-item-warehouse]':[warehouse],'[data-qty]':[qty],'[data-can-qty]':[cans],'[data-remove]':[remove],'[data-qty-add]':plus,'[data-qty-clear]':[clear]};
@@ -14,9 +14,9 @@ function fixture(){
   const elements={itemArea:area,equipmentItemArea:equipmentArea,registerDraftSummary:summary,stockAfterPreview:preview,recWarehouse:{value:'A'}};
   const context=vm.createContext({Number,String,Math,JSON,Set,Map,Boolean,
     draftItems:[{...catalog[0],warehouse:'A',qty:2}],draftEquipmentItems:[],state:{stock,equipment:[],records:[]},warehouses:['A','B'],cats:['유흡착재','유처리제'],registerMode:'normal',registerFlow:'출고',page:'register',
-    document:{getElementById:id=>elements[id],querySelector:()=>null},requestAnimationFrame:fn=>frames.push(fn),motionReduced:()=>false,
+    document:{getElementById:id=>elements[id],querySelectorAll:()=>[],querySelector:()=>null},requestAnimationFrame:fn=>frames.push(fn),motionReduced:()=>false,
     esc:value=>String(value??''),activeMaterials:()=>catalog,itemOf:value=>catalog.find(row=>row.name===value),itemWarehouse:(item,fallback)=>item.warehouse||fallback,
-    integerUnit:unit=>['개','대','세트'].includes(unit),isDispersant:item=>item.name==='유처리제',materialQtyText:(qty,unit)=>qty+unit,
+    boxWeight:()=>0,integerUnit:unit=>['개','대','세트'].includes(unit),isDispersant:item=>item.name==='유처리제',materialQtyText:(qty,unit)=>qty+unit,
     recordStockIssues:()=>[],addQuantities:(a,b)=>Number((Number(a)+Number(b)).toPrecision(14)),scheduleRegisterDraft:()=>schedules++,showFeedback:()=>{},mergeDuplicateDraftItems:()=>false,
     renderResourceEmptyAction:()=>{},refreshResourceLocations:()=>{}});
   vm.runInContext(slice('function registerDraftProgress(','function registerPendingContinueHtml(')+slice('function updateRegisterDraftSummary(','function transferTargetOptions(')+slice('function updateStockAfterPreview(','function mergeDuplicateDraftItems(')+slice('function registerStockInfo(','async function saveRecord(')+slice('function renderEquipmentItems(','function registerStockInfo(')+slice('function historyStatusMatches(','function renderBaseHistory('),context);

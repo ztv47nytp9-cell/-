@@ -1,7 +1,7 @@
 /* App files move together; LocalStorage is never cleared by this worker. */
-const CACHE_NAME="victor-alpha-0-20-cache-v175";
+const CACHE_NAME="victor-alpha-0-20-cache-v176";
 const SETTINGS_CACHE="victor-runtime-settings";
-const CORE_ASSETS=["./index.html","./style.css?v=02020m175","./storage.js?v=02020m175","./workflow.js?v=02020m175","./fieldwork.js?v=02020m175","./app.js?v=02020m175","./manifest.json","./icons/icon-180.png","./icons/icon-192.png","./icons/icon-512.png","./interface.css?v=02020m175"];
+const CORE_ASSETS=["./index.html","./style.css?v=02020m176","./storage.js?v=02020m176","./workflow.js?v=02020m176","./fieldwork.js?v=02020m176","./app.js?v=02020m176","./manifest.json","./icons/icon-180.png","./icons/icon-192.png","./icons/icon-512.png","./interface.css?v=02020m176"];
 const isAppCache=name=>name.startsWith("victor-")&&name.includes("-cache-v");
 let selectedCache=CACHE_NAME;
 const settingUrl=new URL("./__victor_cache_selection",self.location.href).href;
@@ -11,6 +11,7 @@ async function previousIsCompatible(name){
   if(!name)return false;const cache=await caches.open(name),keys=await cache.keys();
   const stored=filename=>keys.find(key=>new URL(key.url).pathname.endsWith('/'+filename));
   if(!stored('index.html')||!stored('app.js')||!stored('storage.js')||!stored('workflow.js'))return false;
+  const html=await (await cache.match(stored('index.html'))).text(),refs=[...html.matchAll(/(?:src|href)="([^"]+\.(?:js|css)(?:\?[^"]*)?)"/g)];if(!refs.length||!(await Promise.all(refs.map(([,ref])=>cache.match(new URL(ref,stored('index.html').url))))).every(Boolean))return false;
   const response=await cache.match(stored('storage.js')),source=await response.text();
   const schema=source.match(/const SCHEMA_VERSION\s*=\s*(\d+)/);return Boolean(schema&&Number(schema[1])<=1&&source.includes('APP_BUILD'));
 }
