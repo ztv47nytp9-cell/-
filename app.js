@@ -22,7 +22,7 @@ let homeActivityTab = "history";
 let editingMemoId = null;
 let restoringNavigation = false;
 let globalSearchQuery = "";
-let globalSearchShowAll = false;
+let globalSearchLimit=8;
 let maintenanceDraftParts = [];
 let sharedSnapshot = null;
 let materialSortMode = "name";
@@ -970,15 +970,17 @@ function renderHome(){
         <button id="homeMemoShortcut" type="button">${appIcon("note")}<strong>새 메모</strong><small>현장 참고</small></button>
       </div>
     </details>
-    <details class="home-fold" id="homeActivityFold"><summary>최근 활동</summary><div class="section-head"><button class="link-btn" id="goActivityAll">전체보기 ›</button></div>
-    <div class="activity-tabs"><button class="${homeActivityTab === "history" ? "active" : ""}" id="homeActivityHistory" type="button">이력 ${recentCount}</button><button class="${homeActivityTab === "memo" ? "active" : ""}" id="homeActivityMemo" type="button">메모 ${memoCount}</button></div>
+    <details class="home-fold" id="homeActivityFold"><summary>이력·메모</summary><div class="section-head"><button class="link-btn" id="goActivityAll">전체보기 ›</button></div>
+    <div class="activity-tabs"><button class="${homeActivityTab === "history" ? "active" : ""}" id="homeActivityHistory" type="button">이력</button><button class="${homeActivityTab === "memo" ? "active" : ""}" id="homeActivityMemo" type="button">메모</button></div>
+    <div class="row-sub">최근 ${homeActivityTab==="memo"?memoCount:recentCount}건</div>
     ${homeActivityTab === "memo" ? `<button class="btn primary" id="homeNewMemo" type="button" style="width:100%;margin-bottom:10px">+ 새 메모 작성</button>` : ""}
     <div class="list-card">${homeActivityHtml()}</div></details>
   `;
   openFolds.forEach(id=>{const fold=document.getElementById(id);if(fold)fold.open=true;});
+  const toolsFold=document.getElementById("homeToolsFold");try{toolsFold.open=sessionStorage.getItem("victor.home.tools.open")==="1"||openFolds.has("homeToolsFold");}catch(_){}toolsFold.ontoggle=()=>{if(toolsFold.isConnected)try{sessionStorage.setItem("victor.home.tools.open",toolsFold.open?"1":"0");}catch(_){}};
   const globalSearch=document.getElementById("globalSearch");
-  globalSearch?.addEventListener("input", event => { globalSearchQuery=event.target.value; globalSearchShowAll=false; renderGlobalSearchResults(); });
-  globalSearch?.addEventListener("keydown", event => { if(event.key==="Enter") event.currentTarget.blur(); });
+  globalSearch?.addEventListener("input", event => { globalSearchQuery=event.target.value; globalSearchLimit=8; renderGlobalSearchResults(); });
+  globalSearch?.addEventListener("keydown",event=>{if(event.key!=="Enter"||event.isComposing||event.keyCode===229)return;event.preventDefault();const results=view.querySelectorAll("[data-global-kind]");if(results.length===1)results[0].click();else event.currentTarget.blur();});
   renderGlobalSearchResults();
   document.getElementById("homeQuickEmergency")?.addEventListener("click", () => startHomeRegister("quick"));
   document.getElementById("homeQuickOut")?.addEventListener("click", () => startHomeRegister("normal","출고"));
@@ -1031,7 +1033,7 @@ function globalSearchRows(){
       const places=(scoped.length?scoped:warehouses).filter(w=>Number(state.stock[w]?.[item.name]||0)>0);
       if(item.archived&&!places.length)return;
       const total=(scoped.length?scoped:warehouses).reduce((sum,w)=>sum+Number(state.stock[w]?.[item.name]||0),0);
-      rows.push({kind:"material",id:item.name,title:item.name,sub:`자재 · ${item.spec || item.cat} · ${materialQtyText(total,item.unit,item)} · ${places.length?placeLabel(places[0])+(places.length>1?` 외 ${places.length-1}곳`:""):"보유 창고 없음"}`});
+      rows.push({kind:"material",scope:scoped,id:item.name,title:item.name,sub:`자재 · ${item.spec || item.cat} · ${materialQtyText(total,item.unit,item)} · ${places.length?placeLabel(places[0])+(places.length>1?` 외 ${places.length-1}곳`:""):scoped.length?scoped.map(placeLabel).join(", "):"보유 창고 없음"}`});
     }
   });
   (state.equipment || []).forEach(item => {
@@ -1049,13 +1051,20 @@ function renderGlobalSearchResults(){
   if(!target) return;
   const rows = globalSearchRows();
   if(!globalSearchQuery.trim()){
-    target.innerHTML = `<div class="global-search-hint">이름·규격·창고명으로 빠르게 찾습니다.</div>`;
+    target.replaceChildren();
     return;
   }
-  const shownRows=globalSearchShowAll?rows:rows.slice(0,8);
-  const placesHtml=row=>{if(row.kind!=="material")return "";const it=itemOf(row.id),places=warehouses.filter(w=>Number(state.stock[w]?.[row.id]||0)>0);return places.length?`<details class="search-places"><summary>창고별 수량 · ${places.length}곳</summary>${places.map(w=>`<div class="row-sub">${esc(placeLabel(w))} · ${materialQtyText(state.stock[w][row.id],it?.unit,it)}</div>`).join("")}</details>`:"";};
-  target.innerHTML = rows.length ? `<div class="global-search-hint">${globalSearchShowAll?`전체 ${rows.length}건 표시`:`${Math.min(rows.length,8)}건 표시`} · 정확한 이름이 먼저 나옵니다.</div><div class="global-search-list">${shownRows.map(row => `<button class="list-row compact-search-row" data-global-kind="${row.kind}" data-global-id="${esc(row.id)}" type="button"><div><div class="row-title">${esc(row.title)} <span class="mini-chip">${row.kind==="warehouse"?"창고":row.kind==="material"?"자재":"장비"}</span></div><div class="row-sub">${esc(row.sub)}</div></div><div class="chev">›</div></button>${placesHtml(row)}`).join("")}</div>${rows.length>8?`<button class="btn secondary compact" id="toggleGlobalSearchResults" type="button" style="width:100%;margin-top:8px">${globalSearchShowAll?"간략히 보기":`전체 ${rows.length}건 보기`}</button>`:""}` : `<div class="global-search-hint">검색 결과가 없습니다. 이름 일부나 창고명으로 다시 찾아보세요.</div>`;
-  document.getElementById("toggleGlobalSearchResults")?.addEventListener("click",()=>{globalSearchShowAll=!globalSearchShowAll;renderGlobalSearchResults();});
+  const shownRows=rows.slice(0,globalSearchLimit),remaining=rows.length-shownRows.length;
+  const placesHtml=row=>{
+    if(row.kind!=="material")return "";
+    const it=itemOf(row.id),stock=w=>Number(state.stock[w]?.[row.id]||0),all=warehouses.filter(w=>stock(w)>0);
+    const scoped=row.scope||[],other=all.filter(w=>!scoped.includes(w));
+    if(scoped.length?scoped.length===1&&!other.length:all.length<2)return "";
+    const line=w=>`<div class="row-sub">${esc(placeLabel(w))} · ${materialQtyText(stock(w),it.unit,it)}</div>`;
+    return `<details class="search-places"><summary>창고별 수량</summary>${scoped.length?scoped.map(line).join("")+"<strong>다른 창고</strong>"+other.map(line).join(""):all.map(line).join("")}</details>`;
+  };
+  target.innerHTML = rows.length ? `<div class="global-search-hint">전체 ${rows.length}건 중 ${shownRows.length}건 표시 · 정확한 이름이 먼저 나옵니다.</div><div class="global-search-list">${shownRows.map(row => `<button class="list-row compact-search-row" data-global-kind="${row.kind}" data-global-id="${esc(row.id)}" type="button"><div><div class="row-title">${esc(row.title)} <span class="mini-chip">${row.kind==="warehouse"?"창고":row.kind==="material"?"자재":"장비"}</span></div><div class="row-sub">${esc(row.sub)}</div></div><div class="chev">›</div></button>${placesHtml(row)}`).join("")}</div>${rows.length>8?`<button class="btn secondary compact" id="toggleGlobalSearchResults" type="button" style="width:100%;margin-top:8px">${remaining?`${Math.min(8,remaining)}건 더 보기 · ${remaining}건 남음`:"간략히 보기"}</button>`:""}` : `<div class="global-search-hint">검색 결과가 없습니다. 이름 일부나 창고명으로 다시 찾아보세요.</div>`;
+  document.getElementById("toggleGlobalSearchResults")?.addEventListener("click",()=>{globalSearchLimit=remaining?globalSearchLimit+8:8;renderGlobalSearchResults();});
   target.querySelectorAll("[data-global-kind]").forEach(button => button.addEventListener("click", () => {
     const kind = button.dataset.globalKind;
     const id = button.dataset.globalId;
