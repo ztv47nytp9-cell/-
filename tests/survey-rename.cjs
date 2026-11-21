@@ -3,7 +3,7 @@ const vm=require('node:vm'),assert=require('node:assert/strict');
 const {fixture,surveyFixture,slice,copy,app,KEY}=require('./field-stability.cjs');
 const DRAFT='victor_register_draft_0_19_0j',OLDER=DRAFT+'_older';
 function setup(f=fixture()){
-  const c=f.c;
+  const c=f.c;vm.runInContext(slice(app,"function ambiguousSurvey(","function buildFastSurveyItems("),c);
   Object.assign(c,{dateMs:value=>Date.parse(value)||0,warehouseKind:place=>f.state().warehouseKinds[place]||'창고'});
   vm.runInContext('const REGISTER_DRAFT_KEY="'+DRAFT+'",REGISTER_OLDER_DRAFT_KEY="'+OLDER+'";let registerFormDraft=null,pendingRegisterDraft=null,registerDraftTimer=null,draftItems=[],draftEquipmentItems=[],registerMode="normal",registerFlow="출고";',c);
   vm.runInContext(slice(app,'function isMeaningfulRegisterDraft(','function integerUnit(')+slice(app,'function renameWarehouse(','function renderStockList(')+slice(app,'function applyRegisterDraft(','function renderRegister('),c);

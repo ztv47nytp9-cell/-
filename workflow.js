@@ -418,7 +418,7 @@ function assetPeriodSummary(rows){
   const driving=rows.filter(row=>row.kind==="주행"),sailing=rows.filter(row=>row.kind==="운항");const parts=[];
   const total=(items,field,fallback="")=>Number(items.reduce((sum,row)=>sum+Number(row.log[field]??(fallback?row.log[fallback]:0)??0),0).toFixed(2));
   if(driving.length)parts.push(`주행 ${total(driving,"diff","distance")}km`);
-  if(sailing.length){parts.push(`운항 ${total(sailing,"mileageDiff")}NM`);parts.push(`좌현 ${total(sailing,"portDiff","hours")}h / 우현 ${total(sailing,"starboardDiff","hours")}h`);parts.push(`소모 ${total(sailing,"fuel")}L`);}
+  if(sailing.length){const amount=(field,unit,fallback="")=>{const entered=sailing.filter(r=>{const v=r.log[field]??r.log[fallback];return v!=null&&v!=="";});return entered.length?`${total(entered,field,fallback)}${unit}${entered.length<sailing.length?" (일부 미기록)":""}`:"미기록";};parts.push(`운항 ${amount("mileageDiff","NM")}`);parts.push(`좌현 ${amount("portDiff","h","hours")} / 우현 ${amount("starboardDiff","h","hours")}`);parts.push(`소모 ${amount("fuel","L")}`);}
   return parts.length?" · "+parts.join(" · "):"";
 }
 function materialShortages(item){return ["",...warehouses.filter(w=>item.minimumByPlace?.[w]>0)].map(place=>({place,...stockLevel(item,place)})).filter(s=>s.label==="부족");}
@@ -529,7 +529,8 @@ function handoverText(date){
   for(const {record,item,remaining} of outstandingEquipmentRows()){
     add(record,"미반납 · "+item.name+" "+remaining+"대 · "+(item.place||item.warehouse||record.warehouse||"창고 미기록")+" · "+(record.title||"제목 없음"),2);
   }
-  return [date+" 교대 요약 · 사건은 선택일 기준 / 미반납은 현재 상태 기준",...groups.filter((rows,i)=>i<2||rows.length).map((rows,index)=>{
+  const unknown=(state.records||[]).filter(r=>r.type==="사고"&&r.status!=="pending"&&!r.appliedAt&&(!r.date||r.date<=date)).length;
+  return [date+" 교대 요약 · 사건은 선택일 기준 / 미반납은 현재 상태 기준"+(unknown?`\n종결일 미기록 · 과거 상태 판단 불가 ${unknown}건`:""),...groups.filter((rows,i)=>i<2||rows.length).map((rows,index)=>{
     const title=["선택일 등록 · 미완료","이전부터 미완료","날짜 확인 필요"][index];
     const lines=rows.sort((a,b)=>a.priority-b.priority||String(a.date||"").localeCompare(String(b.date||""))).map(row=>(index===1?row.date+" · ":"")+row.label+(titles.get(row.key).size>1?" · "+detail(row.record):""));
     return title+" ("+rows.length+")\n"+(lines.join("\n")||"없음");
@@ -537,8 +538,8 @@ function handoverText(date){
 }
 function bindHomeWorkActions(){
   document.getElementById("handoverReport")?.addEventListener("click",()=>{
-    openEntryModal(`${entryHeader("교대 요약","기준일까지 등록한 업무 중 지금 남은 항목입니다.")}<label>기준일<input type="date" id="shiftDate" value="${todayISO()}"></label><textarea id="shiftText" readonly rows="12"></textarea><div id="shiftCases"></div><button type="button" class="btn primary" id="shiftCopy">요약 복사</button>`);
-    const date=document.getElementById("shiftDate"),out=document.getElementById("shiftText");date.oninput=()=>{out.value=handoverText(date.value);const box=document.getElementById("shiftCases"),pending=(state.records||[]).filter(r=>date.value&&r.type==="사고"&&handoverPendingAt(r,date.value));box.innerHTML=pending.length?`<details><summary>진행 중 사건 열기 · ${pending.length}건</summary>${pending.map(r=>`<button class="list-row" type="button" data-shift-case="${esc(r.id)}">${esc(r.title||"제목 없음")} · ${esc([r.warehouse,r.date||"날짜 미기록"].filter(Boolean).join(" · "))}</button>`).join("")}</details>`:"";box.querySelectorAll("[data-shift-case]").forEach(b=>b.onclick=()=>{closeEntryModal();openDetail(b.dataset.shiftCase);});document.getElementById("shiftCopy").disabled=!date.value||!date.validity.valid;};date.oninput();document.getElementById("shiftCopy").onclick=async()=>{try{await navigator.clipboard.writeText(out.value);showSnack("교대 요약 복사 완료");}catch{out.focus();out.select();showSnack("선택한 요약을 복사해주세요");}};
+    openEntryModal(`${entryHeader("교대 요약","사건은 선택일 기준, 미반납은 현재 기준입니다.")}<label>기준일<input type="date" id="shiftDate" value="${todayISO()}"></label><textarea id="shiftText" readonly rows="12"></textarea><div id="shiftCases"></div><button type="button" class="btn primary" id="shiftCopy">요약 복사</button>`);
+    const date=document.getElementById("shiftDate"),out=document.getElementById("shiftText");date.oninput=()=>{out.value=handoverText(date.value);const box=document.getElementById("shiftCases"),pending=(state.records||[]).filter(r=>date.value&&r.type==="사고"&&handoverPendingAt(r,date.value));box.innerHTML=pending.length?`<details><summary>선택일 당시 진행 사건 · ${pending.length}건</summary>${pending.map(r=>`<button class="list-row" type="button" data-shift-case="${esc(r.id)}">${esc(r.title||"제목 없음")}${r.status==="pending"?"":" (현재 종결)"} · ${esc([r.warehouse,r.date||"날짜 미기록"].filter(Boolean).join(" · "))}</button>`).join("")}</details>`:"";box.querySelectorAll("[data-shift-case]").forEach(b=>b.onclick=()=>{closeEntryModal();openDetail(b.dataset.shiftCase);});document.getElementById("shiftCopy").disabled=!date.value||!date.validity.valid;};date.oninput();document.getElementById("shiftCopy").onclick=async()=>{try{await navigator.clipboard.writeText(out.value);showSnack("교대 요약 복사 완료");}catch{out.focus();out.select();showSnack("선택한 요약을 복사해주세요");}};
   });
   document.getElementById("homeEquipmentRecord")?.addEventListener("click",()=>openStorageView("equipment"));
   document.getElementById("homeStockAttention")?.addEventListener("click",openStockAttention);
@@ -573,7 +574,7 @@ function csvCell(value){
   return '"'+text.replace(/"/g,'""')+'"';
 }
 function csvRows(kind,{positiveOnly=false,filtered=false}={}){
-  const inventories=()=>[["보관장소","세부위치","품목명","분류","단위","현재수량","최소수량"],...warehouses.flatMap(place=>catalog.filter(item=>!positiveOnly||Number(state.stock[place]?.[item.name]||0)>0).map(item=>[place,state.warehouseInfos?.[place]?.detailLocation||"",item.name,item.cat,item.unit,Number(state.stock[place]?.[item.name]||0),item.minimumByPlace?.[place]??item.minStock??""]))];
+  const inventories=()=>[["보관장소","세부위치","품목명","분류","단위","현재수량","최소수량"],...warehouses.flatMap(place=>catalog.filter(item=>!positiveOnly||Number(state.stock[place]?.[item.name]||0)>0).map(item=>[place,state.warehouseInfos?.[place]?.detailLocation||"",item.name,item.cat,item.unit,Number(state.stock[place]?.[item.name]||0),item.minimumByPlace?.[place]??""]))];
   const records=()=>[["기록ID","날짜","시간","종류","사고/훈련","제목","상태","보관장소","도착장소","품목","수량","단위","메모","자원구분"],...(filtered?state.records.filter(r=>historyStatusMatches(r)&&historyDateMatches(r)&&historyFlowMatches(r)&&historySearchMatches(r)).sort(compareRecordTime):state.records).flatMap(record=>{
     const resources=[...(record.items||[]).map(item=>({...item,resourceKind:"자재"})),...(record.equipmentItems||[]).map(item=>({...item,warehouse:((record.pendingFlow||record.flow)==="이송"?item.fromPlace:null)||item.place||item.warehouse||record.warehouse,targetWarehouse:item.toPlace||item.targetWarehouse||record.targetWarehouse,unit:"대",resourceKind:"장비"}))];
     return (resources.length?resources:[{}]).map(item=>[record.id,record.date,record.time||"",record.flow,record.type,record.title,recordStateLabel(record),itemWarehouse(item,record.warehouse),item.targetWarehouse||record.targetWarehouse||"",item.name||"",item.qty??"",item.unit||"",record.memo,item.resourceKind||""]);

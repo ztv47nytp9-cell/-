@@ -1,5 +1,5 @@
 const VERSION = "Alpha 0.20.20";
-const APP_BUILD = "176";
+const APP_BUILD = "177";
 const SCHEMA_VERSION = 1;
 const KEY = "victor_state_alpha_0_19_0e";
 let lastPersistedStateSnapshot = null;
@@ -733,7 +733,7 @@ function loadState(){
         if(storageLoadIssue)continue;
         pendingMigrationBackup=String(parsed.appBuild||"")!==APP_BUILD?parsed:null;
         const restored = normalize(parsed);
-        lastDiskStateRaw=localStorage.getItem(KEY);
+        try{lastDiskStateRaw=localStorage.getItem(KEY);}catch{storageLoadIssue="이 브라우저의 저장소에 접근할 수 없습니다";lastDiskStateRaw=null;}
         lastPersistedStateSnapshot=JSON.stringify(restored);
         return restored;
       }
@@ -743,7 +743,7 @@ function loadState(){
     }
   }
   const initial=defaultState();
-  lastDiskStateRaw=localStorage.getItem(KEY);
+  try{lastDiskStateRaw=localStorage.getItem(KEY);}catch{storageLoadIssue="이 브라우저의 저장소에 접근할 수 없습니다";lastDiskStateRaw=null;}
   lastPersistedStateSnapshot=JSON.stringify(initial);
   return initial;
 }

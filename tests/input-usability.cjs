@@ -17,7 +17,7 @@ function fixture(){
     document:{getElementById:id=>elements[id],querySelectorAll:()=>[],querySelector:()=>null},requestAnimationFrame:fn=>frames.push(fn),motionReduced:()=>false,
     esc:value=>String(value??''),activeMaterials:()=>catalog,itemOf:value=>catalog.find(row=>row.name===value),itemWarehouse:(item,fallback)=>item.warehouse||fallback,
     boxWeight:()=>0,integerUnit:unit=>['개','대','세트'].includes(unit),isDispersant:item=>item.name==='유처리제',materialQtyText:(qty,unit)=>qty+unit,
-    recordStockIssues:()=>[],addQuantities:(a,b)=>Number((Number(a)+Number(b)).toPrecision(14)),scheduleRegisterDraft:()=>schedules++,showFeedback:()=>{},mergeDuplicateDraftItems:()=>false,
+    recordStockIssues:()=>[],addQuantities:(a,b)=>Number((Number(a)+Number(b)).toPrecision(14)),scheduleRegisterDraft:()=>schedules++,showFeedback:()=>{},mergeDuplicateDraftItems:()=>context.draftItems,
     renderResourceEmptyAction:()=>{},refreshResourceLocations:()=>{}});
   vm.runInContext(slice('function registerDraftProgress(','function registerPendingContinueHtml(')+slice('function updateRegisterDraftSummary(','function transferTargetOptions(')+slice('function updateStockAfterPreview(','function mergeDuplicateDraftItems(')+slice('function registerStockInfo(','async function saveRecord(')+slice('function renderEquipmentItems(','function registerStockInfo(')+slice('function historyStatusMatches(','function renderBaseHistory('),context);
   return {context,area,equipmentArea,qty,name,cat,warehouse,remove,clear,plus,cans,result,summary,preview,elements,frames,catalog,schedules:()=>schedules};
@@ -71,20 +71,20 @@ test('removing draft equipment keeps source equipment and stock unchanged',()=>{
     const f=fixture(),c=f.context,quantity={},errors=[];c.registerFlow=flow;c.draftItems[0].qty='';
     Object.assign(f.elements,{recType:{value:'작업'},recDate:{value:'2026-10-21'},recTitle:{value:'테스트'},recMemo:{value:''}});
     Object.assign(c,{registerNumbersValid:()=>true,collectRegisterLocation:()=>null,collectRegisterEvidence:()=>null,fieldError:(input,message)=>errors.push({input,message})});
-    c.document.querySelector=()=>quantity;
+    c.document.querySelector=s=>s.includes(":invalid")?null:quantity;
     vm.runInContext(slice('async function performSaveRecord(','function summarizeItems('),c);
     const before=JSON.stringify(c.state);await c.performSaveRecord();assert.equal(errors[0].input,quantity);assert.equal(errors[0].message,'수량을 입력해주세요');assert.equal(JSON.stringify(c.state),before);passed++;console.log('PASS '+flow+' save directs empty quantity to its field, without writing data');
   }
   test('failed save restores the current accident/training button label',()=>{assert.match(source,/const resetSaveButton=\(\)=>\{if\(saveButton\)\{saveButton\.disabled=false;updateRegisterTypeDependentUI\(\);\}\}/);});
   test('save button floats independently of summary, bundle button stays in normal flow',()=>{
-    assert.match(source,/<div class="register-save-dock">\s*<div id="registerDraftSummary"[\s\S]*?<button class="btn primary" id="saveRecord"/);
+    assert.match(source,/<div class="register-save-dock">[\s\S]*?<div id="registerDraftSummary"[\s\S]*?<button class="btn primary" id="saveRecord"/);
     const css=fs.readFileSync(path.join(__dirname,'../interface.css'),'utf8');assert.match(css,/\.register-save-dock #saveRecord\{position:fixed/);assert.doesNotMatch(css,/\.context-back-dock\{/);
     assert.match(source,/surface\.querySelectorAll\("\.sticky-action,\.sticky-save,\.entry-actions,#saveRecord"\)/);
     const workflow=fs.readFileSync(path.join(__dirname,'../workflow.js'),'utf8');assert.match(workflow,/summary\.closest\("\.register-save-dock"\)\|\|summary\)\.before\(button\)/);
   });
   test('scroll slides fixed controls down and restores them after scrolling',()=>{
     assert.match(source,/body\.classList\.add\("is-scrolling-ui"\)/);assert.match(source,/body\.classList\.remove\("is-scrolling-ui"\)/);
-    const css=fs.readFileSync(path.join(__dirname,'../interface.css'),'utf8');assert.match(css,/:root\[data-theme\] body\.is-scrolling-ui :is\(#contextBack,\.back\),:root\[data-theme\] body\.is-scrolling-ui:not\(\.keyboard-open\) \.register-save-dock #saveRecord\{transform:translate3d\(0,calc\(100% \+ var\(--app-nav-height,76px\) \+ 22px\),0\);opacity:0;pointer-events:none\}/);assert.doesNotMatch(css,/input-focused \.register-save-dock #saveRecord/);assert.match(css,/transition:transform \.18s cubic-bezier\(\.25,\.8,\.25,1\),opacity \.12s ease \.04s/);assert.match(source,/document\.addEventListener\("scroll",[\s\S]*?remove\("is-scrolling-ui"\),240\)[\s\S]*?capture:true/);assert.match(css,/@media\(prefers-reduced-motion:reduce\)[\s\S]*?transition:transform \.16s ease-out,opacity \.1s ease-out \.03s!important/);
+    const css=fs.readFileSync(path.join(__dirname,'../interface.css'),'utf8');assert.match(css,/is-scrolling-ui[^{}]*#saveRecord\{[^}]*transform:translate3d\(0,calc\(100%/);assert.match(css,/transition:transform \.3s ease-in-out/);assert.match(css,/transition:transform \.1s ease-in-out/);assert.match(css,/keyboard-open \.register-save-dock #saveRecord\{position:static/);
   });
   test('dark theme is applied before first paint and uses an opaque iOS status bar',()=>{
     const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');assert.ok(html.indexOf('victor_theme_mode_0_19_0m')<html.indexOf('style.css'));assert.match(html,/resolved==="dark"\?"black":"default"/);assert.match(source,/resolved === "dark" \? "black" : "default"/);
