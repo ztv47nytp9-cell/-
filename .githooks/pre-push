@@ -1,0 +1,10 @@
+#!/bin/sh
+# Verify the tree being pushed, not unrelated working-tree edits.
+while read local_ref local_sha remote_ref remote_sha; do
+  [ "$remote_ref" = refs/heads/main ] || continue
+  [ "$local_sha" = "$(git rev-parse HEAD)" ] && [ -z "$(git status --porcelain --untracked-files=normal)" ] || {
+    echo "main 업로드 중단: 현재 커밋과 깨끗한 작업 트리에서 검사를 실행해주세요." >&2
+    exit 1
+  }
+  node tests/release-gate.cjs || exit 1
+done

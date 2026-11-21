@@ -20,6 +20,8 @@ function fixture(){
     recordStockIssues:()=>[],addQuantities:(a,b)=>Number((Number(a)+Number(b)).toPrecision(14)),scheduleRegisterDraft:()=>schedules++,showFeedback:()=>{},mergeDuplicateDraftItems:()=>context.draftItems,
     renderResourceEmptyAction:()=>{},refreshResourceLocations:()=>{}});
   vm.runInContext(slice('function registerDraftProgress(','function registerPendingContinueHtml(')+slice('function updateRegisterDraftSummary(','function transferTargetOptions(')+slice('function updateStockAfterPreview(','function mergeDuplicateDraftItems(')+slice('function registerStockInfo(','async function saveRecord(')+slice('function renderEquipmentItems(','function registerStockInfo(')+slice('function historyStatusMatches(','function renderBaseHistory('),context);
+  elements.recWarehouse.dataset={manualPlace:'1'}; // Preview tests use a deliberately selected warehouse.
+  vm.runInContext(slice('function chooseIssueWarehouse(','function nextMaterialWarehouse('),context);
   return {context,area,equipmentArea,qty,name,cat,warehouse,remove,clear,plus,cans,result,summary,preview,elements,frames,catalog,schedules:()=>schedules};
 }
 let passed=0;
