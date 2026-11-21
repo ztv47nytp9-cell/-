@@ -483,6 +483,17 @@ html{scroll-padding-bottom:calc(var(--app-nav-height,76px) + 80px)}
 }
 fieldset.register-type-options{min-width:0;margin:0;padding:0;border:0;display:flex;gap:4px;flex-wrap:wrap}
 .register-type-options legend{margin-bottom:6px}
+.home-inventory{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:0 14px 12px;margin-bottom:8px}
+:root[data-theme] .home-inventory #homeStorageSummary{width:100%;background:transparent;border:0;box-shadow:none;margin:0;padding:14px 0 10px}
+.home-inline-search #globalSearch{width:100%;margin:0}
+:root[data-theme] #homeShareResources{display:flex;align-items:center;gap:10px;min-height:52px;padding:8px 12px;background:transparent;border:0;border-bottom:1px solid var(--border);border-radius:0}
+#homeShareResources small{margin-inline-start:auto}
+.home-fold,.home-attention{border-bottom:1px solid var(--border);padding:0 4px 6px;margin:4px 0}
+.home-fold>summary{cursor:pointer;padding:14px 0;min-height:48px;font-weight:650}
+.home-fold .section-head{justify-content:flex-end}
+.home-attention>strong{display:block;margin:10px 0 4px}
+.home-attention>button{width:100%;min-height:44px}
+.home-inline-search .global-search-hint:only-child{margin-bottom:0}
 .search-places{padding:0 12px 6px}.search-places>summary{cursor:pointer;padding:9px 0;color:var(--muted)}
 #transferRouteSummary{position:absolute;clip-path:inset(50%);width:1px;height:1px;overflow:hidden}
 #saveRecord[data-route]:not([data-route=""]):not(:disabled)::before{content:attr(data-route);display:block;font-size:12px;font-weight:500;line-height:1.35;overflow-wrap:anywhere}

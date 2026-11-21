@@ -938,15 +938,18 @@ function appIcon(name,className=""){
 function renderHome(){
   queueMicrotask(bindHomeWorkActions);
   queueMicrotask(bindBackupReminder);
-  const pendingList = pendingRecords().sort((a,b)=>String(b.updatedAt||b.createdAt||"").localeCompare(String(a.updatedAt||a.createdAt||"")));
-  const pending = pendingList.length;
-  const latestPending = pendingList[0] || null;
+
+  const openFolds=new Set([...view.querySelectorAll(".home-fold[open]")].map(el=>el.id));
   const recentCount = getRecent(3).length;
   const memoCount = recentMemos(3).length;
   view.innerHTML = `
-    ${storageSummaryCard(true)}
-    <button class="home-share-entry" id="homeShareResources" type="button">${appIcon("share")}<strong>자원연계</strong><small>내 자료 보내기 · 공유자료 받기</small><span class="share-entry-arrow" aria-hidden="true">›</span></button>
-    ${homeStockReviewHtml()}
+    <section class="home-inventory">${storageSummaryCard(true)}
+    <div class="home-inline-search">
+      <input class="search" id="globalSearch" value="${esc(globalSearchQuery)}" placeholder="자재·장비·창고 찾기" aria-label="통합 찾기" autocomplete="off" enterkeyhint="search">
+      <div id="globalSearchResults"></div>
+    </div>
+    </section>
+    <button class="home-share-entry" id="homeShareResources" type="button">${appIcon("share")}<strong>자원연계</strong><small>보내기 · 받기</small><span class="share-entry-arrow" aria-hidden="true">›</span></button>
     <div class="home-quick card">
       <div class="section-title">바로 등록</div>
       <div class="home-quick-grid">
@@ -955,28 +958,24 @@ function renderHome(){
         <button class="quick-action" id="homeQuickIn" type="button">${appIcon("in")}<strong>입고</strong><small>재고 증가</small></button>
       </div>
     </div>
-    <div class="card global-search-card">
-      <input class="search" id="globalSearch" value="${esc(globalSearchQuery)}" placeholder="자재·장비·창고 찾기" aria-label="통합 찾기" autocomplete="off" enterkeyhint="search">
-      <div id="globalSearchResults"></div>
-    </div>
+
     ${homeWorkSummaryHtml()}
     ${backupReminderHtml()}
-    <div class="card">
-      <div class="section-title">자주 쓰는 기능</div>
+    <details class="home-fold" id="homeToolsFold"><summary>자주 쓰는 기능</summary>
       <div class="home-tool-grid">
         <button id="homeAllResources" type="button">${appIcon("box")}<strong>자재·장비</strong><small>전체 현황</small></button>
         <button id="homeEquipmentRecord" type="button">${appIcon("search")}<strong>장비 조회</strong><small>관리·사용 이력</small></button>
         <button id="homeVehicleRecord" type="button">${appIcon("vehicle")}<strong>차량 기록</strong><small>주행거리</small></button>
         <button id="homeVesselRecord" type="button"><span class="home-line-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15.5h18l-2.5 4h-13L3 15.5Z"/><path d="M7 15.5V9h8l3 6.5M10 9V6h5l2 3M4 21c1.5-1 2.8-1 4.2 0s2.8 1 4.3 0 2.8-1 4.2 0 2.8 1 4.3 0"/></svg></span><strong>방제정 기록</strong><small>엔진·연료</small></button>
-        <button id="homePending" class="${pending ? "" : "quiet-tool"}" type="button">${pending?appIcon("siren","urgent-mark"):appIcon("check","urgent-mark")}<strong>${pending ? `사건 이어하기 · ${pending}건` : "진행 중 사건 없음"}</strong>${latestPending?`<small>${esc(latestPending.officialTitle?latestPending.title:"제목 미정")} · ${esc(fmtDateTime(latestPending.updatedAt||latestPending.createdAt||latestPending.date))}</small>`:""}</button>
         <button id="homeMemoShortcut" type="button">${appIcon("note")}<strong>새 메모</strong><small>현장 참고</small></button>
       </div>
-    </div>
-    <div class="section-head"><div class="section-title">최근 활동</div><button class="link-btn" id="goActivityAll">전체보기 ›</button></div>
+    </details>
+    <details class="home-fold" id="homeActivityFold"><summary>최근 활동</summary><div class="section-head"><button class="link-btn" id="goActivityAll">전체보기 ›</button></div>
     <div class="activity-tabs"><button class="${homeActivityTab === "history" ? "active" : ""}" id="homeActivityHistory" type="button">이력 ${recentCount}</button><button class="${homeActivityTab === "memo" ? "active" : ""}" id="homeActivityMemo" type="button">메모 ${memoCount}</button></div>
     ${homeActivityTab === "memo" ? `<button class="btn primary" id="homeNewMemo" type="button" style="width:100%;margin-bottom:10px">+ 새 메모 작성</button>` : ""}
-    <div class="list-card">${homeActivityHtml()}</div>
+    <div class="list-card">${homeActivityHtml()}</div></details>
   `;
+  openFolds.forEach(id=>{const fold=document.getElementById(id);if(fold)fold.open=true;});
   const globalSearch=document.getElementById("globalSearch");
   globalSearch?.addEventListener("input", event => { globalSearchQuery=event.target.value; globalSearchShowAll=false; renderGlobalSearchResults(); });
   globalSearch?.addEventListener("keydown", event => { if(event.key==="Enter") event.currentTarget.blur(); });
@@ -988,10 +987,7 @@ function renderHome(){
   document.getElementById("homeAllResources")?.addEventListener("click", () => openStorageView("materials"));
   document.getElementById("homeShareResources")?.addEventListener("click", openCloudShareActions);
   document.getElementById("homeStockReview")?.addEventListener("click", openStockReviewList);
-  document.getElementById("homePending")?.addEventListener("click", () => {
-    if(latestPending){openDetail(latestPending.id);return;}
-    historyFilter = "pending"; historyDateFilter = "all"; historyFlowFilter = "all"; setPage("history");
-  });
+
   document.getElementById("homeMemoShortcut")?.addEventListener("click", () => { editingMemoId=null; setPage("memo"); });
   document.getElementById("homeActivityHistory")?.addEventListener("click", () => { homeActivityTab="history"; renderHome(); });
   document.getElementById("homeActivityMemo")?.addEventListener("click", () => { homeActivityTab="memo"; renderHome(); });
