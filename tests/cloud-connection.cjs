@@ -3,12 +3,12 @@ const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),asse
 const source=fs.readFileSync(path.join(__dirname,'../app.js'),'utf8');
 const errors=source.slice(source.indexOf('function cloudErrorMessage('),source.indexOf('function cloudShareConfig('));
 const transport=source.slice(source.indexOf('async function supabaseRest('),source.indexOf('async function testCloudShareConnection('));
-const readSnapshot=source.slice(source.indexOf('async function fetchLatestCloudShareSnapshot('),source.indexOf('function isCloudSnapshotNewer('));
+const readSnapshot=source.slice(source.indexOf('async function firstShareRowId('),source.indexOf('function isCloudSnapshotNewer('));
 const upload=source.slice(source.indexOf('async function performUploadCloudShareSnapshot('),source.indexOf('async function loadCloudShareSnapshot('));
 const response=(status=200,body='[]',headers={})=>({status,ok:status>=200&&status<300,headers:{get:name=>headers[name]||null},text:async()=>body});
 function fixture(fetch){
   const timers=new Set(),requests=[],navigator={onLine:true};
-  const context=vm.createContext({navigator,uid:()=>"test-transfer",shareBaseline:()=>({}),AbortController,Date,Error,JSON,Number,String,Object,Math,RegExp,
+  const context=vm.createContext({crypto:require("node:crypto").webcrypto,TextEncoder,navigator,uid:()=>"test-transfer",shareBaseline:()=>({}),AbortController,Date,Error,JSON,Number,String,Object,Math,RegExp,
     setTimeout:(fn,ms)=>{const id=setTimeout(()=>{timers.delete(id);fn();},ms);timers.add(id);return id;},
     clearTimeout:id=>{timers.delete(id);clearTimeout(id);},
     cloudShareConfig:()=>({url:'https://mock.invalid',key:'test-only',siteId:'mock'}),
@@ -21,8 +21,8 @@ function fixture(fetch){
 let passed=0;
 async function test(name,run){await run();passed++;console.log('PASS '+name);}
 async function fails(f,options){try{await f.request(options);assert.fail('must reject');}catch(error){assert.notEqual(error.code,'ERR_ASSERTION');return error;}finally{assert.equal(f.timers.size,0,'request timers must be cleaned');}}
-function uploadFixture(mode){
-  let version='2026-10-18T00:00:00.000Z',attempt=0,stored=null;
+function uploadFixture(mode,inserted=null){
+  let version=mode==='future'?'2099-01-01T00:00:00.000Z':'2026-10-18T00:00:00.000Z',attempt=0,stored=null;
   const feedback=[],saved=[];
   const f=fixture((url,options)=>{
     if(options.method==='GET'){
@@ -32,6 +32,11 @@ function uploadFixture(mode){
     }
     if(mode==='lost-response'){stored=JSON.parse(options.body).snapshot;throw new TypeError('Failed to fetch');}
     if(mode==='write-fail')return response(503);
+    if(inserted&&options.method==='POST'){
+      const row=JSON.parse(options.body);
+      if(inserted.has(row.id))return response(409,'{"code":"23505"}');
+      inserted.set(row.id,row);return response(201,JSON.stringify([row]));
+    }
     return response(200,JSON.stringify(mode==='conflict'?[]:[{id:'row',updated_at:'2026-10-18T00:00:01.000Z'}]));
   });
   Object.assign(f.context,{console:{warn:()=>{}},state:{stock:{synthetic:20}},KEY:'test-only',localStorage:{getItem:()=>'{"stock":{"synthetic":20}}'},
@@ -71,6 +76,8 @@ function uploadFixture(mode){
   await test('interrupted body is an error, not empty success',async()=>{const f=fixture(()=>({status:200,ok:true,text:async()=>{throw new Error('body interrupted');}}));await fails(f);assert.equal(f.requests.length,1);});
   await test('network failure does not claim paused or wrong URL',async()=>{const f=fixture(()=>{throw new TypeError('Failed to fetch');});const e=await fails(f);assert.match(f.message(e),/프로젝트 상태/);assert.doesNotMatch(f.message(e),/일시중지되었습니다|키가 맞지|URL을 확인/);});
   await test('transport has no local storage or resource mutation',async()=>{assert.doesNotMatch(transport,/localStorage|\bstate\b|save\(|applySharedSnapshot/);});
+  await test('concurrent first shares keep a single row and report one conflict',async()=>{const rows=new Map(),clients=[uploadFixture('insert',rows),uploadFixture('insert',rows)];await Promise.all(clients.map(c=>c.run()));assert.equal(rows.size,1);assert.deepEqual(clients.map(c=>c.feedback.at(-1).kind).sort(),['error','success']);assert.equal(clients.flatMap(c=>c.saved).length,1);});
+  await test('future row version does not propagate to next upload',async()=>{const f=uploadFixture('future'),start=Date.now();await f.run();const w=f.writes()[0],t=Date.parse(JSON.parse(w.options.body).updated_at);assert.match(w.url,/2099-01-01/);assert.ok(t>=start&&t<=Date.now());assert.equal(f.feedback.at(-1).kind,'success');});
   for(const mode of ['normal','recover','insert','lost-response'])await test('upload workflow '+mode+' writes exactly once',async()=>{const f=uploadFixture(mode);await f.run();assert.equal(f.writes().length,1);assert.equal(f.saved.length,1);assert.equal(f.feedback.at(-1).kind,'success');assert.equal(f.context.state.stock.synthetic,20);if(mode!=='insert')assert.match(f.writes()[0].url,/updated_at=eq\./);assert.equal(f.timers.size,0);});
   for(const mode of ['read-fail','bad-pin','remote-change','local-change'])await test('upload workflow '+mode+' never writes',async()=>{const f=uploadFixture(mode);await f.run();assert.equal(f.writes().length,0);assert.equal(f.saved.length,0);assert.notEqual(f.feedback.at(-1).kind,'success');assert.equal(f.timers.size,0);});
   for(const mode of ['write-fail','conflict'])await test('upload workflow '+mode+' is neither retried nor marked successful',async()=>{const f=uploadFixture(mode);await f.run();assert.equal(f.writes().length,1);assert.equal(f.saved.length,0);assert.equal(f.feedback.at(-1).kind,'error');assert.equal(f.context.state.stock.synthetic,20);assert.equal(f.timers.size,0);});

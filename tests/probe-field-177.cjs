@@ -8,7 +8,7 @@ const {chromium}=require(process.env.VICTOR_PLAYWRIGHT||'C:/Users/hjchu/.cache/c
  const obs=await p.evaluate(async()=>{
    const [a,b,c]=warehouses,it=catalog[0],obs={};
    const fence=totalStorageSummary().boom;state.stock[a]['앵커']=Number(state.stock[a]['앵커']||0)+3;obs.metresAddedByThreeAnchors=totalStorageSummary().boom-fence;
-   obs.negativeCsv=csvCell(-3);obs.setDecimal=mergeBundleRows([{name:'test',qty:.1},{name:'test',qty:.2}],'name')[0].qty;
+   state.equipment=[{id:"incoming",qty:1}];obs.incomingIssues=recordStockIssues({flow:"입고",equipmentItems:[{id:"incoming",qty:9}] ,items:[]});obs.negativeCsv=csvCell(-3);obs.setDecimal=mergeBundleRows([{name:'test',qty:.1},{name:'test',qty:.2}],'name')[0].qty;
    const gear={id:'qa',name:'장비',place:c,qty:3,maintenance:[],moves:[]};state.equipment=[gear];
    state.records=[{id:'using',flow:'출고',status:'done',warehouse:c,equipmentItems:[{id:'qa',qty:3}]}];
    selectedResources.clear();selectedResources.add('equipment:qa');askConfirm=async()=>true;createBulkSafetyPoint=()=>true;finishGuardedSafetyPoint=()=>{};const realSave=save;save=()=>false;
@@ -22,5 +22,5 @@ const {chromium}=require(process.env.VICTOR_PLAYWRIGHT||'C:/Users/hjchu/.cache/c
    obs.rolledBack=JSON.stringify(state)===initial&&localStorage.getItem(KEY)===disk&&selectedResources.size===2&&notes.at(-1)[0]==='error';
    save=realSave;await go(c,b);obs.committed=state.equipment[0].place===b&&state.records.length===1&&state.records[0].flow==='이송'&&state.stock[c][it.name]===0&&JSON.parse(localStorage.getItem(KEY)).stock[b][it.name]===JSON.parse(initial).stock[b][it.name]+5;
    return obs;
- });const assert=require('node:assert/strict');assert.equal(obs.metresAddedByThreeAnchors,0);assert.equal(obs.bulkMovedFromWrongPlace,false);assert.equal(obs.emptyMove[0],'error');for(const key of ['inUseBlocked','rolledBack','committed'])assert.ok(obs[key],key);console.log(obs);
+ });const assert=require('node:assert/strict');assert.deepEqual(obs.incomingIssues,[]);assert.equal(obs.negativeCsv,'"-3"');assert.equal(obs.setDecimal,0.3);assert.equal(obs.metresAddedByThreeAnchors,0);assert.equal(obs.bulkMovedFromWrongPlace,false);assert.equal(obs.emptyMove[0],'error');for(const key of ['inUseBlocked','rolledBack','committed'])assert.ok(obs[key],key);console.log(obs);
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

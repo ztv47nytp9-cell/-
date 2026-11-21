@@ -1,11 +1,12 @@
 const http=require('http'),fs=require('fs'),path=require('path'),assert=require('assert/strict');
 const {chromium}=require(process.env.VICTOR_PLAYWRIGHT||'C:/Users/hjchu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
-const root=path.resolve(__dirname,'..'),baseRelease=Number(fs.readFileSync(path.join(root,'storage.js'),'utf8').match(/const APP_BUILD = "(\d+)"/)[1]);let release=baseRelease,failAsset=false,futureSchema=false;const requests=[];
+const root=path.resolve(__dirname,'..'),baseRelease=Number(fs.readFileSync(path.join(root,'storage.js'),'utf8').match(/const APP_BUILD = "(\d+)"/)[1]);let release=baseRelease,failAsset=false,htmlAsset=false,futureSchema=false;const requests=[];
 const server=http.createServer((req,res)=>{
   requests.push(req.url);if(process.env.VICTOR_DEBUG)console.log('GET',req.url);
   const pathname=new URL(req.url,'http://localhost').pathname;
   const file=path.resolve(root,'.'+(pathname==='/'?'/index.html':pathname));
   if(!file.startsWith(root+path.sep)){res.writeHead(403).end();return;}
+  if(htmlAsset&&pathname==='/workflow.js'){res.writeHead(200,{'Content-Type':'application/javascript'}).end('<html>not a script</html>');return;}
   if(failAsset&&pathname==='/workflow.js'){res.writeHead(503).end();return;}
   fs.readFile(file,(error,data)=>{
     if(error){res.writeHead(404).end();return;}
@@ -39,8 +40,9 @@ const server=http.createServer((req,res)=>{
     assert.equal(await page.evaluate(()=>state.memos.some(m=>m.id==='pwa-data')),true);console.log('PASS previous cached application rollback');
     release=baseRelease+2;failAsset=true;await page.evaluate(async()=>{const reg=await navigator.serviceWorker.getRegistration();await reg.update();});
     await page.waitForTimeout(1200);assert.equal(await page.evaluate(async()=>Boolean((await navigator.serviceWorker.getRegistration()).waiting)),false);
-    assert.equal(await page.title(),'Victor '+baseRelease);assert.ok(!(await page.evaluate(()=>caches.keys())).includes('victor-alpha-0-20-cache-v'+release));console.log('PASS incomplete release rejected, existing release retained');
+    assert.equal(await page.title(),'Victor '+baseRelease);assert.ok(!(await page.evaluate(()=>caches.keys())).some(n=>n.endsWith(':cache-v'+release)));console.log('PASS incomplete release rejected, existing release retained');
     release=baseRelease+3;failAsset=false;futureSchema=true;await page.evaluate(async()=>{await (await navigator.serviceWorker.getRegistration()).update();});await page.waitForTimeout(1200);
-    assert.equal(await page.evaluate(async()=>Boolean((await navigator.serviceWorker.getRegistration()).waiting)),false);assert.equal(await page.title(),'Victor '+baseRelease);assert.ok(!(await page.evaluate(()=>caches.keys())).includes('victor-alpha-0-20-cache-v'+release));console.log('PASS unsupported schema rejected before update');
+    assert.equal(await page.evaluate(async()=>Boolean((await navigator.serviceWorker.getRegistration()).waiting)),false);assert.equal(await page.title(),'Victor '+baseRelease);assert.ok(!(await page.evaluate(()=>caches.keys())).some(n=>n.endsWith(':cache-v'+release)));console.log('PASS unsupported schema rejected before update');
+    release++;futureSchema=false;htmlAsset=true;await page.evaluate(async()=>{await (await navigator.serviceWorker.getRegistration()).update();});await page.waitForTimeout(1200);assert.equal(await page.evaluate(async()=>Boolean((await navigator.serviceWorker.getRegistration()).waiting)),false);assert.equal(await page.title(),'Victor '+baseRelease);console.log('PASS HTTP 200 HTML rejected for script');
   }finally{await browser.close();server.close();}
 })().catch(error=>{console.error(error);server.close();process.exitCode=1;});

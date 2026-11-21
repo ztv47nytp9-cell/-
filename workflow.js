@@ -63,7 +63,7 @@ function recordDuplicateLevel(left,right){
   const differentLocation=location(left)&&location(right)&&location(left)!==location(right);
   return differentTime||differentLocation||String(left.memo||"").trim()!==String(right.memo||"").trim()?"similar":"exact";
 }
-function mergeBundleRows(rows,key){const map=new Map();rows.forEach(row=>{const current=map.get(row[key]);if(current)current.qty+=Number(row.qty);else map.set(row[key],{...row,qty:Number(row.qty)});});return [...map.values()];}
+function mergeBundleRows(rows,key){const map=new Map();rows.forEach(row=>{const current=map.get(row[key]);if(current)current.qty=addQuantities(current.qty,row.qty);else map.set(row[key],{...row,qty:Number(row.qty)});});return [...map.values()];}
 function resourceBundles(){
   return (Array.isArray(state.resourceBundles)?state.resourceBundles:[]).filter(row=>row&&typeof row.id==="string"&&typeof row.name==="string").map(row=>({...row,items:mergeBundleRows((Array.isArray(row.items)?row.items:[]).filter(item=>item&&typeof item.name==="string"&&Number.isFinite(Number(item.qty))&&Number(item.qty)>0),"name"),equipmentItems:mergeBundleRows((Array.isArray(row.equipmentItems)?row.equipmentItems:[]).filter(item=>item&&typeof item.id==="string"&&Number.isInteger(Number(item.qty))&&Number(item.qty)>0),"id")}));
 }
@@ -230,11 +230,12 @@ function bindBackupReminder(){
 const memoDraftMemory=new Map();
 function memoDraftKey(id){return "victor_memo_draft_v1:"+(id||"new");}
 function memoDraftFor(id){try{return JSON.parse(sessionStorage.getItem(memoDraftKey(id))||"null")||memoDraftMemory.get(id||"new")||null;}catch(_){return memoDraftMemory.get(id||"new")||null;}}
+let memoDraftWarningShown=false;
 function captureMemoDraft(){
   if(page!=="memo"||!document.getElementById("memoBody"))return;
   const draft={date:document.getElementById("memoDate").value,title:document.getElementById("memoTitle").value,body:document.getElementById("memoBody").value};
   memoDraftMemory.set(editingMemoId||"new",draft);
-  try{sessionStorage.setItem(memoDraftKey(editingMemoId),JSON.stringify(draft));}catch(_){showFeedback("info","메모 초안을 기기에 보관하지 못했습니다 · 나가기 전에 저장해주세요");}
+  try{sessionStorage.setItem(memoDraftKey(editingMemoId),JSON.stringify(draft));memoDraftWarningShown=false;}catch(_){if(memoDraftWarningShown)return;memoDraftWarningShown=true;showFeedback("info","메모 초안을 기기에 보관하지 못했습니다 · 나가기 전에 저장해주세요");}
 }
 function clearMemoDraft(id){memoDraftMemory.delete(id||"new");try{sessionStorage.removeItem(memoDraftKey(id));}catch(_){};}
 function splitResourceKey(key){const index=key.indexOf(":");return [key.slice(0,index),key.slice(index+1)];}
@@ -570,28 +571,28 @@ function copyRecordToRegister(record){
 
 function csvCell(value){
   let text=String(value??"");
-  if(/^[=+\-@\t\r]/.test(text))text="'"+text;
+  if(typeof value!=="number"&&/^[=+\-@\t\r]/.test(text))text="'"+text;
   return '"'+text.replace(/"/g,'""')+'"';
 }
 function csvRows(kind,{positiveOnly=false,filtered=false}={}){
   const inventories=()=>[["보관장소","세부위치","품목명","분류","단위","현재수량","최소수량"],...warehouses.flatMap(place=>catalog.filter(item=>!positiveOnly||Number(state.stock[place]?.[item.name]||0)>0).map(item=>[place,state.warehouseInfos?.[place]?.detailLocation||"",item.name,item.cat,item.unit,Number(state.stock[place]?.[item.name]||0),item.minimumByPlace?.[place]??""]))];
-  const records=()=>[["기록ID","날짜","시간","종류","사고/훈련","제목","상태","보관장소","도착장소","품목","수량","단위","메모","자원구분"],...(filtered?state.records.filter(r=>historyStatusMatches(r)&&historyDateMatches(r)&&historyFlowMatches(r)&&historySearchMatches(r)).sort(compareRecordTime):state.records).flatMap(record=>{
+  const records=()=>[["기록ID","날짜","시간","종류","사고/훈련","제목","상태","보관장소","도착장소","품목","수량","단위","메모","자원구분"],...(filtered?state.records.filter(r=>historyStatusMatches(r)&&historyDateMatches(r)&&historyFlowMatches(r)&&historySearchMatches(r)).sort(compareRecordTime):[...state.records].sort(compareRecordTime)).flatMap(record=>{
     const resources=[...(record.items||[]).map(item=>({...item,resourceKind:"자재"})),...(record.equipmentItems||[]).map(item=>({...item,warehouse:((record.pendingFlow||record.flow)==="이송"?item.fromPlace:null)||item.place||item.warehouse||record.warehouse,targetWarehouse:item.toPlace||item.targetWarehouse||record.targetWarehouse,unit:"대",resourceKind:"장비"}))];
     return (resources.length?resources:[{}]).map(item=>[record.id,record.date,record.time||"",record.flow,record.type,record.title,recordStateLabel(record),itemWarehouse(item,record.warehouse),item.targetWarehouse||record.targetWarehouse||"",item.name||"",item.qty??"",item.unit||"",record.memo,item.resourceKind||""]);
   })];
   const equipment=()=>[["관리ID","관리번호","장비명","분류","보관장소","규격","수량","상태","메모"],...state.equipment.map(item=>[item.id,item.managementNo||item.managementNumber||"",item.name,item.cat,item.place,item.spec,item.qty,item.status,item.memo])];
-  const operations=type=>[["보관장소","기록ID","날짜","출발시간","도착시간","출발누적km","도착누적km","운행거리km","마일NM","좌현시간h","우현시간h","연료소모L","목적","운전자/운항자","메모"],...warehouses.filter(place=>warehouseKind(place)===type).flatMap(place=>effectiveOpLogs(place).map(log=>[place,log.id,log.date,log.startTime||"",log.endTime||"",log.before??"",log.after??"",log.diff??log.distance??"",log.mileageDiff??"",log.portDiff??"",log.starboardDiff??"",log.fuel??"",log.purpose||"",log.driver||log.operator||"",log.memo||""]))];
+  const operations=type=>[["보관장소","기록ID","날짜","출발시간","도착시간","출발누적km","도착누적km","운행거리km","마일NM","좌현시간h","우현시간h","연료소모L","목적","운전자/운항자","메모","구형 단일 엔진시간(h)"],...warehouses.filter(place=>warehouseKind(place)===type).flatMap(place=>effectiveOpLogs(place).map(log=>[place,log.id,log.date,log.startTime||"",log.endTime||"",log.before??"",log.after??"",log.diff??log.distance??"",log.mileageDiff??"",log.portDiff??"",log.starboardDiff??"",log.fuel??"",log.purpose||"",log.driver||log.operator||"",log.memo||"",log.hours??""]))];
   const maintenance=()=>[["관리ID","관리번호","장비명","현재 보관장소","기록ID","날짜","구분","내용","담당자","메모"],...state.equipment.flatMap(item=>(item.maintenance||[]).map(log=>[item.id,item.managementNo||item.managementNumber||"",item.name,item.place,log.id,log.date,log.type||log.kind||"",log.content||log.title||"",log.operator||log.manager||"",log.memo||""]))];
   if(kind==="vehicle"||kind==="vessel"){
-    const cols=kind==="vehicle"?[0,1,2,3,4,5,6,7,12,13,14]:[0,1,2,3,4,8,9,10,11,12,14];
+    const cols=kind==="vehicle"?[0,1,2,3,4,5,6,7,12,13,14]:[0,1,2,3,4,8,9,10,15,11,12,14];
     return operations(kind==="vehicle"?"차량":"함정").map(row=>cols.map(i=>row[i]));
   }
   return kind==="inventory"?inventories():kind==="records"?records():kind==="equipment"?equipment():kind==="equipmentHistory"?maintenance():operations(kind==="vehicle"?"차량":"함정");
 }
 function openCsvExport(){
   openEntryModal(`${entryHeader("CSV 내보내기","조회·보고용 · 전체 복원은 JSON 백업을 사용하세요")}<div class="form"><label>내보낼 자료<select id="csvKind"><option value="inventory">자원 재고</option><option value="records">입·출고 / 사건 기록</option><option value="equipment">장비 목록</option><option value="equipmentHistory">장비 관리이력</option><option value="vehicle">차량 운행</option><option value="vessel">방제정 운항</option></select></label><label id="inventoryScope">재고 범위<select id="csvStock"><option value="all">0재고 포함</option><option value="positive">보유분만</option></select></label><label id="recordScope" hidden>기록 범위<select id="csvRecords"><option value="all">전체 기록</option><option value="filtered">현재 이력 조회 조건</option></select></label><div id="csvPreview" class="row-sub" role="status"></div><button class="btn primary" id="exportCsv" type="button">파일 저장</button></div>`);
-  function csvPeriod(){const today=todayISO();return ({all:"전체기간",today,yesterday:yesterdayISO(),month:today.slice(0,7),custom:(historyCustomFrom||"처음")+"~"+(historyCustomTo||"현재")})[historyDateFilter]||"선택기간";}
-  function previewCsv(){const kind=document.getElementById("csvKind").value,filtered=kind==="records"&&document.getElementById("csvRecords").value==="filtered";const rows=csvRows(kind,{filtered,positiveOnly:document.getElementById("csvStock").value==="positive"});document.getElementById("csvPreview").textContent=[filtered?csvPeriod():"전체",filtered&&historyPlaceFilter!=="all"?historyPlaceFilter:"",kind==="records"?new Set(rows.slice(1).map(r=>r[0])).size+"건":"",rows.length-1+"행"].filter(Boolean).join(" · ");}
+  function csvPeriod(){const today=todayISO();return ({"7":"최근7일","30":"최근30일",all:"전체기간",today,yesterday:yesterdayISO(),month:today.slice(0,7),custom:(historyCustomFrom||"처음")+"~"+(historyCustomTo||"현재")})[historyDateFilter]||"선택기간";}
+  function previewCsv(){const kind=document.getElementById("csvKind").value,filtered=kind==="records"&&document.getElementById("csvRecords").value==="filtered";const rows=csvRows(kind,{filtered,positiveOnly:document.getElementById("csvStock").value==="positive"});document.getElementById("csvPreview").textContent=[filtered?csvPeriod():"전체",...(filtered?[historyFlowFilter,historyTypeFilter,historyFilter,historySearchQuery].filter(v=>v&&v!=="all"):[]),filtered&&historyPlaceFilter!=="all"?historyPlaceFilter:"",kind==="records"?new Set(rows.slice(1).map(r=>r[0])).size+"건":"",rows.length-1+"행"].filter(Boolean).join(" · ");}
   document.getElementById("csvStock").onchange=previewCsv;document.getElementById("csvRecords").onchange=previewCsv;previewCsv();
   document.getElementById("csvKind").onchange=e=>{document.getElementById("inventoryScope").hidden=e.target.value!=="inventory";document.getElementById("recordScope").hidden=e.target.value!=="records";previewCsv();};
   document.getElementById("exportCsv").addEventListener("click",()=>{const kind=document.getElementById("csvKind").value;const rows=csvRows(kind,{positiveOnly:document.getElementById("csvStock").value==="positive",filtered:document.getElementById("csvRecords").value==="filtered"});downloadBlob(new Blob(["\uFEFF"+rows.map(row=>row.map(csvCell).join(",")).join("\r\n")],{type:"text/csv;charset=utf-8"}),`victor_${kind}_${kind==="records"&&document.getElementById("csvRecords").value==="filtered"?csvPeriod()+"_":""}${todayISO()}.csv`);showFeedback("success",`CSV 파일 생성 · ${kind==="records"?`기록 ${new Set(rows.slice(1).map(row=>row[0])).size}건 · `:""}${rows.length-1}행`);});

@@ -1,8 +1,9 @@
 /* App files move together; LocalStorage is never cleared by this worker. */
-const CACHE_NAME="victor-alpha-0-20-cache-v178";
-const SETTINGS_CACHE="victor-runtime-settings";
-const CORE_ASSETS=["./index.html","./style.css?v=02020m178","./storage.js?v=02020m178","./workflow.js?v=02020m178","./fieldwork.js?v=02020m178","./app.js?v=02020m178","./manifest.json","./icons/icon-180.png","./icons/icon-192.png","./icons/icon-512.png","./interface.css?v=02020m178"];
-const isAppCache=name=>name.startsWith("victor-")&&name.includes("-cache-v");
+const CACHE_PREFIX="victor-scope:"+encodeURIComponent(self.registration.scope)+":";
+const CACHE_NAME=CACHE_PREFIX+"cache-v179";
+const SETTINGS_CACHE=CACHE_PREFIX+"settings";
+const CORE_ASSETS=["./index.html","./style.css?v=02020m179","./storage.js?v=02020m179","./workflow.js?v=02020m179","./fieldwork.js?v=02020m179","./app.js?v=02020m179","./manifest.json","./icons/icon-180.png","./icons/icon-192.png","./icons/icon-512.png","./interface.css?v=02020m179"];
+const isAppCache=name=>name.startsWith(CACHE_PREFIX+"cache-v");
 let selectedCache=CACHE_NAME;
 const settingUrl=new URL("./__victor_cache_selection",self.location.href).href;
 async function readSelection(){const response=await(await caches.open(SETTINGS_CACHE)).match(settingUrl);const selection=response?await response.text():CACHE_NAME;const names=await caches.keys();selectedCache=names.includes(selection)?selection:CACHE_NAME;}
@@ -17,6 +18,7 @@ async function previousIsCompatible(name){
 }
 self.addEventListener("install",event=>event.waitUntil((async()=>{
   const responses=await Promise.all(CORE_ASSETS.map(async asset=>{const response=await fetch(new Request(asset,{cache:"reload"}));if(!response.ok)throw new Error("필수 파일 로드 실패: "+asset);const body=await response.arrayBuffer();return new Response(body,{status:response.status,statusText:response.statusText,headers:response.headers});}));
+  for(const [i,path] of CORE_ASSETS.entries())if(/\.(js|css)\?/.test(path)){const r=responses[i];if(!/javascript|ecmascript|text\/css/i.test(r.headers.get("Content-Type")||"")||/^\s*</.test(await r.clone().text()))throw new Error("실행 파일 형식 오류: "+path);}
   const html=await responses[0].clone().text(),storage=await responses[2].clone().text();
   const schema=storage.match(/const SCHEMA_VERSION\s*=\s*(\d+)/);
   if(!schema||Number(schema[1])>1)throw new Error("지원하지 않는 저장형식 · 기존 앱 유지");
@@ -26,7 +28,10 @@ self.addEventListener("install",event=>event.waitUntil((async()=>{
   try{await Promise.all(CORE_ASSETS.map((asset,index)=>cache.put(asset,responses[index])));}catch(error){await caches.delete(CACHE_NAME);throw error;}
 })()));
 self.addEventListener("activate",event=>event.waitUntil((async()=>{
-  await selectionReady;selectedCache=CACHE_NAME;
+  await selectionReady;
+  const legacy="victor-alpha-0-20-cache-v178";
+  if(!(await caches.keys()).some(n=>isAppCache(n)&&n!==CACHE_NAME)&&(await caches.keys()).includes(legacy)){const old=await caches.open(legacy),index=new URL("./index.html",self.location.href);if(await old.match(index)){const previous=await caches.open(CACHE_PREFIX+"cache-v178");for(const req of await old.keys())if(req.url.startsWith(self.registration.scope))await previous.put(req,await old.match(req));}}
+  selectedCache=CACHE_NAME;
   await(await caches.open(SETTINGS_CACHE)).put(settingUrl,new Response(CACHE_NAME));
   const older=(await caches.keys()).filter(name=>isAppCache(name)&&name!==CACHE_NAME);
   const previous=older[older.length-1];
