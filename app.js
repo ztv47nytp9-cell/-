@@ -1330,7 +1330,6 @@ function renderMenuPage(){
   queueMicrotask(updateUndoAvailability);
   view.innerHTML=`
     <div class="sheet-grip page-sheet-grip" aria-hidden="true"></div>
-    <button class="back" id="menuBackHome" type="button">‹ 홈</button>
     <div class="menu-page-section">
       <div class="menu-label">데이터 관리</div>
       <div class="menu-page-grid">
@@ -1380,7 +1379,6 @@ function renderMenuPage(){
         <button class="menu-danger" type="button" id="pageResetBtn">전체 초기화</button>
       </div>
     </div>`;
-  document.getElementById("menuBackHome")?.addEventListener("click",()=>goBackInApp());
   document.getElementById("pageBackupBtn")?.addEventListener("click",backup);
   document.getElementById("pageRestoreBtn")?.addEventListener("click",()=>document.getElementById("restoreFile")?.click());
   document.getElementById("pageCloudSettingsBtn")?.addEventListener("click",openCloudShareSettings);
@@ -5902,14 +5900,14 @@ function bindContextBack(){
     const blocked=scrollLockReasons.size||document.body.classList.contains("keyboard-open");
     if(back){back.classList.add("persistent-back");back.classList.toggle("back-blocked",Boolean(blocked));if(["backWh","backEquip","backHist","backMemoHome","menuBackHome","techniqueBack"].includes(back.id)){if(back.textContent!=="‹ 뒤로")back.textContent="‹ 뒤로";back.setAttribute("aria-label","이전 화면으로 돌아가기");}}
     button.hidden=Boolean(back||blocked||page==="home");
-    button.textContent=history.state?.returnTo?"‹ 뒤로":"‹ 홈";button.setAttribute("aria-label",history.state?.returnTo?"이전 화면으로 돌아가기":"홈으로 돌아가기");
+    const canBack=history.state?.returnTo||page==="menu";button.textContent=canBack?"‹ 뒤로":"‹ 홈";button.setAttribute("aria-label",canBack?"이전 화면으로 돌아가기":"홈으로 돌아가기");
     const nav=document.querySelector(".bottom").getBoundingClientRect();
     document.body.classList.toggle("has-context-back",page!=="home");
-    const height=`${Math.max(0,innerHeight-nav.top)}px`,rootStyle=document.documentElement.style;
+    const height=`${nav.height}px`,rootStyle=document.documentElement.style;
     if(rootStyle.getPropertyValue("--app-nav-height")!==height)rootStyle.setProperty("--app-nav-height",height);
     let top=nav.top-12;
     for(const action of view.querySelectorAll(".sticky-action,#saveRecord")){const box=action.getBoundingClientRect();if(box.height&&box.top<top&&box.bottom>0)top=Math.min(top,box.top-12);}
-    const backBottom=`${Math.max(innerHeight-nav.top+10,12)}px`;
+    const backBottom=`${nav.height+10}px`;
     if((back||button).style.bottom!==backBottom)(back||button).style.bottom=backBottom;
     if(!blocked){const box=(back||button).getBoundingClientRect();if(box.height&&box.top>0)top=Math.min(top,box.top-12);}
     const snack=document.getElementById("snackbar");

@@ -528,7 +528,10 @@ fieldset.register-type-options{min-width:0;margin:0;padding:0;border:0;display:f
 .history-tabs [hidden]{display:none}
 .form details.field-card:has(#recTime)>summary{display:flex;align-items:center;gap:8px;box-sizing:border-box;padding:0;min-height:44px}
 .form details.field-card:has(#recTime)>.location-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:8px 0 0;margin:0}
-.form details.field-card:has(#recTime) .location-grid input{width:100%;min-width:0;box-sizing:border-box;margin:6px 0 0}
+.form details.field-card:has(#recTime) .location-grid>label{display:grid;grid-template-columns:minmax(0,1fr);align-content:start;gap:6px;min-width:0}
+.form details.field-card .location-grid :is(#recDate,#recTime){display:block;width:100%;min-width:0;max-width:100%;height:46px;min-height:46px;box-sizing:border-box;margin:0;padding:0 10px;line-height:20px;-webkit-appearance:none;appearance:none}
+.form details.field-card :is(#recDate,#recTime)::-webkit-date-and-time-value{text-align:center;min-width:0;margin:0}
+:root[data-theme="dark"] .field-card #recTime{color-scheme:dark;background:#26384b;color:#e0eaf3;border-color:#4a6076}
 .form details.field-card:has(#recTime)>.btn{margin:12px 0 0}
 @media(max-width:360px){.form details.field-card:has(#recTime)>.location-grid{grid-template-columns:1fr}}
 @media(min-width:600px){.history-tabs:has([data-hfilter="review"]:not([hidden])){grid-template-columns:repeat(4,minmax(0,1fr))}}
