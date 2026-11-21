@@ -2515,18 +2515,17 @@ function updateHistoryResultCount(total){
   }
 }
 function renderBaseHistory(){
-  const all = [...state.records].sort(compareRecordTime);
-  const counts = {all:all.length,pending:all.filter(r=>r.status === "pending"&&!r.stockReview).length,review:all.filter(r=>r.status==="pending"&&r.stockReview).length,done:all.filter(r=>r.status !== "pending").length};
-  if(historyFilter==="review"&&!counts.review)historyFilter="all";
-  let filtered = all.filter(record => historyStatusMatches(record));
-  filtered = filtered.filter(record => historyDateMatches(record) && historyFlowMatches(record) && historySearchMatches(record));
+  const all = state.records.filter(historyDateMatches).sort(compareRecordTime);
+  const counts = {all:all.length,pending:0,review:0,done:0};
+  for(const r of all)counts[r.status==="pending"?(r.stockReview?"review":"pending"):"done"]++;
+  const filtered = all.filter(record => historyStatusMatches(record) && historyFlowMatches(record) && historySearchMatches(record));
   view.innerHTML = `
     <div class="history-filter-caption" id="historyStatusCaption">처리 상태</div>
     <div class="history-tabs" role="group" aria-labelledby="historyStatusCaption">
       <button class="history-tab ${historyFilter === "all" ? "active" : ""}" data-hfilter="all" type="button">전체 ${counts.all}</button>
       <button class="history-tab ${historyFilter === "pending" ? "active" : ""}" data-hfilter="pending" type="button">진행중 ${counts.pending}</button>
       <button class="history-tab ${historyFilter === "done" ? "active" : ""}" data-hfilter="done" type="button">완료 ${counts.done}</button>
-      ${counts.review?`<button class="history-tab ${historyFilter==="review"?"active":""}" data-hfilter="review" type="button">재고 확인 ${counts.review}</button>`:""}
+      ${counts.review||historyFilter==="review"?`<button class="history-tab ${historyFilter==="review"?"active":""}" data-hfilter="review" type="button">재고 확인 ${counts.review}</button>`:""}
     </div>
     <div class="history-filter-caption" id="historyPeriodCaption">조회 기간</div>
     <div class="history-date-buttons" role="group" aria-labelledby="historyPeriodCaption">
