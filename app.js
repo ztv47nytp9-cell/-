@@ -3740,7 +3740,10 @@ function addOpLog(place){
   const vehicle=isVehiclePlace(place),op=state.assetOps?.[place];if(!op)return;
   openEntryModal(`${entryHeader(vehicle?"주행 기록":"운항 기록",place)}<div class="form"><label>날짜<input id="opLogDate" type="date" value="${todayISO()}"></label>${vehicle?`<label>출발 누적거리(km)<input id="opLogStartDistance" type="number" inputmode="decimal" min="0" value="${opTotal(place,"distance")}"></label><label>도착 누적거리(km)<input id="opLogDistance" type="number" inputmode="decimal" min="0" placeholder="현재 ${opTotal(place,"distance")}km"></label><div class="callout" id="opDistancePreview">도착거리를 입력하면 운행거리가 계산됩니다.</div>`:`<div class="grid2"><label>출항지<input id="opLogDeparture" placeholder="출항지"></label><label>도착지<input id="opLogArrival" placeholder="도착지"></label></div><label>누적 마일수(NM · 선택)<input id="opLogMileage" type="number" inputmode="decimal" min="0" placeholder="현재 ${opTotal(place,"mileage")}NM"></label><label>좌현 엔진 누적시간(h)<input id="opLogPortHours" type="number" inputmode="decimal" min="0" placeholder="현재 ${opTotal(place,"portHours")}h"></label><label>우현 엔진 누적시간(h)<input id="opLogStarboardHours" type="number" inputmode="decimal" min="0" placeholder="현재 ${opTotal(place,"starboardHours")}h"></label><label>연료 소모량(L · 선택)<input id="opLogFuel" type="number" inputmode="decimal" min="0" step="0.1" placeholder="현재 재고 ${Number(op.fuelBase||0)}L"></label>`}
     <details class="field-card"><summary>시간·목적·담당자 (선택)</summary><div class="location-grid"><label>출발 시간<input id="opLogStartTime" type="time"></label><label>도착 시간<input id="opLogEndTime" type="time"></label></div><label>목적<input id="opLogPurpose" placeholder="순찰, 방제작업 등"></label><label>${vehicle?"운전자":"운항자"}<input id="opLogOperator" autocomplete="off"></label></details><label>메모<textarea id="opLogMemo"></textarea></label><button class="btn primary sticky-action" id="saveOpLog" type="button">저장</button></div>`);
-  const preview=()=>{const start=Number(document.getElementById("opLogStartDistance")?.value),end=Number(document.getElementById("opLogDistance")?.value);const target=document.getElementById("opDistancePreview");if(target)target.textContent=end>=start?`운행거리 ${end-start}km`:"도착 누적거리는 출발거리보다 작을 수 없습니다";};
+  const preview=()=>{const from=document.getElementById("opLogStartDistance"),to=document.getElementById("opLogDistance"),target=document.getElementById("opDistancePreview");if(!target||!from||!to)return;
+    const km=n=>Number(n).toLocaleString("ko-KR",{maximumFractionDigits:3})+" km",start=Number(from.value),end=Number(to.value);
+    target.textContent=!to.value||!from.value?"현재 총 운행거리 "+km(opTotal(place,"distance"))+" · 출발·도착 계기값을 입력하세요":end<start?"도착 누적거리는 출발거리보다 작을 수 없습니다":"이번 운행 "+km(end-start)+" · 총 운행거리 "+km(end);};
+  if(vehicle)preview();
   document.getElementById("opLogStartDistance")?.addEventListener("input",preview);document.getElementById("opLogDistance")?.addEventListener("input",preview);
   document.getElementById("saveOpLog").addEventListener("click",()=>runWorkflow(`operation:${place}`,async()=>{
     const op=state.assetOps[place];
@@ -4928,7 +4931,7 @@ function cloudDashboardHtml(latest=null,{loading=false,error="",checkedAt=""}={}
   const localLine=`자재 ${localSummary.materials}종 · 장비 ${localSummary.equipment}대`;
   const lastAction=meta.lastAppliedAt&&(!meta.lastUploadedAt||dateMs(meta.lastAppliedAt)>=dateMs(meta.lastUploadedAt))?`마지막 가져옴 ${fmtShareTime(meta.lastAppliedAt)}`:meta.lastUploadedAt?`마지막 올림 ${fmtShareTime(meta.lastUploadedAt)}`:"공유 기록 없음";
   return `${entryHeader("자원연계","자재·장비·보관장소")}
-    <div class="form cloud-share-form ${status==="이미 최신"?"share-idle":status==="클라우드 자료가 최신"?"share-receive":""}">
+    <div class="form cloud-share-form ${loading||status==="이미 최신"?"share-idle":status==="클라우드 자료가 최신"?"share-receive":""}">
       <div class="share-status-card ${latest&&!loading&&!error?"ready":""}" role="status" aria-live="polite">
         <div class="share-status-label">${esc(config.title)}</div>
         <div class="share-status-title">${esc(status==="이미 최신"?"✓ 이미 최신이에요":compareFirst?status:statusTitle)}</div>
@@ -5028,7 +5031,8 @@ async function refreshCloudShareWithPopup(){
 async function refreshCloudDashboard(notify=false,preserve=false){
   const requestId=++cloudDashboardRequestId;
   const known=cloudShareNotice?.snapshot||null;
-  renderCloudDashboard(known,{loading:true},preserve);
+  const refreshButton=preserve&&document.getElementById("cloudRefreshNow");
+  if(refreshButton){refreshButton.disabled=true;refreshButton.textContent="확인 중…";}else renderCloudDashboard(known,{loading:true},preserve);
   const revision=entryModalRevision;
   const isCurrent=()=>requestId===cloudDashboardRequestId&&revision===entryModalRevision&&document.getElementById("entryModal").classList.contains("show")&&Boolean(document.getElementById("cloudApplyNow"));
   try{
@@ -5039,10 +5043,7 @@ async function refreshCloudDashboard(notify=false,preserve=false){
     cloudShareNotice=snapshot?{kind:isCloudSnapshotNewer(snapshot)?"new":"same",summary:snapshotSummary(snapshot),snapshot}:null;
     if(!isCurrent())return;
     renderCloudDashboard(snapshot,{checkedAt:new Date().toISOString()},true);
-    if(notify){
-      const status=cloudStatusLabel(snapshot);
-      showFeedback(!snapshot?"info":status==="이미 최신"?"success":"info",!snapshot?"공유자료 없음":snapshot===known?`변경 없음 · ${localTimeNow()} 확인`:`${status} · 자료 기준 ${fmtDateTime(snapshotSummary(snapshot).date)}`);
-    }
+    if(notify){const note=document.querySelector(".cloud-share-form .share-time-note");if(note)note.textContent="마지막 확인 "+localTimeNow();}
   }catch(error){
     if(!isCurrent())return;
     console.warn("[Victor] 공유 현황 확인 실패",error);
@@ -5800,6 +5801,8 @@ function init(){
     render();
     replaceNavigationState({page:"home"});
     appStarted = true;
+    const refreshWhenActive=()=>{if(!document.hidden&&navigator.onLine)checkCloudShareNotice({silent:true});};
+    document.addEventListener("visibilitychange",refreshWhenActive);window.addEventListener("online",refreshWhenActive);
     setTimeout(hideSplash, 500);
   }catch(error){
     showStartupError(error);
