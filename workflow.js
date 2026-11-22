@@ -214,7 +214,7 @@ function canRestoreGuardedPoint(point){const status=guardedPointStatus(point);if
 function updateUndoAvailability(){
   let point=null;try{point=JSON.parse(localStorage.getItem("victor_bulk_safety_0_19_0l")||"null");}catch(_){}
   const status=guardedPointStatus(point);
-  ["bulkUndoBtn","pageBulkUndoBtn"].forEach(id=>{const button=document.getElementById(id);if(button){button.disabled=!status.allowed;button.title=status.reason;button.innerHTML=`대량변경 되돌리기 <span class="undo-availability">${esc(status.label)}</span>`;}});
+  ["bulkUndoBtn","pageBulkUndoBtn"].forEach(id=>{const button=document.getElementById(id);if(button){button.disabled=!status.allowed;button.title=status.reason;button.innerHTML=`${point?.label?esc(point.label)+" 되돌리기":"대량변경 되돌리기"} <span class="undo-availability">${esc([point?.createdAt?fmtDateTime(point.createdAt):"",status.allowed?status.label:status.reason].filter(Boolean).join(" · "))}</span>`;}});
 }
 function backupReminderStatus(now=Date.now()){
   const since=dateMs(state.lastBackup)||0,snoozed=Number(state.ui?.backupReminderSnoozedUntil||0);

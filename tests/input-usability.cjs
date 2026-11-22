@@ -123,7 +123,7 @@ test('removing draft equipment keeps source equipment and stock unchanged',()=>{
     const css=fs.readFileSync(path.join(__dirname,'../interface.css'),'utf8');assert.match(css,/@media\(max-width:360px\)[\s\S]*?\.register-pending-draft\{align-items:stretch;flex-direction:column/);assert.match(css,/\.content:has\(\.register-save-dock\)\{padding-bottom/);
   });
   test('app refresh is visible without opening the advanced recovery section',()=>{
-    const menu=source.slice(source.indexOf('function renderMenuPage()'),source.indexOf('function techList('));assert.match(menu,/<div class="menu-label">앱<\/div>[\s\S]*?<button type="button" id="pageRefreshAppBtn">앱 새로고침 <span>최신 앱 확인 · 저장자료 유지<\/span><\/button>/);assert.doesNotMatch(menu,/<details class="menu-page-section menu-advanced">[\s\S]*?id="pageRefreshAppBtn"/);
+    const menu=source.slice(source.indexOf('function renderMenuPage()'),source.indexOf('function techList('));assert.match(menu,/<details id="menuVersion"[\s\S]*?<button type="button" id="pageRefreshAppBtn">앱 새로고침 <span>최신 앱 확인 · 저장자료 유지<\/span><\/button>/);assert.doesNotMatch(menu,/<details id="menuRecovery"[\s\S]*?id="pageRefreshAppBtn"/);
   });
   console.log(`DONE ${passed} isolated input usability checks; zero external requests`);
 })().catch(error=>{console.error(error);process.exitCode=1;});

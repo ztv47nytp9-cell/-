@@ -446,7 +446,7 @@ function setHead(){
   if(page === "history") h.innerHTML = `<div class="page-title">이력</div><div class="date">출고·입고·긴급기록</div>`;
   if(page === "memo") h.innerHTML = `<div class="page-title">메모</div><div class="date">일자별 메모 관리</div>`;
   if(page === "technique") h.innerHTML = `<div class="page-title">방제기술</div><div class="date">상황별 조치요령 초안</div>`;
-  if(page === "menu") h.innerHTML = `<div class="page-title">앱 관리</div><div class="date">데이터·공유·화면·복구 설정</div>`;
+  if(page === "menu") h.innerHTML = '<div class="page-title">메뉴</div>';
 }
 function render(){
   setHead();
@@ -1326,39 +1326,43 @@ function renderTechniqueInfo(){
   renderTechniqueResults();
 }
 
+let menuReturn=null;
 function renderMenuPage(){
   queueMicrotask(updateUndoAvailability);
+  const s=state.survey,place=s?.items?.[s.index]?.warehouse,items=(s?.items||[]).filter(i=>i.warehouse===place);
+  const mode=readThemeMode(),waiting=typeof currentUpdateRegistration!=="undefined"&&currentUpdateRegistration?.waiting;
   view.innerHTML=`
     <div class="sheet-grip page-sheet-grip" aria-hidden="true"></div>
-    <div class="menu-page-section">
-      <div class="menu-label">데이터 관리</div>
+    <details id="menuData" class="menu-page-section menu-fold"><summary>자료 관리 <small id="menuBackupDate">마지막 백업 ${esc(fmtDateTime(state.lastBackup)||"없음")}</small></summary>
       <div class="menu-page-grid">
         <button type="button" id="pageBackupBtn">백업</button>
+        <button type="button" id="pageSendBackup" hidden>백업 파일 보내기</button>
         <button type="button" id="pageRestoreBtn">복원</button><button id="verifyBackupBtn">백업 검사</button>
         <button type="button" id="pageCsvBtn" class="menu-wide">CSV 내보내기</button>
       </div>
-    </div>
+    </details>
     <div class="menu-page-section">
       <div class="menu-label">업무·정보</div>
       <div class="menu-page-grid single">
-        <button type="button" id="pageFastSurveyBtn">초기 재고실사 <span>빠른 수량 확인</span></button>
+        <button type="button" id="pageFastSurveyBtn">${s?.active?"실사 이어하기":"초기 재고실사"} <span>${s?.active&&place?esc(place)+" · "+items.filter(i=>s.checked?.[place+"|"+i.name]).length+"/"+items.length+"종 확인":"빠른 수량 확인"}</span></button>
         <button type="button" id="pageTechniqueBtn">방제기술 <span>상황별 조치 초안</span></button>
       </div>
     </div>
     <div class="menu-page-section">
       <div class="menu-label">설정</div>
       <div class="menu-page-grid single">
-        <button type="button" id="pageThemeBtn">화면 설정 <span>밝게·어둡게</span></button>
+        <label class="menu-mode">화면 모드<select id="pageThemeBtn">${Object.entries({auto:"야간 자동",light:"밝게",dark:"어둡게",system:"기기 설정"}).map(([v,l])=>`<option value="${v}" ${mode===v?"selected":""}>${l}</option>`).join("")}</select></label>
         <button type="button" id="pageCloudSettingsBtn">자원연계 설정 <span>연결·PIN 관리</span></button>
       </div>
     </div>
-    <div class="menu-page-section">
-      <div class="menu-label">앱</div>
+    <details id="menuVersion" class="menu-page-section menu-fold"><summary>앱 버전 · ${esc(APP_BUILD)}${waiting?" · 업데이트 가능":""}</summary>
       <div class="menu-page-grid single">
         <button type="button" id="pageRefreshAppBtn">앱 새로고침 <span>최신 앱 확인 · 저장자료 유지</span></button>
+        <button type="button" id="pageAppInfoBtn">앱 정보</button>
+        <button type="button" id="pageUpdateBtn">${waiting?"업데이트":"버전 확인"}</button>
       </div>
-    </div>
-    <details class="menu-page-section menu-advanced">
+    </details>
+    <details id="menuRecovery" class="menu-page-section menu-advanced">
       <summary>복구·앱 관리</summary>
       <div class="menu-page-grid">
         <button type="button" id="pageTrashBtn">임시 보관함</button>
@@ -1367,25 +1371,24 @@ function renderMenuPage(){
         <button type="button" id="pageSafetyBtn">자동 안전지점</button>
       </div>
       <div class="menu-page-grid">
-        <button type="button" id="pageAppInfoBtn">앱 정보</button>
-        <button type="button" id="pageUpdateBtn">앱 버전 확인</button>
         <button type="button" id="pageRollbackBtn">이전 앱 버전</button>
       </div>
-    </details>
-    ${appVersionInfoHtml()}
     <div class="menu-page-section danger-group">
       <div class="menu-label">위험 작업</div>
       <div class="menu-page-grid single">
         <button class="menu-danger" type="button" id="pageResetBtn">전체 초기화</button>
       </div>
-    </div>`;
+    </div></details>`;
+  if(menuReturn){for(const id of menuReturn.open){const el=document.getElementById(id);if(el)el.open=true;}const pos=menuReturn.y;requestAnimationFrame(()=>{if(page==="menu")window.scrollTo(0,pos);});}
+  view.querySelectorAll("button,select").forEach(el=>el.addEventListener("click",()=>{menuReturn={y:window.scrollY,open:[...view.querySelectorAll("details[open]")].map(d=>d.id)};},{capture:true}));
+  const send=document.getElementById("pageSendBackup");try{send.hidden=!navigator.canShare?.({files:[new File(["{}"],"victor.json",{type:"application/json"})]});}catch{send.hidden=true;}send.onclick=()=>backup(true);
   document.getElementById("pageBackupBtn")?.addEventListener("click",backup);
   document.getElementById("verifyBackupBtn").onclick=()=>{const f=document.createElement("input");f.type="file";f.accept=".json,application/json";f.onchange=()=>restoreFile(f.files[0],true);f.click();};
   document.getElementById("pageRestoreBtn")?.addEventListener("click",()=>document.getElementById("restoreFile")?.click());
   document.getElementById("pageCloudSettingsBtn")?.addEventListener("click",openCloudShareSettings);
   document.getElementById("pageTechniqueBtn")?.addEventListener("click",()=>setPage("technique"));
   document.getElementById("pageFastSurveyBtn")?.addEventListener("click",()=>state.survey?.active?enterFastSurvey():openFastSurveySetup());
-  document.getElementById("pageThemeBtn")?.addEventListener("click",openThemeSettings);
+  document.getElementById("pageThemeBtn")?.addEventListener("change",event=>saveThemeMode(event.target.value));
   document.getElementById("pageTrashBtn")?.addEventListener("click",openTrash);
   document.getElementById("pageBulkUndoBtn")?.addEventListener("click",restoreBulkSafetyPoint);
   document.getElementById("pageSurveyUndoBtn")?.addEventListener("click",undoLastSurvey);
@@ -3226,19 +3229,20 @@ function saveMemo(){
   renderMemo();
 }
 
-async function backup(){
+async function backup(share=false){
   const generatedAt=new Date().toISOString();
   const payload = {...JSON.parse(JSON.stringify(state)), lastBackup:generatedAt, backupVersion: VERSION, backupDate:generatedAt};
   const blob = new Blob([JSON.stringify(payload,null,2)], {type:"application/json"});
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = `victor_backup_${todayISO()}_${generatedAt.slice(11,23).replace(/[:.]/g,"")}Z.json`;
-  a.click();
+  if(share===true){try{await navigator.share({files:[new File([blob],a.download,{type:blob.type})]});}catch(e){if(e.name!=="AbortError")showFeedback("error","파일을 보내지 못했습니다 · 백업 다운로드를 이용해주세요");URL.revokeObjectURL(a.href);return;}}else a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),30000);
-  if(!await askConfirm("백업 파일 확인","다운로드한 파일이 보관됐나요? 확인한 경우에만 백업일을 기록합니다.","보관 확인"))return;
+  if(!await askConfirm("백업 파일 확인","파일이 보관됐나요? 확인한 경우에만 백업일을 기록합니다.","보관 확인"))return;
   const beforeBackup=JSON.stringify(state);state.lastBackup = generatedAt;
   if(!saveStateTransaction(beforeBackup,"파일은 생성됐지만 백업일 저장에 실패했습니다"))return;
   updateBackupLabel();
+  const note=document.getElementById("menuBackupDate");if(note)note.textContent="마지막 백업 "+fmtDateTime(state.lastBackup);
   document.getElementById("backupReminder")?.remove();
   showSnack("전체 백업 파일 생성");
 }
@@ -3643,9 +3647,10 @@ function enterFastSurvey(warehouse=""){
   fastSurveyReturnWarehouse=warehouse;renderSurveyList();scrollToTop();
 }
 function surveySessionActionsHtml(){
-  return `<div class="survey-session-actions"><button class="btn secondary" id="pauseFastSurvey" type="button">나중에 계속</button><button class="btn danger" id="stopFastSurvey" type="button">${fastSurveyReturnWarehouse?"이 창고 실사 중단":"실사 중단"}</button><p class="row-sub">나중에 계속: 입력 보관 · 중단: 실사 입력 종료, 현재 재고 유지</p></div>`;
+  return `<div class="survey-session-actions"><button class="btn secondary" id="surveyRef" type="button">방제기술 참고</button><button class="btn secondary" id="pauseFastSurvey" type="button">나중에 계속</button><button class="btn danger" id="stopFastSurvey" type="button">${fastSurveyReturnWarehouse?"이 창고 실사 중단":"실사 중단"}</button><p class="row-sub">나중에 계속: 입력 보관 · 중단: 실사 입력 종료, 현재 재고 유지</p></div>`;
 }
 function bindSurveySessionActions(){
+  document.getElementById("surveyRef")?.addEventListener("click",()=>{openEntryModal(entryHeader("방제기술 참고","닫으면 작성 중인 실사로 돌아갑니다")+RESPONSE_TECH_ITEMS.map(i=>'<button type="button" class="list-row" data-ref-tech="'+esc(i.id)+'">'+esc(i.title)+'</button>').join(""));document.querySelectorAll("[data-ref-tech]").forEach(b=>b.onclick=()=>openTechniqueDetail(b.dataset.refTech));});
   document.getElementById("pauseFastSurvey")?.addEventListener("click",pauseFastSurvey);
   document.getElementById("stopFastSurvey")?.addEventListener("click",()=>stopFastSurvey({warehouse:fastSurveyReturnWarehouse}));
 }
@@ -4886,14 +4891,14 @@ function openCloudShareSettings(){
       <label>Publishable key<textarea id="cloudShareKey" placeholder="sb_publishable_...">${esc(config.key)}</textarea></label>
       <label>공유 ID(site_id)<input id="cloudShareSiteId" placeholder="victor-main" value="${esc(config.siteId)}"></label>
       <label>공유 제목<input id="cloudShareTitle" placeholder="Victor 자원현황" value="${esc(config.title)}"></label>
-      <div class="entry-actions"><button class="btn gray" id="testCloudShare" type="button">연결 테스트</button><button class="btn primary" id="saveCloudShareSettings" type="button">설정 저장</button></div>
+      <div class="entry-actions"><button class="btn gray" id="testCloudShare" type="button">연결만 확인</button><button class="btn primary" id="saveCloudShareSettings" type="button">설정 저장</button></div>
     </div>`);
   document.getElementById("saveCloudShareSettings")?.addEventListener("click",()=>saveCloudShareSettings(true));
-  document.getElementById("testCloudShare")?.addEventListener("click",async()=>{if(saveCloudShareSettings(false))await testCloudShareConnection();});
+  document.getElementById("testCloudShare")?.addEventListener("click",async()=>{const config=saveCloudShareSettings(false,true);if(config)await testCloudShareConnection(config);});
   bindCloudSettingsBack();
 }
 
-function saveCloudShareSettings(close=false){
+function saveCloudShareSettings(close=false,inspectOnly=false){
   const config={
     url:normalizeCloudUrl(document.getElementById("cloudShareUrl")?.value),
     key:String(document.getElementById("cloudShareKey")?.value||"").trim(),
@@ -4902,6 +4907,7 @@ function saveCloudShareSettings(close=false){
   };
   if(!config.url||!config.key){showFeedback("error","URL과 Publishable key를 입력해주세요");return false;}
   if(!/^https:\/\/.+\.supabase\.co$/i.test(config.url)){showFeedback("warning","Supabase URL 형식을 확인해주세요");return false;}
+  if(inspectOnly)return config;
   try{localStorage.setItem(CLOUD_SHARE_CONFIG_KEY,JSON.stringify(config));}catch(error){showFeedback("error","설정을 저장하지 못했습니다");return false;}
   showFeedback("success","공유 연결 설정 저장 완료");
   if(close)closeEntryModal();
@@ -5148,8 +5154,8 @@ async function supabaseRest(path,options={}){
   }finally{clearTimeout(timer);signal?.removeEventListener("abort",abort);}
 }
 
-async function testCloudShareConnection(){
-  try{const head=await cloudShareHead(cloudShareConfig());showFeedback("success",head?"읽기 연결됨 · 공유자료 있음":"읽기 연결됨 · 아직 첫 공유 전");}
+async function testCloudShareConnection(config=cloudShareConfig()){
+  try{const head=await cloudShareHead(config);showFeedback("success",head?"읽기 연결됨 · 공유자료 있음":"읽기 연결됨 · 아직 첫 공유 전");}
   catch(error){console.warn("[Victor] Supabase 연결 실패",error);showFeedback("error",cloudErrorMessage(error));}
 }
 
@@ -5441,7 +5447,7 @@ function bindGlobal(){
   });
   document.querySelectorAll(".nav").forEach(b => b.addEventListener("click", () => setPage(b.dataset.page,{resume:true})));
 
-  document.getElementById("moreBtn")?.addEventListener("click", () => {if(page==="home")setPage("menu",{resume:true});});
+  document.getElementById("moreBtn")?.addEventListener("click", () => {if(page==="home"){menuReturn=null;setPage("menu",{resume:true});}});
 
   document.addEventListener("click", e => {
     const menu = document.getElementById("moreMenu");
