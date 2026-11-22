@@ -25,8 +25,8 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
     return {same,remote,both,visible};
    },theme);
    assert.deepEqual(result,{same:'이미 최신',remote:'클라우드 자료가 최신',both:'양쪽 자료 변경',visible:true});
-   await p.click('#cloudCompareNow');assert.equal(await p.locator('#cancelConfirm').count(),0);assert.match(await p.locator('.confirm-message').innerText(),/현재 기기 → 공유본[\s\S]*자재 정보 변경/);assert.equal(await p.locator('#acceptConfirm').innerText(),'자원연계로 돌아가기');await p.click('#acceptConfirm');assert.ok(await p.locator('#cloudApplyNow').isVisible());
-   await p.click('#cloudCompareNow');assert.match(await p.locator('.share-diff-value strong').first().innerText(),/12345/);assert.equal(await p.locator('.share-diff-row').first().evaluate(el=>getComputedStyle(el).flexDirection),width<=380?'column':'row');await p.click('#acceptConfirm');
+   await p.click('#cloudCompareNow');for(const group of await p.locator('.share-diff-list details > summary').all())await group.click();assert.equal(await p.locator('#cancelConfirm').count(),0);assert.match(await p.locator('.confirm-message').innerText(),/현재 기기 → 공유본[\s\S]*자재 정보 변경/);assert.equal(await p.locator('#acceptConfirm').innerText(),'자원연계로 돌아가기');await p.click('#acceptConfirm');assert.ok(await p.locator('#cloudApplyNow').isVisible());
+   await p.click('#cloudCompareNow');for(const group of await p.locator('.share-diff-list details > summary').all())await group.click();assert.match(await p.locator('.share-diff-value strong').first().innerText(),/12345/);assert.equal(await p.locator('.share-diff-row').first().evaluate(el=>getComputedStyle(el).flexDirection),width<=380?'column':'row');await p.click('#acceptConfirm');
    console.log('PASS',width,theme);
   }
  }finally{await browser.close();}

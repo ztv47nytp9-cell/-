@@ -206,7 +206,7 @@ function guardedPointStatus(point){
   if(!point?.state)return {allowed:false,label:"없음",reason:"되돌릴 내역이 없습니다"};
   if(!point.expected)return {allowed:false,label:"안전 확인 필요",reason:"이전 버전의 되돌리기 자료입니다 · 안전 복구에서 확인해주세요"};
   try{
-    if(point.expected!==businessFingerprint(state))return {allowed:false,label:"이후 작업 있음 · 되돌리기 제한",reason:"이후 저장한 자료가 있어 되돌리기를 막았습니다 · 현재 자료 유지"};
+    const current=businessFingerprint(state);if(point.expected!==current){let sections=[];try{const old=JSON.parse(point.expected),now=JSON.parse(current);sections=Object.entries({stock:"자재 재고",equipment:"장비",records:"업무 이력",catalog:"품목 목록",warehouses:"창고",assetOps:"운용 기록",memos:"메모"}).filter(([k])=>JSON.stringify(old[k])!==JSON.stringify(now[k])).map(([,label])=>label);}catch{}return {allowed:false,label:"이후 작업 있음 · 되돌리기 제한",reason:"이후 저장한 자료가 있어 되돌리기를 막았습니다 · 현재 자료 유지"+(sections.length?" · "+sections.join(", "):"")};}
     return {allowed:true,label:"되돌리기 가능",reason:"적용 전 상태로 되돌릴 수 있습니다"};
   }catch(_){return {allowed:false,label:"안전 확인 필요",reason:"자료를 확인할 수 없어 되돌리기를 보류했습니다"};}
 }
@@ -453,8 +453,9 @@ function addQuantities(left,right){
 
 function registerNumbersValid(){
   const material=draftItems.findIndex(item=>finiteQuantity(item.qty,item.unit,true)===null),equipment=draftEquipmentItems.findIndex(item=>finiteQuantity(item.qty,"대",true)===null);
-  if(material>=0)return fieldError(`[data-qty="${material}"]`,"0 이상 수량을 입력해주세요 · 개·대·세트는 정수");
-  if(equipment>=0)return fieldError(`[data-equipment-qty="${equipment}"]`,"장비 수량은 0 이상의 정수로 입력해주세요");
+  const count=draftItems.filter(i=>finiteQuantity(i.qty,i.unit,true)===null).length+draftEquipmentItems.filter(i=>finiteQuantity(i.qty,'대',true)===null).length,extra=count>1?' · 그 외 '+(count-1)+'곳 확인':'';
+  if(material>=0)return fieldError(`[data-qty="${material}"]`,"0 이상 수량을 입력해주세요 · 개·대·세트는 정수"+extra);
+  if(equipment>=0)return fieldError(`[data-equipment-qty="${equipment}"]`,"장비 수량은 0 이상의 정수로 입력해주세요"+extra);
   return true;
 }
 

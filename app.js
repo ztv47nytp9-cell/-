@@ -32,7 +32,7 @@ let selectedResources = new Set();
 let techniqueQuery = "";
 let modalConfirmResolver = null;
 let menuHistoryOpen = false;
-let cloudShareNotice = null;
+let cloudShareNotice = null,lastSuccessfulShareCheck="";
 let cloudShareCheckInFlight = false;
 let cloudDashboardRequestId = 0;
 let entryModalRevision = 0;
@@ -1334,7 +1334,7 @@ function renderMenuPage(){
       <div class="menu-label">데이터 관리</div>
       <div class="menu-page-grid">
         <button type="button" id="pageBackupBtn">백업</button>
-        <button type="button" id="pageRestoreBtn">복원</button>
+        <button type="button" id="pageRestoreBtn">복원</button><button id="verifyBackupBtn">백업 검사</button>
         <button type="button" id="pageCsvBtn" class="menu-wide">CSV 내보내기</button>
       </div>
     </div>
@@ -1368,7 +1368,7 @@ function renderMenuPage(){
       </div>
       <div class="menu-page-grid">
         <button type="button" id="pageAppInfoBtn">앱 정보</button>
-        <button type="button" id="pageUpdateBtn">업데이트 확인</button>
+        <button type="button" id="pageUpdateBtn">앱 버전 확인</button>
         <button type="button" id="pageRollbackBtn">이전 앱 버전</button>
       </div>
     </details>
@@ -1380,6 +1380,7 @@ function renderMenuPage(){
       </div>
     </div>`;
   document.getElementById("pageBackupBtn")?.addEventListener("click",backup);
+  document.getElementById("verifyBackupBtn").onclick=()=>{const f=document.createElement("input");f.type="file";f.accept=".json,application/json";f.onchange=()=>restoreFile(f.files[0],true);f.click();};
   document.getElementById("pageRestoreBtn")?.addEventListener("click",()=>document.getElementById("restoreFile")?.click());
   document.getElementById("pageCloudSettingsBtn")?.addEventListener("click",openCloudShareSettings);
   document.getElementById("pageTechniqueBtn")?.addEventListener("click",()=>setPage("technique"));
@@ -1471,6 +1472,7 @@ function renderWarehouse(){
   document.getElementById("tabEquipment")?.addEventListener("click", () => { warehouseTab="equipment"; renderWarehouse(); replaceNavigationState({page:"warehouse",warehouse:selectedWarehouse,tab:warehouseTab}); });
   const baseBtn = document.getElementById("editOpBase"); if(baseBtn) baseBtn.addEventListener("click", () => editOpBase(selectedWarehouse));
   const opBtn = document.getElementById("addOpLog"); if(opBtn) opBtn.addEventListener("click", () => addOpLog(selectedWarehouse));
+  if(opBtn&&isVehiclePlace(selectedWarehouse)&&(state.assetOps[selectedWarehouse]?.counterAdjustments||[]).length){const d=document.createElement("details");d.className="card";d.innerHTML="<summary>계기 정정 내역</summary>"+state.assetOps[selectedWarehouse].counterAdjustments.slice().reverse().map(v=>'<div class="row-sub">'+esc(fmtDateTime(v.at))+" · "+esc(v.before.join("/"))+" → "+esc(v.after.join("/"))+" · "+esc(v.reason)+"</div>").join("");opBtn.after(d);}
   if(opBtn){const button=document.createElement("button");button.className="btn secondary";button.type="button";button.id="correctPastOperation";button.style.gridColumn="1/-1";button.textContent="과거 운행기록 정정";button.onclick=()=>openOperationCorrectionPicker(selectedWarehouse);opBtn.after(button);}
   document.getElementById("addFuelSupply")?.addEventListener("click",()=>openFuelSupplyForm(selectedWarehouse));
   document.getElementById("editFuelBase")?.addEventListener("click",()=>openFuelStockEditForm(selectedWarehouse));
@@ -1771,7 +1773,7 @@ function renderRegister(){
         </div>
         ${registerFlow === "이송" ? `<input id="recType" type="hidden" value="이송">` : `${registerTypeChoices(types.filter(t=>t!=="이송"))}`}
         <div class="register-route ${registerFlow === "이송"?"is-transfer":""}"><label>${registerFlow === "이송" ? "기본 출발지" : "기본 보관 (자재별 변경 가능)"}<select id="recWarehouse">${warehouses.map(w=>`<option value="${esc(w)}">${esc(w)}</option>`).join("")}</select></label>
-        ${registerFlow === "이송" ? `<label>도착지<select id="recTargetWarehouse">${transferTargetOptions(warehouses[0] || "")}</select></label><div class="row-sub route-help">아래 품목의 출발지만 개별 변경할 수 있습니다.</div>` : ""}</div>
+        ${registerFlow === "이송" ? `<label>도착지<select id="recTargetWarehouse">${transferTargetOptions(warehouses[0] || "")}</select></label><button class="btn secondary compact" id="swapRoute" type="button">출발·도착 교환</button><div class="row-sub route-help">아래 품목의 출발지만 개별 변경할 수 있습니다.</div>` : ""}</div>
         <details class="field-card"><summary>기록 시각 · 자동 입력</summary><div class="location-grid"><label>날짜<input id="recDate" type="date" value="${todayISO()}"></label><label>시간<input id="recTime" type="time" value="${localTimeNow()}"></label></div></details>
         <label>제목 · 필수<input id="recTitle" placeholder="예: 항만 순찰, 방제 훈련" aria-required="true"></label>
       ` : `
@@ -1827,6 +1829,7 @@ function renderRegister(){
   document.getElementById("discardRegisterDraft")?.addEventListener("click",()=>{clearRegisterDraft();draftItems=[];draftEquipmentItems=[];renderRegister();});
   view.querySelectorAll("[data-open-pending]").forEach(button=>button.addEventListener("click",()=>openDetail(button.dataset.openPending)));
   document.getElementById("recWarehouse")?.addEventListener("change",event=>{event.target.dataset.manualPlace="1";delete event.target.dataset.nextPlace;scheduleRegisterDraft();syncTransferTarget();renderItems();renderEquipmentItems();updateStockAfterPreview();});
+  document.getElementById("swapRoute")?.addEventListener("click",swapDraftRoute);
   document.getElementById("recTargetWarehouse")?.addEventListener("change",()=>{scheduleRegisterDraft();updateStockAfterPreview();});
   document.getElementById("recType")?.addEventListener("change",updateRegisterTypeDependentUI);
   renderItems();
@@ -1881,6 +1884,11 @@ function collectRegisterEvidence(){
 }
 
 function boxWeight(it){const m=/^\s*(\d+(?:\.\d+)?)\s*kg\s*\/\s*1?\s*(?:box|박스)\s*$/i.exec(itemOf(it.name)?.spec||"");return it.unit==="kg"&&m?Number(m[1]):0;}
+function draftSplitPlan(index,base){
+  const item=draftItems[index];if(registerFlow!=="출고"||!item||item.needsPlace||!Number.isFinite(Number(item.qty))||Number(item.qty)<=0)return null;
+  const from=itemWarehouse(item,base),reserved=new Map();for(const [idx,i] of draftItems.entries()){if(idx===index||i.name!==item.name||!(Number(i.qty)>0))continue;const place=itemWarehouse(i,base);reserved.set(place,addQuantities(reserved.get(place)||0,i.qty));}
+  const plan=[];let needed=Number(item.qty);for(const w of [from,...warehouses.filter(x=>x!==from)]){const available=Math.max(0,addQuantities(Number(state.stock[w]?.[item.name]||0),-(reserved.get(w)||0)));if(w===from&&available>=needed)return null;const qty=Math.min(available,needed);if(qty>0)plan.push({warehouse:w,qty});needed=addQuantities(needed,-qty);if(!needed)return plan;}return null;
+}
 function updateStockAfterPreview(){
   const target=document.getElementById("stockAfterPreview");if(!target)return;
   if(registerMode!=="normal"||!["출고","입고","이송"].includes(registerFlow)){target.innerHTML="";return;}
@@ -1890,9 +1898,22 @@ function updateStockAfterPreview(){
   document.querySelectorAll("#itemArea [data-qty]").forEach(input=>{const row=draftItems[Number(input.dataset.qty)],host=input.closest(".item-box");if(!row||!host)return;let hint=host.querySelector(".transfer-balance");if(registerFlow!=="이송"||!dest||!(Number(row.qty)>0)){hint?.remove();return;}if(!hint){hint=document.createElement("div");hint.className="row-sub transfer-balance";input.closest("label").after(hint);}const from=itemWarehouse(row,warehouse),send=groups.get(from)?.get(row.name)?.qty||0,receive=Array.from(groups.values()).reduce((n,g)=>addQuantities(n,g.get(row.name)?.qty||0),0),a=Number(state.stock[from]?.[row.name]||0),b=Number(state.stock[dest]?.[row.name]||0);hint.textContent=from===dest?"출발·도착 보관장소가 같습니다":`${from} ${a} → ${addQuantities(a,-send)} / ${dest} ${b} → ${addQuantities(b,receive)} ${row.unit}`;});
   const route=document.getElementById("transferRouteSummary");if(route){const m=draftItems.filter(i=>Number(i.qty)>0),g=draftEquipmentItems.filter(i=>Number(i.qty)>0);const sources=[...new Set([...m.map(i=>itemWarehouse(i,warehouse)),...g.map(i=>i.fromPlace||i.place||warehouse)])];route.textContent=registerFlow==="이송"&&dest?`${sources.join(", ")||warehouse} → ${dest} · 자재 ${new Set(m.map(i=>i.name)).size}종 · 장비 ${g.reduce((n,i)=>n+Number(i.qty),0)}대`:"";const save=document.getElementById("saveRecord");if(save)save.dataset.route=route.textContent;}
   if(registerFlow==="이송"&&dest){const totals=new Map();for(const it of draftItems.filter(i=>Number(i.qty)>0)){totals.set(it.name,addQuantities(totals.get(it.name)||0,it.qty));}for(const [name,qty] of totals){const it=itemOf(name);if(!it)continue;const before=Number(state.stock[dest]?.[name]||0);rows.push(`<div class="row-sub">도착 · ${esc(dest)} · ${esc(name)} · ${materialQtyText(before,it.unit,it)} → <strong>${materialQtyText(addQuantities(before,qty),it.unit,it)}</strong></div>`);}}
+  if(registerFlow==="출고"&&typeof draftSplitPlan==="function")draftItems.forEach((i,index)=>{if(draftSplitPlan(index,warehouse))rows.push('<button type="button" class="btn secondary compact" data-split="'+index+'">'+esc(i.name)+' · 다른 창고에서 배분</button>');});
   target.innerHTML=rows.length?`<div class="callout"><strong>재고 반영 미리보기</strong>${rows.join("")}${recordStockIssues({flow:registerFlow,warehouse,items:draftItems,equipmentItems:draftEquipmentItems}).length?'<div class="row-sub">부족하면 확인 기록으로 저장됩니다 · 현재 재고 유지</div>':""}</div>`:"";
+  target.querySelectorAll?.("[data-split]").forEach(b=>b.onclick=async()=>{const index=Number(b.dataset.split),item=draftItems[index],plan=draftSplitPlan(index,warehouse);if(!plan||!await askConfirm("출고 창고 배분",plan.map(i=>i.warehouse+" · "+qtyText(i.qty,item.unit)).join("\n"),"입력에 적용"))return;if(draftItems[index]!==item||registerFlow!=="출고"||warehouse!==document.getElementById("recWarehouse")?.value||JSON.stringify(plan)!==JSON.stringify(draftSplitPlan(index,warehouse)))return showFeedback("info","입력이나 재고가 바뀌었습니다 · 다시 확인해주세요");draftItems.splice(index,1,...plan.map(p=>({...item,...p,needsPlace:false})));renderItems();scheduleRegisterDraft();});
 }
 
+function caseAdditionSummary(record,items,gear){
+  const totals=new Map();for(const [list,kind,newRow] of [[record.items||[],"자재",false],[record.equipmentItems||[],"장비",false],[items,"자재",true],[gear,"장비",true]])for(const i of list){const unit=kind==="장비"?"대":i.unit,key=JSON.stringify([kind,i.id||i.name,unit]),v=totals.get(key)||{name:i.name,unit,before:0,added:0},field=newRow?"added":"before";v[field]=addQuantities(v[field],Number(i.qty)||0);totals.set(key,v);}
+  return [...totals.values()].filter(v=>v.added).map(v=>v.name+" · "+v.before+" + "+v.added+" = "+addQuantities(v.before,v.added)+" "+v.unit).join("\n");
+}
+function swapDraftRoute(){
+  const from=document.getElementById("recWarehouse"),to=document.getElementById("recTargetWarehouse"),a=from.value,b=to.value;
+  if(!a||!b||a===b)return showFeedback("info","먼저 서로 다른 출발·도착지를 선택해주세요");
+  if(draftItems.some(i=>itemWarehouse(i,a)!==a))return showFeedback("info","출발지가 여러 곳입니다 · 품목별 출발지를 먼저 확인해주세요");
+  if(draftEquipmentItems.some(i=>state.equipment.find(e=>e.id===i.id)?.place!==b))return showFeedback("info","반대 출발지에 없는 장비가 있습니다 · 장비를 다시 선택해주세요");
+  from.value=b;from.dataset.manualPlace="1";syncTransferTarget();to.value=a;draftItems.forEach(i=>{i.warehouse=b;i.needsPlace=false;});renderItems();renderEquipmentItems();updateStockAfterPreview();scheduleRegisterDraft();
+}
 function warnDuplicateDraft(){const seen=new Set();for(const [i,row] of draftItems.entries()){if(!(Number(row.qty)>0))continue;const key=JSON.stringify([row.name,itemWarehouse(row,document.getElementById("recWarehouse")?.value)]);if(seen.has(key)){showFeedback("info",`자재 ${i+1} · 같은 창고에 동일 품목이 있습니다`);return true;}seen.add(key);}return false;}
 function mergeDuplicateDraftItems({notify=false,preview=false}={}){
   const seen = new Map();
@@ -2111,7 +2132,7 @@ function openRegisterNewEquipmentForm(){
 function equipmentRegisterLabel(equipment){
   const spec=equipment.spec || equipment.detail || "규격 미입력";
   const model=equipment.model && equipment.model!==spec ? ` · ${equipment.model}` : "";
-  return `[${placeLabel(equipment.place)}] ${equipment.name}${equipment.managementNo||equipment.managementNumber?" · "+(equipment.managementNo||equipment.managementNumber):""} · ${spec}${model} · ${equipmentAvailabilityText(equipment)}`;
+  return `${equipment.managementNo||equipment.managementNumber?(equipment.managementNo||equipment.managementNumber)+" · ":""}[${placeLabel(equipment.place)}] ${equipment.name} · ${spec}${model} · ${equipmentAvailabilityText(equipment)}`;
 }
 
 function renderEquipmentItems(){
@@ -2172,7 +2193,7 @@ function renderItems(){
       <div class="form">
         <div class="register-item-heading"><strong>자재 ${idx+1}</strong><button class="btn gray compact" data-remove="${idx}" type="button" aria-label="등록에서 ${esc(it.name)} 줄 빼기">이 줄 빼기</button></div>
         <label>분류<select data-cat="${idx}">${cats.map(c=>`<option value="${c}" ${it.cat===c?"selected":""}>${c}</option>`).join("")}</select></label>
-        <label>자재<select data-name="${idx}">${activeMaterials(it.name).filter(x=>x.cat===it.cat).map(x=>`<option value="${esc(x.name)}" ${it.name===x.name?"selected":""}>${esc(x.name)}${x.archived?" · 보관 처리":""}</option>`).join("")}</select></label>
+        <label>자재<select data-name="${idx}">${activeMaterials(it.name).filter(x=>x.cat===it.cat).map(x=>`<option value="${esc(x.name)}" ${it.name===x.name?"selected":""}>${esc(x.name)}${x.spec?" · "+esc(x.spec):""}${x.archived?" · 보관 처리":""}</option>`).join("")}</select></label>
         <label>${registerMode==="quick"?"사용 보관장소":registerFlow==="입고"?"입고 보관장소":registerFlow==="이송"?"출발 보관장소":"자재 보관장소"}<select data-item-warehouse="${idx}">${it.needsPlace?'<option value="" selected>출발 창고 선택</option>':""}${(registerFlow==="입고"?warehouses:[...warehouses].sort((a,b)=>Number(Number(state.stock[b]?.[it.name])>0)-Number(Number(state.stock[a]?.[it.name])>0))).map(place=>`<option value="${esc(place)}" ${!it.needsPlace&&itemWarehouse(it,document.getElementById("recWarehouse")?.value||warehouses[0])===place?"selected":""}>${esc(place)} · ${Number(state.stock[place]?.[it.name]||0)}${esc(it.unit||"")}</option>`).join("")}</select></label>
         <button class="link-btn" type="button" data-next-place="${idx}">다음 자재도 이 창고</button>
         <label>수량 (${esc(it.unit)})<input type="number" inputmode="${integerUnit(it.unit)?"numeric":"decimal"}" min="0" step="${integerUnit(it.unit)?"1":"0.1"}" data-qty="${idx}" value="${it.qty ?? ""}" placeholder="수량 입력" aria-label="${esc(it.name)} 수량 (${esc(it.unit)})"></label>
@@ -2187,14 +2208,14 @@ function renderItems(){
     const idx = Number(s.dataset.cat);
     const f = activeMaterials().find(x => x.cat === s.value);
     if(!f){showFeedback("info","이 분류에 사용 중인 자재가 없습니다");renderItems();return;}
-    draftItems[idx] = {manualPlace:draftItems[idx].manualPlace,cat:f.cat,name:f.name,qty:draftItems[idx].qty || "",unit:f.unit,kind:f.kind,warehouse:itemWarehouse(draftItems[idx],document.getElementById("recWarehouse")?.value||warehouses[0])};chooseIssueWarehouse(draftItems[idx]);
+    draftItems[idx] = {manualPlace:draftItems[idx].manualPlace,cat:f.cat,name:f.name,qty:draftItems[idx].unit===f.unit?draftItems[idx].qty||"":"",unit:f.unit,kind:f.kind,warehouse:itemWarehouse(draftItems[idx],document.getElementById("recWarehouse")?.value||warehouses[0])};chooseIssueWarehouse(draftItems[idx]);
     scheduleRegisterDraft();
     renderItems();
   }));
   area.querySelectorAll("[data-name]").forEach(s => s.addEventListener("change", () => {
     const idx = Number(s.dataset.name);
     const f = itemOf(s.value);
-    draftItems[idx].cat = f.cat;
+    if(draftItems[idx].unit!==f.unit)draftItems[idx].qty="";draftItems[idx].cat = f.cat;
     draftItems[idx].name = f.name;
     draftItems[idx].unit = f.unit;
     draftItems[idx].kind = f.kind;
@@ -2251,7 +2272,7 @@ function renderItems(){
 async function saveRecord(){return runWorkflow("register",performSaveRecord);}
 function canAppendIssue(r){return r.status==="pending"&&r.type==="사고"&&!r.stockReview&&(r.pendingFlow||"출고")==="출고";}
 async function performSaveRecord(append=false){
-  const bad=document.querySelector("#itemArea input:invalid");if(bad&&(bad.validity.badInput||bad.validity.customError)){fieldError(bad,bad.validationMessage);return;}if(!registerNumbersValid())return;
+  const errors=Array.from(document.querySelectorAll("#itemArea input:invalid,#equipmentItemArea input:invalid"));if(errors.length){fieldError(errors[0],errors[0].validationMessage+(errors.length>1?" · 그 외 "+(errors.length-1)+"곳 확인":""));return;}if(!registerNumbersValid())return;
   const type = document.getElementById("recType").value;
   const warehouse = document.getElementById("recWarehouse").value;
   const targetWarehouse = document.getElementById("recTargetWarehouse")?.value || "";
@@ -2293,7 +2314,7 @@ async function performSaveRecord(append=false){
     openEntryModal(`${entryHeader("자원을 추가할 사건","기존 사건의 제목과 위치 유지 · 종결 전까지 재고 미반영")}${eligible.map(r=>`<button class="list-row" type="button" data-append-to="${esc(r.id)}">${esc(r.title)} · ${esc(r.date)} · ${esc(r.location?.detail||r.warehouse||"위치 미지정")}</button>`).join("")}`);
     document.querySelectorAll("[data-append-to]").forEach(b=>b.onclick=()=>runWorkflow("append-case",async()=>{
       const r=state.records.find(x=>x.id===b.dataset.appendTo);if(!r||!canAppendIssue(r))return;
-      const expected=JSON.stringify(state);if(!await askConfirm("사건에 추가",r.title+" · "+summarizeItems(items,equipmentItems,"출고"),"추가"))return;
+      const expected=JSON.stringify(state);if(!await askConfirm("사건에 추가",r.title+"\n"+caseAdditionSummary(r,items,equipmentItems),"추가"))return;
       if(JSON.stringify(state)!==expected){showFeedback("warning","사건이 변경됐습니다. 다시 확인해주세요");return;}
       r.items=[...(r.items||[]),...items];r.equipmentItems=mergeBundleRows([...(r.equipmentItems||[]).map(i=>({...i})),...equipmentItems],"id");if(memo)r.memo=[r.memo,memo].filter(Boolean).join("\n");r.updatedAt=new Date().toISOString();
       if(!saveStateTransaction(expected,"사건 추가 실패 · 입력 유지"))return;draftItems=[];draftEquipmentItems=[];clearRegisterDraft();closeEntryModal();setPage("history",{skipGuard:true});openDetail(r.id);showSnack("사건에 추가 · 재고 미반영");
@@ -2346,7 +2367,7 @@ async function performSaveRecord(append=false){
     state.records.push(review);
     if(!saveStateTransaction(stateBefore,"확인 기록 저장 실패 · 입력은 유지됩니다"))return;
     draftItems=[];draftEquipmentItems=[];clearRegisterDraft();
-    setPage("home",{skipGuard:true});showUndoSnack("재고 확인 필요로 저장 · 재고 미반영"+(similar?" · 별도 작업":""),stateBefore,()=>setPage("home",{skipGuard:true}));
+    setPage("home",{skipGuard:true});showUndoSnack("재고 확인 필요로 저장 · 재고 미반영"+(similar?" · 별도 작업":""),stateBefore,()=>setPage("home",{skipGuard:true}),review.id);
     return;
   }
 
@@ -2480,9 +2501,9 @@ function historyPlaceChoices(){
   state.records.forEach(record=>[...recordWarehouseNames(record),...recordWarehouseNames(record,{target:true})].forEach(name=>names.add(name)));
   return [...names].sort((a,b)=>Number(!warehouses.includes(a))-Number(!warehouses.includes(b))||a.localeCompare(b,"ko")).map(name=>({name,label:placeLabel(name)+(warehouses.includes(name)?"":" · 삭제된 보관장소")}));
 }
-function historySearchMatches(record,query=historySearchQuery){
-  if(historyTypeFilter!=="all"&&record.type!==historyTypeFilter)return false;
-  if(historyPlaceFilter!=="all"&&![...recordWarehouseNames(record),...recordWarehouseNames(record,{target:true})].includes(historyPlaceFilter))return false;
+function historySearchMatches(record,query=historySearchQuery,place=historyPlaceFilter,type=historyTypeFilter){
+  if(type!=="all"&&record.type!==type)return false;
+  if(place!=="all"&&![...recordWarehouseNames(record),...recordWarehouseNames(record,{target:true})].includes(place))return false;
   const normalized=String(query||"").trim().toLocaleLowerCase("ko-KR");
   if(!normalized)return true;
   const evidenceValues=Object.values(record.evidence||{}).flatMap(value=>Array.isArray(value)?value:[value]);
@@ -2507,7 +2528,7 @@ function updateHistoryResultCount(total){
   const invalid=historyDateFilter==="custom"&&historyCustomFrom&&historyCustomTo&&historyCustomFrom>historyCustomTo;
   count.textContent=invalid?"종료일을 시작일 이후로 선택해주세요":"검색 결과 "+total+"건";
   if(historyViewFiltersActive()){
-    const chips=[[historyFilter!=="all"?({pending:"진행 중",done:"완료",review:"재고 확인"})[historyFilter]:null,()=>historyFilter="all"],[historyDateFilter!=="all"?({today:"오늘",yesterday:"어제",month:"이번 달",custom:"직접 선택"})[historyDateFilter]:null,()=>historyDateFilter="all"],[historyPlaceFilter!=="all"&&historyPlaceFilter,()=>historyPlaceFilter="all"],[historyTypeFilter!=="all"&&historyTypeFilter,()=>historyTypeFilter="all"],[historyFlowFilter!=="all"&&historyFlowFilter,()=>historyFlowFilter="all"],[historySearchQuery,()=>historySearchQuery=""]];
+    const chips=[[historyFilter!=="all"?({pending:"진행 중",done:"완료",review:"재고 확인"})[historyFilter]:null,()=>historyFilter="all"],[historyDateFilter!=="all"?({today:"오늘",yesterday:"어제",month:"이번 달",custom:(historyCustomFrom||"처음")+" ~ "+(historyCustomTo||"현재")})[historyDateFilter]:null,()=>historyDateFilter="all"],[historyPlaceFilter!=="all"&&historyPlaceFilter,()=>historyPlaceFilter="all"],[historyTypeFilter!=="all"&&historyTypeFilter,()=>historyTypeFilter="all"],[historyFlowFilter!=="all"&&historyFlowFilter,()=>historyFlowFilter="all"],[historySearchQuery,()=>historySearchQuery=""]];
     for(const [label,remove] of chips){if(!label)continue;const chip=document.createElement("button");chip.type="button";chip.className="btn gray compact";chip.textContent=label+" ×";chip.setAttribute("aria-label",label+" 조건 해제");chip.onclick=()=>{remove();renderHistory();};count.append(" ",chip);}
     const reset=document.createElement("button");reset.className="link-btn";reset.id="clearHistoryFilter";reset.type="button";reset.textContent="필터 초기화";reset.onclick=clearAllHistoryFilters;count.append(" ",reset);
   }
@@ -2537,6 +2558,7 @@ function renderBaseHistory(){
       <label>종류<select id="historyFlowFilter"><option value="all" ${historyFlowFilter === "all" ? "selected" : ""}>전체 종류</option><option value="출고" ${historyFlowFilter === "출고" ? "selected" : ""}>출고</option><option value="입고" ${historyFlowFilter === "입고" ? "selected" : ""}>입고</option><option value="이송" ${historyFlowFilter === "이송" ? "selected" : ""}>창고 간 이동</option><option value="재고수정" ${historyFlowFilter === "재고수정" ? "selected" : ""}>재고수정</option><option value="긴급" ${historyFlowFilter === "긴급" ? "selected" : ""}>긴급기록</option></select></label>
     </div>
     </details>
+    <div class="btn-row"><button class="btn gray compact" id="histMonthPrev">‹ 이전 기간</button><button class="btn gray compact" id="histMonthNext">다음 기간 ›</button><button class="btn gray compact" id="histHandoff">조회 요약 복사</button></div>
     <div class="filter-result" id="historyResultCount" role="status"></div>
     <div id="histList">${renderHistoryListHtml(filtered)}</div>
   `;
@@ -2547,6 +2569,10 @@ function renderBaseHistory(){
   document.getElementById("historyCustomTo")?.addEventListener("change",event=>{historyCustomTo=event.target.value;renderHistory();});
   document.getElementById("historyFlowFilter")?.addEventListener("change", event => { historyFlowFilter=event.target.value; renderHistory(); });
   document.getElementById("historyFilters")?.addEventListener("toggle",event=>{if(event.target.isConnected)historyFiltersOpen=event.target.open;});
+  const shiftMonth=delta=>{const day=86400000,start=historyDateFilter==="custom"?historyCustomFrom:"",end=historyDateFilter==="custom"?historyCustomTo:"",fullMonth=start&&end&&start.endsWith("-01")&&start.slice(0,7)===end.slice(0,7)&&new Date(Date.parse(end)+day).getUTCDate()===1;
+    if(["today","yesterday","7","30"].includes(historyDateFilter)||(start&&end&&!fullMonth)){const last=end|| (historyDateFilter==="yesterday"?yesterdayISO():todayISO()),span=start?Math.round((Date.parse(end)-Date.parse(start))/day)+1:Number(historyDateFilter)||1;if(!Number.isFinite(span)||span<1)return;const next=Date.parse(last)+delta*span*day;historyCustomTo=new Date(next).toISOString().slice(0,10);historyCustomFrom=new Date(next-(span-1)*day).toISOString().slice(0,10);historyDateFilter="custom";renderHistory();return;}const anchor=historyDateFilter==="custom"&&historyCustomFrom?historyCustomFrom:todayISO();const [y,m]=anchor.split("-").map(Number);const d=new Date(Date.UTC(y,m-1+delta,1));historyCustomFrom=d.toISOString().slice(0,10);d.setUTCMonth(d.getUTCMonth()+1,0);historyCustomTo=d.toISOString().slice(0,10);historyDateFilter="custom";renderHistory();};
+  document.getElementById("histMonthPrev").onclick=()=>shiftMonth(-1);document.getElementById("histMonthNext").onclick=()=>shiftMonth(1);
+  document.getElementById("histHandoff").onclick=async()=>{const rows=matching().filter(r=>historyStatusMatches(r)),c=countStates(rows),period=({all:"전체 기간",today:todayISO(),yesterday:yesterdayISO(),month:todayISO().slice(0,7),custom:historyCustomFrom+"~"+historyCustomTo})[historyDateFilter]||historyDateFilter;const line=[period,historyPlaceFilter,historyFlowFilter,historyTypeFilter,historySearchQuery].filter(x=>x&&x!=="all").join(" · ")+" · "+c.all+"건 · 출고 "+rows.filter(r=>r.flow==="출고").length+"건 · 미반영 "+(c.pending+c.review)+"건";try{await navigator.clipboard.writeText(line);showFeedback("success","조회 요약 복사");}catch{openEntryModal(entryHeader("인계 요약","선택해 복사하세요")+"<textarea readonly>"+esc(line)+"</textarea>");}};
   updateHistoryResultCount(filtered.length);
   document.getElementById("histSearch")?.addEventListener("input", () => {
     historySearchQuery = document.getElementById("histSearch").value;
@@ -2562,11 +2588,17 @@ function renderBaseHistory(){
   bindHistoryRows();
 }
 
+function emptyHistoryHint(){
+  const rules=[["기간",historyDateFilter!=="all",()=>historyDateFilter="all"],["상태",historyFilter!=="all",()=>historyFilter="all"],["흐름",historyFlowFilter!=="all",()=>historyFlowFilter="all"],["장소",historyPlaceFilter!=="all",()=>historyPlaceFilter="all"],["종류",historyTypeFilter!=="all",()=>historyTypeFilter="all"],["검색",!!historySearchQuery,()=>historySearchQuery=""]];
+  for(const [idx,[label,active,clear]] of rules.entries()){if(!active)continue;const n=state.records.filter(r=>(idx===0||historyDateMatches(r))&&(idx===1||historyStatusMatches(r))&&(idx===2||historyFlowMatches(r))&&historySearchMatches(r,idx===5?"":historySearchQuery,idx===3?"all":historyPlaceFilter,idx===4?"all":historyTypeFilter)).length;if(n)return {label,n,clear};}return null;
+}
 function baseHistoryListHtml(records){
   if(!records.length){
-    if(state.records.length||historyViewFiltersActive())return `<div class="emptybox compact-empty-action">조건에 맞는 이력이 없습니다.<button class="btn secondary compact" id="emptyHistoryReset" type="button">전체 이력 보기</button></div>`;
+    const hint=typeof emptyHistoryHint==="function"?emptyHistoryHint():null;
+    if(state.records.length||historyViewFiltersActive())return `<div class="emptybox compact-empty-action">조건에 맞는 이력이 없습니다.${hint?`<button class="btn secondary compact" id="emptyHistoryRelax">${hint.label} 해제 · ${hint.n}건 보기</button>`:""}<button class="btn secondary compact" id="emptyHistoryReset" type="button">전체 이력 보기</button></div>`;
     return `<div class="emptybox compact-empty-action">아직 저장된 이력이 없습니다.<button class="btn secondary compact" id="emptyHistoryRegister" type="button">등록하기</button></div>`;
   }
+  const linked=new Map(),visibleIds=new Set(records.map(r=>r.id));records=records.filter(r=>{const q=r.quantityCorrection;if(!q||!visibleIds.has(q.sourceId))return true;if(!linked.has(q.sourceId))linked.set(q.sourceId,[]);linked.get(q.sourceId).push(r);return false;});
   const defs=["처리 필요","자재·장비 함께 기록","자재 입·출고","장비 사용·반납","재고실사·재고수정","창고 간 이동","기타 기록"];
   const typeOf=r=>r.status==="pending"?"처리 필요":r.flow==="재고수정"?"재고실사·재고수정":r.flow==="이송"?"창고 간 이동":(r.items||[]).length&&(r.equipmentItems||[]).length?"자재·장비 함께 기록":(r.equipmentItems||[]).length?"장비 사용·반납":["입고","출고","긴급"].includes(r.flow)?"자재 입·출고":"기타 기록";
   return defs.map(type=>{const typeRows=records.filter(record=>typeOf(record)===type);if(!typeRows.length)return"";const content=historyDateGroups(typeRows).map(g=>`<div class="history-date-label">${g.date?fmtDate(g.date):"날짜 미기록"}</div><div class="list-card">${g.records.map(r => `
@@ -2574,17 +2606,18 @@ function baseHistoryListHtml(records){
           <div>
             <div><span class="badge ${r.status === "pending" ? "red" : (r.flow === "입고" ? "green" : r.flow === "재고수정" ? "orange" : "blue")}">${r.status === "pending" ? recordStateLabel(r) : esc(r.flow || r.type)}</span></div>
             <div class="row-title" style="margin-top:7px">${esc(r.title)}${r.editedAt?` <span class="edited-chip">수정됨</span>`:""}</div>
-            <div class="row-sub record-place">${esc(recordWarehouseText(r))}</div><div class="row-sub record-resource-summary">${esc(summarizeItems(r.items,r.equipmentItems,r.flow))}</div>
+            <div class="row-sub record-place">${esc(recordWarehouseText(r))}${r.createdAt&&dateMs(r.createdAt)&&new Date(r.createdAt).toLocaleDateString("sv-SE",{timeZone:"Asia/Seoul"})!==r.date?" · 입력 "+esc(new Date(r.createdAt).toLocaleDateString("sv-SE",{timeZone:"Asia/Seoul"})):""}${new Set((r.items||[]).map(i=>itemWarehouse(i,r.warehouse))).size>1?" · "+(r.items||[]).map(i=>esc(itemWarehouse(i,r.warehouse))+" "+esc(i.name)+" "+esc(qtyText(i.qty,i.unit))).join(" / "):""}</div><div class="row-sub record-resource-summary">${esc(summarizeItems(r.items,r.equipmentItems,r.flow))}</div>
           </div>
           <div class="chev">›</div>
         </button>
-      `).join("")}</div>`).join("");return groupedSection("history",type,`${typeRows.length}건`,content);}).join("");
+      `+(linked.has(r.id)?'<details class="change-history"><summary>정정 '+linked.get(r.id).length+'회</summary>'+linked.get(r.id).map(c=>'<button class="list-row" data-detail="'+esc(c.id)+'">'+esc(c.date)+' · '+esc(c.quantityCorrection.fromQty)+' → '+esc(c.quantityCorrection.toQty)+'</button>').join("")+'</details>':"")).join("")}</div>`).join("");return groupedSection("history",type,`${typeRows.length}건`,content);}).join("");
 }
 
 function bindHistoryRows(){
   document.getElementById("historyMore")?.addEventListener("click",()=>{historyLimit+=40;document.getElementById("histList").innerHTML=renderHistoryListHtml(historyRenderRecords);bindGroupedSections(renderHistory);bindHistoryRows();});
   view.querySelectorAll("[data-detail]").forEach(b => b.addEventListener("click", () => openDetail(b.dataset.detail)));
   document.getElementById("emptyHistoryRegister")?.addEventListener("click",()=>startHomeRegister("normal","출고"));
+  document.getElementById("emptyHistoryRelax")?.addEventListener("click",()=>{emptyHistoryHint()?.clear();renderHistory();});
   document.getElementById("emptyHistoryReset")?.addEventListener("click",()=>{historyFilter="all";clearAllHistoryFilters();});
 }
 
@@ -3210,7 +3243,7 @@ async function backup(){
   showSnack("전체 백업 파일 생성");
 }
 
-function restoreFile(file){return runWorkflow("restore",async()=>{
+function restoreFile(file,verifyOnly=false){return runWorkflow("restore",async()=>{
     if(!file)return false;
     const source=JSON.stringify(state),disk=localStorage.getItem(KEY);
     const unchanged=()=>JSON.stringify(state)===source&&localStorage.getItem(KEY)===disk;
@@ -3226,8 +3259,9 @@ function restoreFile(file){return runWorkflow("restore",async()=>{
       if(!validRestoreData(raw))throw new Error("Victor 전체 백업 파일인지 확인해주세요");
       validateInventoryKeys(raw);
       if(Number(raw.schemaVersion||0)>SCHEMA_VERSION)throw new Error("더 최신 앱에서 만든 자료입니다 · 먼저 앱을 업데이트해주세요");
+      if(verifyOnly){const places=new Set(raw.warehouses),names=new Set(raw.catalog.map(i=>i.name));if(Object.entries(raw.stock).some(([w,stock])=>!places.has(w)||!stock||Object.keys(stock).some(n=>!names.has(n)))||(raw.equipment||[]).some(g=>!places.has(g.place)))throw Error("창고·품목 연결을 확인해주세요");showFeedback("success","백업 파일 정상 · 현재 자료 변경 없음");return true;}
       if(!unchanged())throw new Error("파일을 읽는 중 자료가 바뀌었습니다 · 최신 자료 확인 후 다시 선택해주세요");
-      if(!await askConfirm("전체 자료 복원",`창고 ${(raw.warehouses||[]).length}개 · 이력 ${(raw.records||[]).length}건 · 메모 ${(raw.memos||[]).length}건으로 이 기기의 자료를 바꿀까요? 공유 서버에는 전송하지 않습니다. 변경 전 자료는 자동 보관됩니다.`,"복원",true))return false;
+      if(!await askConfirm("전체 자료 복원",`현재 기준: ${state.savedAt?fmtDateTime(state.savedAt):"미기록"} · 창고 ${state.warehouses.length}개 · 이력 ${state.records.length}건 · 메모 ${(state.memos||[]).length}건\n백업 기준: ${raw.backupDate||"미기록"} · 창고 ${(raw.warehouses||[]).length}개 · 이력 ${(raw.records||[]).length}건 · 메모 ${(raw.memos||[]).length}건으로 이 기기의 자료를 바꿀까요? 공유 서버에는 전송하지 않습니다. 변경 전 자료는 자동 보관됩니다.`,"복원",true))return false;
       if(!unchanged())throw new Error("확인 중 자료가 바뀌었습니다 · 복원을 보류했습니다");
       if(!createSafetyPoint("전체 복원 전",state))throw new Error("안전지점을 만들 공간이 없어 복원을 보류했습니다");
       const beforeState=JSON.stringify(state);
@@ -3504,10 +3538,11 @@ function renderFastSurveyReview(){
   const reviewed=confirmed.map(it=>{const key=`${it.warehouse}|${it.name}`;return {...it,before:Number(survey.baseline[key]||0),after:Number(survey.values[key]||0)};});
   const changed=reviewed.filter(it=>it.before!==it.after),zeroCount=reviewed.filter(it=>Number(it.after||0)===0).length,unchangedCount=reviewed.length-changed.length;
   page="survey";document.getElementById("headTitle").innerHTML=`<div class="page-title">실사 확인</div><div class="date">확인 ${confirmed.length} / ${items.length}</div>`;
-  view.innerHTML=`<button class="back" id="reviewBack" type="button">‹ 실사 입력</button><div class="card"><div class="section-title">실사 요약</div><div class="summary-grid"><div class="summary-pill"><div class="summary-label">확인</div><div class="summary-value">${confirmed.length}개</div></div><div class="summary-pill"><div class="summary-label">미확인</div><div class="summary-value">${unchecked.length}개</div></div><div class="summary-pill"><div class="summary-label">수량 변경</div><div class="summary-value">${changed.length}개</div></div></div><div class="row-sub" style="margin-top:10px">확인 중 0재고 ${zeroCount}개 · 수량 변동 없음 ${unchangedCount}개</div></div>${conflicts.length?`<div class="callout error-callout"><strong>재고 기준이 바뀐 항목 ${conflicts.length}개</strong><div>실사 중 다른 작업에서 수량이나 품목 구성이 바뀌었습니다. 잘못 덮어쓰지 않도록 반영을 막았습니다. 새 기준으로 실사를 다시 시작해주세요.</div><button class="btn secondary" id="restartConflictedSurvey" type="button">새 기준으로 다시 시작</button></div>`:""}<div class="list-card"><div class="section-title">확인한 수량 변경 ${changed.length}건</div>${changed.length?changed.map(it=>`<div class="list-row"><div><div class="row-title">${esc(it.name)}</div><div class="row-sub">${esc(it.warehouse)} · ${qtyText(it.before,it.unit)} → ${qtyText(it.after,it.unit)}</div></div></div>`).join(""):`<div class="emptybox">확인한 수량 변경이 없습니다.</div>`}</div>${unchecked.length?`<label class="survey-skip-option"><input id="allowUncheckedApply" type="checkbox"> 미확인 ${unchecked.length}개는 기존 수량을 유지하고, 확인한 품목만 반영</label>`:""}<div class="card"><label>담당 메모<textarea id="surveyApplyMemo" placeholder="실사 특이사항 또는 담당 메모"></textarea></label></div><button class="btn primary" id="applyFastSurvey" type="button" style="width:100%" ${conflicts.length||unchecked.length?"disabled":""}>확인한 품목 반영</button>${surveySessionActionsHtml()}`;
+  view.innerHTML=`<button class="back" id="reviewBack" type="button">‹ 실사 입력</button><div class="card"><div class="section-title">실사 요약</div><div class="summary-grid"><div class="summary-pill"><div class="summary-label">확인</div><div class="summary-value">${confirmed.length}개</div></div><div class="summary-pill"><div class="summary-label">미확인</div><div class="summary-value">${unchecked.length}개</div></div><div class="summary-pill"><div class="summary-label">수량 변경</div><div class="summary-value">${changed.length}개</div></div></div><div class="row-sub" style="margin-top:10px">확인 중 0재고 ${zeroCount}개 · 수량 변동 없음 ${unchangedCount}개</div></div>${conflicts.length?`<div class="callout error-callout"><strong>재고 기준이 바뀐 항목 ${conflicts.length}개</strong><div>실사 중 다른 작업에서 수량이나 품목 구성이 바뀌었습니다. 잘못 덮어쓰지 않도록 반영을 막았습니다. 새 기준으로 실사를 다시 시작해주세요.</div><button class="btn secondary" id="rebaseChangedStock" type="button">수량 충돌 품목만 다시 대조</button><button class="btn secondary" id="restartConflictedSurvey" type="button">새 기준으로 다시 시작</button></div>`:""}<div class="list-card"><div class="section-title">확인한 수량 변경 ${changed.length}건</div>${changed.length?changed.map(it=>`<div class="list-row"><div><div class="row-title">${esc(it.name)}</div><div class="row-sub">${esc(it.warehouse)} · ${qtyText(it.before,it.unit)} → ${qtyText(it.after,it.unit)}</div></div></div>`).join(""):`<div class="emptybox">확인한 수량 변경이 없습니다.</div>`}</div>${unchecked.length?`<label class="survey-skip-option"><input id="allowUncheckedApply" type="checkbox"> 미확인 ${unchecked.length}개는 기존 수량을 유지하고, 확인한 품목만 반영</label>`:""}<div class="card"><label>담당 메모<textarea id="surveyApplyMemo" placeholder="실사 특이사항 또는 담당 메모"></textarea></label></div><button class="btn primary" id="applyFastSurvey" type="button" style="width:100%" ${conflicts.length||unchecked.length?"disabled":""}>확인한 품목 반영</button>${surveySessionActionsHtml()}`;
   bindSurveyMemo();document.getElementById("reviewBack").onclick=renderSurveyList;bindSurveySessionActions();
   bindLastSurveyCorrection(survey,items);
   if(unchecked.length){const list=document.createElement("details");list.innerHTML=`<summary>미확인만 보기 · ${unchecked.length}개</summary>`+unchecked.map(it=>`<button class="list-row" type="button" data-survey-jump="${items.indexOf(it)}">${esc(it.warehouse)} · ${esc(it.name)}</button>`).join("");document.getElementById("allowUncheckedApply").closest("label").before(list);list.onclick=e=>{const b=e.target.closest("[data-survey-jump]");if(b){survey.index=Number(b.dataset.surveyJump);renderFastSurvey();}};}
+  document.getElementById("rebaseChangedStock")?.addEventListener("click",async()=>{if(!await askConfirm("수량 변경 품목 재대조","충돌한 품목만 미확인으로 돌립니다. 나머지 입력은 유지합니다.","재대조"))return;const bad=fastSurveyConflicts(items);if(!bad.length||ambiguousSurvey(items)||bad.some(i=>!warehouses.includes(i.warehouse)||!catalog.some(c=>c.name===i.name&&c.unit===i.unit)||Object.values(state.warehouseInfos||{}).some(info=>(info.nameHistory||[]).some(h=>h.before===i.warehouse&&dateMs(h.at)>=dateMs(survey.startedAt)))||Number(state.stock[i.warehouse]?.[i.name]||0)===Number(survey.baseline[i.warehouse+"|"+i.name]))){showFeedback("warning","창고·품목 연결 확인 필요 · 전체 재시작을 사용해주세요");return;}const before=JSON.stringify(state);for(const i of bad){const k=i.warehouse+"|"+i.name;survey.baseline[k]=Number(state.stock[i.warehouse]?.[i.name]||0);delete survey.values[k];delete survey.checked[k];}survey.index=items.indexOf(bad[0]);if(saveStateTransaction(before,"실사 재대조 저장 실패"))renderSurveyList();});
   document.getElementById("restartConflictedSurvey")?.addEventListener("click",restartFastSurvey);
   const applyButton=document.getElementById("applyFastSurvey"),skipOption=document.getElementById("allowUncheckedApply");
   skipOption?.addEventListener("change",()=>{applyButton.disabled=!skipOption.checked||conflicts.length>0;});
@@ -3573,25 +3608,28 @@ function renderSurveyList(){
   view.innerHTML=`<div class="card form"><label>실사 창고<select id="surveyListPlace">${places.map((p,i)=>`<option value="${i}" ${p===place?"selected":""}>${esc(p)}</option>`).join("")}</select></label><button class="btn ${first?"primary":"secondary"}" id="surveyDiscover">+ 발견한 품목</button><span class="row-sub">수량을 누르면 수정 · 확인하지 않은 품목은 그대로 유지</span></div>`+
   '<div class="card form"><label>실사 메모 <small>(전체 실사 공통)</small><textarea id="surveyApplyMemo" rows="1" placeholder="특이사항을 바로 기록하세요"></textarea></label></div>'+
   sections.map(([g,list],j)=>`<details class="card" ${g==="장부상 0"?"":"open"}><summary>${esc(g)} · ${list.length}종</summary>${list.map(rowHtml).join("")}<button type="button" class="btn secondary" data-match-group="${j}"></button></details>`).join("")+
-  '<div class="btn-row"><button class="btn gray" id="surveySingle">한 품목씩</button><button class="btn primary" id="fastReview">확인 현황 · 검토</button></div>'+surveySessionActionsHtml();
+  '<div class="btn-row"><button class="btn secondary" id="surveyNextUnchecked">다음 미확인</button><button class="btn gray" id="surveySingle">한 품목씩</button><button class="btn primary" id="fastReview">확인 현황 · 검토</button></div>'+surveySessionActionsHtml();
   function refresh(){
     document.getElementById("surveyListProgress").textContent=progress();
+    const progressByPlace=new Map();for(const i of items){const k=i.warehouse+"|"+i.name,v=progressByPlace.get(i.warehouse)||[0,0];v[0]+=Number(s.checked[k]===true);v[1]++;progressByPlace.set(i.warehouse,v);}Array.from(document.getElementById("surveyListPlace").options).forEach((o,j)=>{o.textContent=places[j]+" · "+progressByPlace.get(places[j]).join("/");});document.getElementById("surveyNextUnchecked").disabled=rows.every(checked);
     for(const r of rows){const edit=view.querySelector('[data-edit-count="'+r.n+'"]'),match=view.querySelector('[data-match-count="'+r.n+'"]');
       edit.textContent=qtyText(base(r),r.it.unit)+(checked(r)&&s.values[r.key]!==base(r)?" → "+qtyText(s.values[r.key],r.it.unit):"");
-      match.textContent=checked(r)?"✓ 확인됨":"일치";match.disabled=checked(r);}
-    sections.forEach(([g,list],j)=>{const b=view.querySelector('[data-match-group="'+j+'"]'),n=list.filter(r=>!checked(r)).length;b.disabled=!n;b.textContent=n?(g==="장부상 0"?"남은 "+n+"종 없음 확인":"남은 "+n+"종 장부와 일치"):"분류 확인 완료";});
+      match.textContent=checked(r)?"✓ 확인됨":"일치";match.title=checked(r)?"확인 취소 · 미확인으로":"장부 수량과 일치";}
+    sections.forEach(([g,list],j)=>{const b=view.querySelector('[data-match-group="'+j+'"]'),n=list.filter(r=>!checked(r)).length;b.closest("details").querySelector("summary").textContent=g+" · "+(n?"미확인 "+n+"종":"확인 완료");b.disabled=!n;b.textContent=n?(g==="장부상 0"?"남은 "+n+"종 없음 확인":"남은 "+n+"종 장부와 일치"):"분류 확인 완료";});
   }
-  function commit(list,value){const before=JSON.stringify(state);for(const r of list){s.checked[r.key]=true;s.values[r.key]=value??base(r);s.lastConfirmedKey=r.key;s.index=r.n;}
+  let undoGroup=null;function commit(list,value){undoGroup=null;document.getElementById("surveyUndoGroup")?.remove();const before=JSON.stringify(state);for(const r of list){s.checked[r.key]=true;s.values[r.key]=value??base(r);s.lastConfirmedKey=r.key;s.index=r.n;}
     if(!saveStateTransaction(before,"실사 입력을 저장하지 못했습니다")){renderSurveyList();return false;}refresh();return true;}
   function edit(r,discover=false){
-    openEntryModal(entryHeader(discover?"발견한 품목":"실사 수량",place)+'<div class="form">'+(discover?`<label>품목<select id="surveyFoundName">${rows.map(x=>`<option value="${x.n}">${esc(x.it.name)}</option>`).join("")}</select></label>`:`<strong>${esc(r.it.name)}</strong>`)+ '<label id="surveyFoundLabel">실측 수량<input type="number" id="surveyFoundQty" min="0" step="any"></label><button id="surveyFoundSave" class="btn primary">수량 확인</button></div>');
+    openEntryModal(entryHeader(discover?"발견한 품목":"실사 수량",place)+'<div class="form">'+(discover?`<label>품목 찾기<input type="search" id="surveyFind" placeholder="이름·규격"></label><label>품목<select id="surveyFoundName">${rows.map(x=>`<option value="${x.n}">${esc(x.it.name)}</option>`).join("")}</select></label>`:`<strong>${esc(r.it.name)}</strong>`)+ '<label id="surveyFoundLabel">실측 수량<input type="number" id="surveyFoundQty" min="0" step="any"></label><button id="surveyFoundSave" class="btn primary">수량 확인</button></div>');
+    if(discover){const mark=document.createElement("button");mark.className="btn gray";mark.textContent="목록에 없는 품목 · 식별 보류";document.getElementById("surveyFoundSave").after(mark);mark.onclick=()=>{openEntryModal(entryHeader("식별 보류",place)+'<div class="form"><label>현장 표기명<input id="unknownName"></label><label>실측 수량<input id="unknownQty" type="number" min="0" step="any"></label><label>단위<input id="unknownUnit"></label><button class="btn primary" id="unknownSave">실사 메모에 보관 · 재고 미반영</button></div>');document.getElementById("unknownSave").onclick=()=>{const n=document.getElementById("unknownName").value.trim(),u=document.getElementById("unknownUnit").value.trim(),q=finiteQuantity(document.getElementById("unknownQty").value,u);if(!n||!u||q===null){showFeedback("warning","표기명·수량·단위를 확인해주세요");return;}const before=JSON.stringify(state);s.memoDraft=[s.memoDraft,"[식별 보류] "+place+" · "+n+" "+q+u].filter(Boolean).join("\n");if(saveStateTransaction(before,"식별 보류 저장 실패")){closeEntryModal();renderSurveyList();}};};}
     const select=document.getElementById("surveyFoundName"),input=document.getElementById("surveyFoundQty");
     const reset=()=>{input.value=checked(r)?s.values[r.key]:"";input.placeholder="단위 "+r.it.unit;input.inputMode=integerUnit(r.it.unit)?"numeric":"decimal";};
-    if(select){select.value=r.n;select.onchange=()=>{r=rows.find(x=>x.n===Number(select.value));reset();};}reset();
+    if(select){document.getElementById("surveyFind").oninput=e=>{const q=e.target.value.trim().toLowerCase(),hits=rows.filter(x=>(x.it.name+" "+(itemOf(x.it.name)?.spec||"")).toLowerCase().includes(q));select.innerHTML=hits.map(x=>'<option value="'+x.n+'">'+esc(x.it.name)+'</option>').join("");document.getElementById("surveyFoundSave").disabled=!hits.length;if(hits.length){r=hits[0];reset();}};select.value=r.n;select.onchange=()=>{r=rows.find(x=>x.n===Number(select.value));reset();};}reset();
     document.getElementById("surveyFoundSave").onclick=()=>{const n=finiteQuantity(input.value,r.it.unit);if(input.validity.badInput||n===null){fieldError(input,"실측 수량을 입력해주세요");return;}if(commit([r],n))closeEntryModal();};
   }
-  for(const r of rows){view.querySelector('[data-match-count="'+r.n+'"]').onclick=()=>commit([r]);view.querySelector('[data-edit-count="'+r.n+'"]').onclick=()=>edit(r);}
-  sections.forEach(([g,list],j)=>{view.querySelector('[data-match-group="'+j+'"]').onclick=async()=>{const pending=list.filter(r=>!checked(r));if(pending.length&&await askConfirm("분류 확인",place+" · "+g+" 미확인 "+pending.length+"종을 모두 대조했나요? 이미 입력한 수량은 유지합니다.","확인 저장"))commit(pending);};});
+  for(const r of rows){view.querySelector('[data-match-count="'+r.n+'"]').onclick=()=>{if(!checked(r)){commit([r]);return;}undoGroup=null;document.getElementById("surveyUndoGroup")?.remove();const before=JSON.stringify(state);delete s.checked[r.key];delete s.values[r.key];if(saveStateTransaction(before,"확인 취소 실패"))refresh();else renderSurveyList();};view.querySelector('[data-edit-count="'+r.n+'"]').onclick=()=>edit(r);}
+  sections.forEach(([g,list],j)=>{view.querySelector('[data-match-group="'+j+'"]').onclick=async()=>{const pending=list.filter(r=>!checked(r));if(pending.length&&await askConfirm("분류 확인",place+" · "+g+" 미확인 "+pending.length+"종을 모두 대조했나요? 이미 입력한 수량은 유지합니다.","확인 저장")&&commit(pending)){undoGroup=pending;const b=document.createElement("button");b.className="btn secondary compact";b.id="surveyUndoGroup";b.textContent="방금 분류 확인 취소";view.querySelector('[data-match-group="'+j+'"]').after(b);b.onclick=()=>{const before=JSON.stringify(state);for(const r of undoGroup||[]){delete s.checked[r.key];delete s.values[r.key];}if(!saveStateTransaction(before,"묶음 취소 실패")){renderSurveyList();return;}b.remove();undoGroup=null;refresh();};}};});
+  document.getElementById("surveyNextUnchecked").onclick=()=>{const r=rows.find(r=>r.n>s.index&&!checked(r))||rows.find(r=>!checked(r));if(!r)return;const b=view.querySelector('[data-edit-count="'+r.n+'"]');b.closest("details").open=true;b.focus({preventScroll:true});b.scrollIntoView({block:"center"});};
   document.getElementById("surveyDiscover").onclick=()=>edit(rows.find(r=>!checked(r))||rows[0],true);
   document.getElementById("surveyListPlace").onchange=e=>{const before=JSON.stringify(state);s.index=items.findIndex(i=>i.warehouse===places[Number(e.target.value)]);saveStateTransaction(before,"창고 선택 저장 실패");renderSurveyList();};
   bindSurveyMemo();document.getElementById("surveySingle").onclick=renderFastSurvey;document.getElementById("fastReview").onclick=renderFastSurveyReview;bindSurveySessionActions();refresh();
@@ -3663,7 +3701,7 @@ function opTotal(place,field){
   if(isVesselPlace(place) && field === "starboardHours") return Number(op.starboardHoursBase ?? op.hoursBase ?? 0);
   return 0;
 }
-function vehicleMonthlyDistance(place){const month=todayISO().slice(0,7);return effectiveOpLogs(place).filter(log=>String(log.date||"").slice(0,7)===month).reduce((sum,log)=>sum+Number(log.diff??log.distance??0),0);}
+function vehicleMonthlyDistance(place,month=todayISO().slice(0,7)){return effectiveOpLogs(place).filter(log=>String(log.date||"").slice(0,7)===month).reduce((sum,log)=>sum+Number(log.diff??log.distance??0),0);}
 
 function vesselMonthlyMileage(place){const month=todayISO().slice(0,7);return effectiveOpLogs(place).filter(log=>String(log.date||"").slice(0,7)===month).reduce((sum,log)=>sum+Number(log.mileageDiff||0),0);}
 function vesselFuelTotals(place){const now=todayISO(),month=now.slice(0,7),year=now.slice(0,4),logs=effectiveOpLogs(place);return {current:Number(state.assetOps?.[place]?.fuelBase||0),month:logs.filter(log=>String(log.date||"").slice(0,7)===month).reduce((sum,log)=>sum+Number(log.fuel||0),0),year:logs.filter(log=>String(log.date||"").slice(0,4)===year).reduce((sum,log)=>sum+Number(log.fuel||0),0)};}
@@ -3674,7 +3712,7 @@ function renderOps(place){
   if(!isVehiclePlace(place)&&!isVesselPlace(place)) return "";
   if(isVehiclePlace(place)){
     return `<div class="card"><div class="section-title">차량 관리</div>
-      <div class="metric" style="height:82px"><div><div class="metric-label">누적 주행거리</div><div class="metric-value">${opTotal(place,"distance")}km</div><div class="row-sub">이번 달 ${vehicleMonthlyDistance(place)}km</div></div></div>
+      <div class="metric" style="height:82px"><div><div class="metric-label">누적 주행거리</div><div class="metric-value">${opTotal(place,"distance")}km</div><div class="row-sub">이번 달 ${vehicleMonthlyDistance(place)}km · 지난달 ${vehicleMonthlyDistance(place,new Date(Date.UTC(Number(todayISO().slice(0,4)),Number(todayISO().slice(5,7))-2,1)).toISOString().slice(0,7))}km</div></div></div>
       <div class="btn-row" style="display:grid;grid-template-columns:1fr 1fr;margin-top:12px">
         <button class="btn secondary" id="editOpBase" type="button">초기거리설정</button>
         <button class="btn primary" id="addOpLog" type="button">주행 기록</button>
@@ -3741,12 +3779,15 @@ function addOpLog(place){
   const preview=()=>{const from=document.getElementById("opLogStartDistance"),to=document.getElementById("opLogDistance"),target=document.getElementById("opDistancePreview");if(!target||!from||!to)return;
     const km=n=>Number(n).toLocaleString("ko-KR",{maximumFractionDigits:3})+" km",start=Number(from.value),end=Number(to.value);
     target.textContent=!to.value||!from.value?"현재 총 운행거리 "+km(opTotal(place,"distance"))+" · 출발·도착 계기값을 입력하세요":end<start?"도착 누적거리는 출발거리보다 작을 수 없습니다":"이번 운행 "+km(end-start)+" · 총 운행거리 "+km(end);};
-  if(vehicle)preview();
-  document.getElementById("opLogStartDistance")?.addEventListener("input",preview);document.getElementById("opLogDistance")?.addEventListener("input",preview);
+  if(vehicle){const update=()=>{preview();const f=document.getElementById("opLogStartDistance"),gap=Number(f.value)-opTotal(place,"distance");if(f.value&&gap!==0)document.getElementById("opDistancePreview").textContent+=" · 전회 도착과 "+gap+" km 차이";};update();["opLogStartDistance","opLogDistance"].forEach(id=>document.getElementById(id).addEventListener("input",update));}
+  else{const fuel=document.getElementById("opLogFuel"),note=document.createElement("div");note.className="row-sub";fuel.closest("label").after(note);const upd=()=>{const p=document.getElementById("opLogPortHours").value,t=document.getElementById("opLogStarboardHours").value;note.textContent=[fuel.value?"예상 연료 잔량 "+addQuantities(op.fuelBase,-Number(fuel.value))+" L":"",p||t?"좌현 "+(p?addQuantities(p,-opTotal(place,"portHours"))+"h":"미입력")+" · 우현 "+(t?addQuantities(t,-opTotal(place,"starboardHours"))+"h":"미입력"):""].filter(Boolean).join(" · ");};[fuel,document.getElementById("opLogPortHours"),document.getElementById("opLogStarboardHours")].forEach(f=>f.addEventListener("input",upd));}
+  // Distance and fuel previews are bound above.
   document.getElementById("saveOpLog").addEventListener("click",()=>runWorkflow(`operation:${place}`,async()=>{
     const op=state.assetOps[place];
     const value=id=>document.getElementById(id)?.value||"",startTime=value("opLogStartTime"),endTime=value("opLogEndTime");
-    const common={id:uid(),date:value("opLogDate")||todayISO(),memo:value("opLogMemo").trim(),createdAt:new Date().toISOString(),startTime,endTime,purpose:value("opLogPurpose").trim(),[vehicle?"driver":"operator"]:value("opLogOperator").trim()};
+    if(!value("opLogDate")){fieldError("#opLogDate","운용 날짜를 입력해주세요");return;}
+    const common={id:uid(),date:value("opLogDate"),memo:value("opLogMemo").trim(),createdAt:new Date().toISOString(),startTime,endTime,purpose:value("opLogPurpose").trim(),[vehicle?"driver":"operator"]:value("opLogOperator").trim()};
+    if(startTime&&endTime&&endTime<startTime&&!await askConfirm("다음 날 도착인가요?",startTime+" → 다음 날 "+endTime,"다음 날 도착"))return;
     if(startTime&&endTime){const minutes=time=>Number(time.slice(0,2))*60+Number(time.slice(3));common.elapsedHours=((minutes(endTime)-minutes(startTime)+1440)%1440)/60;}
     let log,patch;
     if(vehicle){
@@ -3945,6 +3986,7 @@ function editLatestOpLog(place,logId){
       Object.assign(patch,{departure:value("editOpDeparture").trim(),arrival:value("editOpArrival").trim(),mileageBefore,mileageAfter:nextMileage,mileageDiff:value("editOpMileageAfter")===""?null:nextMileage-mileageBefore,portBefore,portAfter:nextPort,portDiff:nextPort-portBefore,starboardBefore,starboardAfter:nextStarboard,starboardDiff:nextStarboard-starboardBefore,fuel:value("editOpFuel")===""?null:nextFuel});
       counters={mileageBase:nextMileage,portHoursBase:nextPort,starboardHoursBase:nextStarboard,fuelBase:addQuantities(availableFuel,-nextFuel),engineSplitMode:"dual"};
     }
+    if(patch.startTime&&patch.endTime&&patch.endTime<patch.startTime&&!await askConfirm("다음 날 도착인가요?",patch.startTime+" → 다음 날 "+patch.endTime,"다음 날 도착"))return;
     if(patch.startTime&&patch.endTime){const minutes=time=>Number(time.slice(0,2))*60+Number(time.slice(3));patch.elapsedHours=((minutes(patch.endTime)-minutes(patch.startTime)+1440)%1440)/60;}else patch.elapsedHours=null;
     const before=JSON.stringify(state);const history=log.editHistory||[];history.push({editedAt:patch.updatedAt,before:Object.fromEntries(Object.entries(log).filter(([key])=>key!=="editHistory"))});Object.assign(log,patch,{editHistory:history});Object.assign(op,counters);
     if(!saveStateTransaction(before,"이력 수정 실패 · 입력은 유지됩니다"))return;
@@ -4576,6 +4618,7 @@ function shareApplyPreviewText(snapshot,changes=compareSharedSnapshot(snapshot))
     `없어지는 보관장소: ${changes.removedWarehouses.length}곳${changes.removedWarehouses.length?` (${changes.removedWarehouses.slice(0,3).join(", ")}${changes.removedWarehouses.length>3?" 외":""})`:""}`,
     `수량이 바뀌는 자재: ${changes.materialQtyChanges}건`,
     `바뀌는 장비: ${changes.equipmentChanges}건`,
+    ...(()=>{const totals=new Map();for(const line of changes.materialDiffs){const place=changes.quantities?.get(line)?.warehouse||changes.diffPlaces?.get(line);if(place)totals.set(place,(totals.get(place)||0)+1);}return totals.size?["창고별 변경: "+Array.from(totals,([name,n])=>name+" "+n+"건").join(" · ")]:[];})(),
     `전체 변경 내역: ${changes.materialDiffs.length}건`,
     `현재 장비 연결이 없어지는 과거 기록: ${sharedHistoricalLinkCount(changes.next)}건 (기록 내용 유지)`,
     "이 기기에 유지: 등록 이력·개인 메모",
@@ -4606,6 +4649,7 @@ function uploadPreviewText(snapshot,latest=null){
   const warnings=uploadWarningLines(snapshot,latest);
   return [
     `공유자료: ${cloudReadConfig().title}`,
+    ...((stamp)=>{const r=(state.records||[]).find(r=>r.status!=="pending"&&(r.items?.length||r.equipmentItems?.length)&&[r.appliedAt,r.createdAt].some(t=>t&&t===stamp));return r?["최근 자원 기록: "+(r.title||r.flow)]:[];})(latestLocalResourceAt()),
     `내 자료 기준: ${fmtDateTime(latestLocalResourceAt()||snapshot.createdAt)}`,
     `보관장소: ${summary.warehouses}곳`,
     `자재: ${summary.materials}종`,
@@ -4920,7 +4964,7 @@ function cloudDashboardHtml(latest=null,{loading=false,error="",checkedAt=""}={}
   const safety=readCloudApplySafetyPoint();
   const undo=guardedPointStatus(safety);
   const status=loading?"클라우드 확인 중":error?"확인 실패":cloudStatusLabel(latest);
-  const statusTitle=loading?"확인 중":error?"확인 실패":!latest?"공유자료 없음":status==="클라우드 자료가 최신"?"새 자료 있음":status==="내 자료가 최신"?"올리기 가능":status==="이미 최신"?"최신 상태":"확인 필요";
+  const offline=typeof navigator!=="undefined"&&navigator.onLine===false;const statusTitle=offline?"오프라인":loading?"확인 중":error?"확인 실패":!latest?"공유자료 없음":status==="클라우드 자료가 최신"?"새 자료 있음":status==="내 자료가 최신"?"올리기 가능":status==="이미 최신"?"최신 상태":"확인 필요";
   const statusHint=loading?"최신 상태를 확인하고 있습니다":error?"최신 확인을 다시 눌러주세요":!latest?"내 자료를 올려 공유하세요":status==="클라우드 자료가 최신"?"가져오면 반영됩니다":status==="내 자료가 최신"?"올리면 공유됩니다":status==="이미 최신"?"할 작업 없음":"최신 확인을 눌러주세요";
   const compareFirst=!!latest&&!loading&&!error&&["양쪽 자료 변경","차이 확인 필요"].includes(status);
   const sendFirst=!loading&&!error&&(!latest||status==="내 자료가 최신");
@@ -4932,9 +4976,9 @@ function cloudDashboardHtml(latest=null,{loading=false,error="",checkedAt=""}={}
     <div class="form cloud-share-form ${loading||status==="이미 최신"?"share-idle":status==="클라우드 자료가 최신"?"share-receive":""}">
       <div class="share-status-card ${latest&&!loading&&!error?"ready":""}" role="status" aria-live="polite">
         <div class="share-status-label">${esc(config.title)}</div>
-        <div class="share-status-title">${esc(status==="이미 최신"?"✓ 이미 최신이에요":compareFirst?status:statusTitle)}</div>
+        <div class="share-status-title">${esc(offline?"오프라인 · 최신 여부 미확인":status==="이미 최신"?"✓ 이미 최신이에요":compareFirst?status:statusTitle)}</div>
         <div class="share-status-brief">${esc(compareFirst?"보내거나 받기 전에 변경 내용을 확인하세요.":statusHint)}</div>
-        <div class="share-time-note">${esc(status==="이미 최신"&&checkedAt?"마지막 확인 "+fmtShareTime(checkedAt):lastAction)}</div>
+        <div class="share-time-note">${esc(offline?"마지막 확인 "+(lastSuccessfulShareCheck?fmtShareTime(lastSuccessfulShareCheck):"미기록"):status==="이미 최신"&&checkedAt?"마지막 확인 "+fmtShareTime(checkedAt):lastAction)}</div>
         ${cloudSummary?`<div class="share-copy-version">공유본 기준 ${esc(fmtShareTime(latest.cloudRowVersion||cloudSummary.date))}</div>`:""}
       </div>
       ${error?`<div class="callout">${esc(error)}</div>`:""}
@@ -4945,7 +4989,7 @@ function cloudDashboardHtml(latest=null,{loading=false,error="",checkedAt=""}={}
         <button class="btn ${sendFirst?"primary":"secondary"}" id="cloudUploadNow" type="button" ${loading||error||status==="이미 최신"?"disabled":""}><span aria-hidden="true">↑</span><strong>내 자료 보내기</strong><small>공유자료 변경</small></button>
       </div>
       <div class="cloud-sub-actions">
-        <button class="btn gray" id="cloudRefreshNow" type="button" ${loading?"disabled":""}>${loading?"확인 중…":"최신 확인"}</button>
+        <button class="btn gray" id="cloudRefreshNow" aria-label="공유본 최신 확인" type="button" ${loading?"disabled":""}>${loading?"확인 중…":"공유본 확인"}</button>
       </div>
       ${safety&&undo.allowed?'<button class="btn gray cloud-restore" id="cloudUndoNow" type="button">최근 가져오기 되돌리기</button>':""}
       <div class="row-sub share-scope-note">공유: 재고·장비·창고 메모·운용자료<br>이 기기에 유지: 등록 이력·개인 메모</div>
@@ -4983,7 +5027,7 @@ function bindCloudDashboard(latest){
     };
     const zeros=Array.from(diff.quantities).filter(([,q])=>q.before>0&&q.after===0).map(([line])=>line);if(zeros.length)box.insertAdjacentHTML("beforeend",`<div class="callout"><strong>0재고로 변경 · ${zeros.length}건</strong>${zeros.slice(0,3).map(row).join("")}</div>`);
     const lines=diff.materialDiffs;
-    if(lines.length>3){
+    if(lines.length){
       const groups=new Map(),places=[...new Set([...warehouses,...(diff.next?.warehouses||[])])];for(const line of lines){const place=diff.quantities.get(line)?.warehouse||diff.diffPlaces.get(line)||places.find(w=>["창고 정보 변경 · ","보관장소 추가 · ","보관장소 제외 · ","운용자료 변경 · "].some(prefix=>line===prefix+w))||"공통·기타";if(!groups.has(place))groups.set(place,[]);groups.get(place).push(line);}
       box.insertAdjacentHTML("beforeend",`<div class="share-diff-list"><small>창고별로 확인해도 가져오기는 전체 자료에 적용됩니다.</small>${Array.from(groups,([place,items])=>`<details><summary>${esc(place)} · ${items.length}건</summary>${items.map(row).join("")}</details>`).join("")}</div>`);
     }else box.insertAdjacentHTML("beforeend",`<div class="share-diff-list">${lines.slice(0,3).map(row).join("")||"표시할 자원 변경 내역이 없습니다."}${lines.length>3?`<details><summary>나머지 ${lines.length-3}건 보기</summary>${lines.slice(3).map(row).join("")}</details>`:""}</div>`);
@@ -5038,10 +5082,10 @@ async function refreshCloudDashboard(notify=false,preserve=false){
     const head=canReuse?await cloudShareHead(cfg):null;
     const snapshot=canReuse&&!head?null:canReuse&&head.id===known.cloudRowId&&head.updated_at===known.cloudRowVersion?known:await fetchLatestCloudShareSnapshot();
     if(requestId!==cloudDashboardRequestId)return;
-    cloudShareNotice=snapshot?{kind:isCloudSnapshotNewer(snapshot)?"new":"same",summary:snapshotSummary(snapshot),snapshot}:null;
+    lastSuccessfulShareCheck=new Date().toISOString();cloudShareNotice=snapshot?{kind:isCloudSnapshotNewer(snapshot)?"new":"same",summary:snapshotSummary(snapshot),snapshot}:null;
     if(!isCurrent())return;
     renderCloudDashboard(snapshot,{checkedAt:new Date().toISOString()},true);
-    if(notify){const note=document.querySelector(".cloud-share-form .share-time-note");if(note)note.textContent="마지막 확인 "+localTimeNow();}
+    if(notify){const note=document.querySelector(".cloud-share-form .share-time-note");if(note)note.textContent="마지막 확인 "+localTimeNow()+(snapshot&&cloudStatusLabel(snapshot)==="이미 최신"?" · 내 자료와 같음":"");}
   }catch(error){
     if(!isCurrent())return;
     console.warn("[Victor] 공유 현황 확인 실패",error);
