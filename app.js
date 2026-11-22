@@ -1303,10 +1303,31 @@ function renderTechniqueResults(){
   list?.querySelectorAll("[data-tech-id]").forEach(button=>button.addEventListener("click",()=>openTechniqueDetail(button.dataset.techId)));
 }
 
+function oilObservationText({time,place,appearance,witness}){
+  const facts=[time,place.trim()].filter(Boolean).join(" · ");
+  return (facts?facts+" · ":"")+"선박 주변 수면에서 유막 관찰."+(appearance.trim()?" 관찰 내용: "+appearance.trim()+".":"")+" "+({seen:"배출 장면 직접 목격.",trace:"수면 흔적만 관찰."}[witness]||"배출 장면 목격 여부 미확인.")+" 배출원 미확인.";
+}
+function bindOilObservation(){
+  const panel=document.getElementById("oilObservation");if(!panel)return;
+  const field=id=>panel.querySelector("#"+id),output=field("oilReport");
+  const update=()=>{output.value=oilObservationText({time:field("oilTime").value,place:field("oilPlace").value,appearance:field("oilAppearance").value,witness:field("oilWitness").value});};
+  panel.addEventListener("input",update);panel.addEventListener("change",update);update();
+  field("oilCopy").onclick=async()=>{update();try{await navigator.clipboard.writeText(output.value);showFeedback("success","보고 문구 복사");}catch{output.focus();output.select();showFeedback("info","선택된 문구를 복사해주세요");}};
+  field("oilRelated").onclick=()=>openTechniqueDetail("bilge-discharge");
+}
 function renderTechniqueInfo(){
   const items=filteredTechniqueItems();
   view.innerHTML=`
-    <button class="back" id="techniqueBack" type="button">‹ 홈으로</button>
+    <button class="back" id="techniqueBack" type="button">‹ 뒤로</button>
+    <details class="card menu-fold" id="oilObservation"><summary>선박 주변 유막 <small>관찰·보고 시범</small></summary>
+      <div class="form"><p class="row-sub">직접 본 내용만 입력하세요. 이 화면은 조치 지침이 아니며 입력 내용은 저장·전송되지 않습니다.</p>
+      <label>처음 관찰한 시각<input type="time" id="oilTime"></label>
+      <label>관찰 위치<input id="oilPlace" placeholder="예: ○○부두 앞 수면"></label>
+      <label>눈으로 확인한 내용<textarea id="oilAppearance" placeholder="외관·범위, 주변 선박이나 시설"></textarea></label>
+      <label>배출 장면<select id="oilWitness"><option value="">미확인</option><option value="trace">수면 흔적만 관찰</option><option value="seen">직접 목격</option></select></label>
+      <label>보고 문구 초안<textarea id="oilReport" rows="3" readonly></textarea></label>
+      <button class="btn primary" type="button" id="oilCopy">보고 문구 복사</button>
+      <button class="btn secondary" type="button" id="oilRelated">관련 자료 · 빌지 배출 의심 (검토 전 초안)</button></div></details>
     <div class="card tech-hero">
       <div class="section-title">방제기술</div>
       <div class="row-sub">침수선박, 빌지 배출, 매연, 폐기물처럼 현장에서 자주 마주치는 상황별 조치사항을 정리하는 공간입니다.</div>
@@ -1321,6 +1342,7 @@ function renderTechniqueInfo(){
       <div class="section-title">정리 방식</div>
       <div class="row-sub">직원 의견을 받아 항목을 줄이거나 늘리고, 책자·내부자료 문구를 확인한 뒤 확정본으로 바꾸면 됩니다.</div>
     </div>`;
+  bindOilObservation();
   document.getElementById("techniqueBack")?.addEventListener("click",()=>goBackInApp());
   document.getElementById("techniqueSearch")?.addEventListener("input",event=>{techniqueQuery=event.target.value;renderTechniqueResults();});
   renderTechniqueResults();
