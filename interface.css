@@ -36,7 +36,7 @@ button{touch-action:manipulation}
 .top-inner{padding:18px 18px 14px;align-items:center}
 .page-title{font-size:27px;font-weight:750;line-height:1.25;letter-spacing:-.035em}
 .date{margin-top:5px;font-size:13px;line-height:1.5}
-:root[data-theme] #moreBtn:not([hidden]){display:inline-flex;align-items:center;justify-content:center;min-width:44px;width:44px;height:44px;padding:0;color:var(--text);background:transparent;border:0;box-shadow:none}
+:root[data-theme] #moreBtn:not([hidden]){display:inline-flex;align-items:center;justify-content:center;min-width:44px;width:44px;height:44px;padding:0;font-size:0;line-height:0;color:var(--text);background:transparent;border:0;box-shadow:none}
 #moreBtn[hidden],#pageSendBackup[hidden]{display:none!important}
 .menu-fold>summary{cursor:pointer;min-height:44px;align-content:center;font-weight:650}.menu-fold>summary small{color:var(--muted);font-weight:400;margin-inline-start:6px}.menu-mode{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 12px}.menu-mode select{width:auto;min-height:44px}
 :root[data-theme] .more{width:44px;min-width:44px;height:44px;border-radius:12px;padding:0;display:grid;place-items:center;color:var(--text);background:transparent;font-size:25px;flex-shrink:0}

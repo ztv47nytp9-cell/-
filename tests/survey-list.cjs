@@ -5,7 +5,9 @@ const {chromium}=require(process.env.VICTOR_PLAYWRIGHT||'C:/Users/hjchu/.cache/c
  await p.route('**/*',r=>{const u=new URL(r.request().url()),f=path.resolve(root,'.'+(u.pathname==='/'?'/index.html':u.pathname));return u.origin==='http://localhost'&&f.startsWith(root+path.sep)&&fs.existsSync(f)?r.fulfill({path:f}):r.abort();});
  await p.goto('http://localhost');await p.waitForFunction(()=>typeof appStarted!=='undefined'&&appStarted);
  const before=await p.evaluate(()=>{openFastSurveySetup();document.querySelector('#fastSurveyWarehouse').value=warehouses[0];document.querySelector('#startFastSurvey').click();return JSON.stringify(state.stock);});
- await p.click('#surveyDiscover');await p.fill('#surveyFoundQty','3');await p.click('#surveyFoundSave');
+ await p.click('#surveyDiscover');await p.fill('#surveyFoundQty','3');
+ const found=await p.evaluate(()=>{const it=state.survey.items[Number(document.querySelector('#surveyFoundName').value)];return {unit:it.unit,spec:itemOf(it.name).spec||''};});
+ assert.equal(await p.locator('#surveyFoundUnit').innerText(),found.unit);assert.ok((await p.locator('#surveyFoundSpec').innerText()).includes(found.spec));await p.click('#surveyFoundSave');
  assert.equal(await p.evaluate(()=>Object.values(state.survey.checked).filter(Boolean).length),1);
  await p.fill('#surveyApplyMemo','창고 확인 메모');await p.reload();await p.waitForFunction(()=>typeof appStarted!=='undefined'&&appStarted);await p.evaluate(()=>enterFastSurvey());
  assert.equal(await p.inputValue('#surveyApplyMemo'),'창고 확인 메모');
@@ -16,4 +18,10 @@ const {chromium}=require(process.env.VICTOR_PLAYWRIGHT||'C:/Users/hjchu/.cache/c
  await p.click('#fastReview');assert.ok(await p.locator('#applyFastSurvey').isVisible());
  assert.equal(await p.inputValue('#surveyApplyMemo'),'창고 확인 메모');await p.fill('#surveyApplyMemo','수정 메모');await p.click('#reviewBack');assert.equal(await p.inputValue('#surveyApplyMemo'),'수정 메모');
  console.log('PASS warehouse list discovery, resume, category confirmation preserves counts, no stock writes before review');
+ const nextWarehouse=await p.evaluate(()=>{const s=state.survey,it=s.items[0],place=warehouses.find(w=>w!==it.warehouse);
+   s.items=[it,{...it,warehouse:place}];s.index=0;s.checked={[it.warehouse+'|'+it.name]:true};s.values={[it.warehouse+'|'+it.name]:3};renderSurveyList();return place;});
+ assert.equal(await p.locator('#surveyNextUnchecked').innerText(),'다음 미완료 창고: '+nextWarehouse);await p.click('#surveyNextUnchecked');
+ assert.equal(await p.evaluate(()=>state.survey.index),1);assert.equal(await p.evaluate(()=>document.activeElement.dataset.editCount),'1');
+ await p.locator('[data-match-count="1"]').click();assert.equal(await p.locator('#surveyNextUnchecked').innerText(),'모두 확인 · 검토하기');
+ assert.equal(await p.evaluate(()=>JSON.stringify(state.stock)),before);console.log('PASS next incomplete warehouse, focus on unchecked row and no stock mutation');
  }finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

@@ -32,7 +32,8 @@ let selectedResources = new Set();
 let techniqueQuery = "";
 let modalConfirmResolver = null;
 let menuHistoryOpen = false;
-let cloudShareNotice = null,lastSuccessfulShareCheck="";
+let cloudShareNotice = null;
+const recentShareChecks=new Map();
 let cloudShareCheckInFlight = false;
 let cloudDashboardRequestId = 0;
 let entryModalRevision = 0;
@@ -767,7 +768,14 @@ function readCloudShareMeta(){
 }
 
 function saveCloudShareMeta(patch){
-  try{localStorage.setItem(CLOUD_SHARE_META_KEY,JSON.stringify({...readCloudShareMeta(),...patch}));}catch(error){console.warn("[Victor] 클라우드 메타 저장 실패",error);}
+  try{localStorage.setItem(CLOUD_SHARE_META_KEY,JSON.stringify({...readCloudShareMeta(),...patch}));return true;}catch(error){console.warn("[Victor] 클라우드 메타 저장 실패",error);return false;}
+}
+
+function scopedShareCheck(config,checkedAt=""){
+  const scope=JSON.stringify([config.url,config.siteId]),key="victor_share_check_v1:"+scope;
+  if(checkedAt){recentShareChecks.set(scope,checkedAt);try{localStorage.setItem(key,checkedAt);}catch{}return checkedAt;}
+  let stored="";try{stored=localStorage.getItem(key)||"";}catch{}
+  return [stored,recentShareChecks.get(scope)].filter(v=>v&&Number.isFinite(Date.parse(v))).sort((a,b)=>Date.parse(b)-Date.parse(a))[0]||"";
 }
 
 function readCloudUploadPinHash(){
@@ -1912,7 +1920,12 @@ function boxWeight(it){const m=/^\s*(\d+(?:\.\d+)?)\s*kg\s*\/\s*1?\s*(?:box|박�
 function draftSplitPlan(index,base){
   const item=draftItems[index];if(registerFlow!=="출고"||!item||item.needsPlace||!Number.isFinite(Number(item.qty))||Number(item.qty)<=0)return null;
   const from=itemWarehouse(item,base),reserved=new Map();for(const [idx,i] of draftItems.entries()){if(idx===index||i.name!==item.name||!(Number(i.qty)>0))continue;const place=itemWarehouse(i,base);reserved.set(place,addQuantities(reserved.get(place)||0,i.qty));}
-  const plan=[];let needed=Number(item.qty);for(const w of [from,...warehouses.filter(x=>x!==from)]){const available=Math.max(0,addQuantities(Number(state.stock[w]?.[item.name]||0),-(reserved.get(w)||0)));if(w===from&&available>=needed)return null;const qty=Math.min(available,needed);if(qty>0)plan.push({warehouse:w,qty});needed=addQuantities(needed,-qty);if(!needed)return plan;}return null;
+  const available=w=>Math.max(0,addQuantities(Number(state.stock[w]?.[item.name]||0),-(reserved.get(w)||0)));
+  if(available(from)>=Number(item.qty))return null;
+  const others=warehouses.filter(w=>w!==from).map(w=>({w,n:available(w)})).filter(x=>x.n>0).sort((a,b)=>b.n-a.n);
+  const plan=[];let needed=Number(item.qty);
+  for(const {w,n} of [{w:from,n:available(from)},...others]){const qty=Math.min(n,needed);if(qty>0)plan.push({warehouse:w,qty});needed=addQuantities(needed,-qty);if(!needed)return plan;}
+  return null;
 }
 function updateStockAfterPreview(){
   const target=document.getElementById("stockAfterPreview");if(!target)return;
@@ -1936,7 +1949,9 @@ function swapDraftRoute(){
   const from=document.getElementById("recWarehouse"),to=document.getElementById("recTargetWarehouse"),a=from.value,b=to.value;
   if(!a||!b||a===b)return showFeedback("info","먼저 서로 다른 출발·도착지를 선택해주세요");
   if(draftItems.some(i=>itemWarehouse(i,a)!==a))return showFeedback("info","출발지가 여러 곳입니다 · 품목별 출발지를 먼저 확인해주세요");
-  if(draftEquipmentItems.some(i=>state.equipment.find(e=>e.id===i.id)?.place!==b))return showFeedback("info","반대 출발지에 없는 장비가 있습니다 · 장비를 다시 선택해주세요");
+  const wrong=draftEquipmentItems.findIndex(i=>state.equipment.find(e=>e.id===i.id)?.place!==b);
+  if(wrong>=0){const row=draftEquipmentItems[wrong],gear=state.equipment.find(e=>e.id===row.id),select=document.querySelector(`[data-equipment-name="${wrong}"]`);
+    select?.scrollIntoView({block:"center"});return fieldError(select,`${gear?.name||row.name||"미선택 장비"} · 현재 ${gear?.place||"위치 미확인"} · 교환하려면 ${b}의 장비를 선택해주세요`);}
   from.value=b;from.dataset.manualPlace="1";syncTransferTarget();to.value=a;draftItems.forEach(i=>{i.warehouse=b;i.needsPlace=false;});renderItems();renderEquipmentItems();updateStockAfterPreview();scheduleRegisterDraft();
 }
 function warnDuplicateDraft(){const seen=new Set();for(const [i,row] of draftItems.entries()){if(!(Number(row.qty)>0))continue;const key=JSON.stringify([row.name,itemWarehouse(row,document.getElementById("recWarehouse")?.value)]);if(seen.has(key)){showFeedback("info",`자재 ${i+1} · 같은 창고에 동일 품목이 있습니다`);return true;}seen.add(key);}return false;}
@@ -2483,23 +2498,27 @@ function historyDateGroups(records){
 }
 
 function historyDateMatches(record){
-  if(historyDateFilter === "all") return true;
-  if(historyDateFilter === "today") return record.date === todayISO();
-  if(historyDateFilter === "yesterday") return record.date === yesterdayISO();
-  if(historyDateFilter === "month") return record.date >= monthStartISO() && record.date <= todayISO();
-  if(historyDateFilter === "custom"){
-    if(historyCustomFrom && record.date < historyCustomFrom) return false;
-    if(historyCustomTo && record.date > historyCustomTo) return false;
-    return true;
-  }
-  const days = historyDateFilter === "7" ? 7 : 30;
-  const start = new Date();
-  start.setHours(0,0,0,0);
-  start.setDate(start.getDate() - (days - 1));
-  const date = new Date(`${record.date}T00:00:00`);
-  return !Number.isNaN(date.getTime()) && date >= start && record.date<=todayISO();
+  if(historyDateFilter==="all")return true;
+  const [from,to]=historyDateRange();
+  return (!from||record.date>=from)&&(!to||record.date<=to);
 }
 
+function historyDateRange(filter=historyDateFilter,today=todayISO(),from=historyCustomFrom,to=historyCustomTo){
+  const offset=n=>new Date(Date.parse(today+"T00:00:00Z")+n*86400000).toISOString().slice(0,10);
+  if(filter==="custom")return [from,to];
+  if(filter==="today")return [today,today];
+  if(filter==="yesterday"){const d=offset(-1);return [d,d];}
+  if(filter==="month")return [today.slice(0,8)+"01",today];
+  if(filter==="7"||filter==="30")return [offset(1-Number(filter)),today];
+  return ["",""];
+}
+function historyHandoffText(rows,counts){
+  const [from,to]=historyDateRange();
+  const period=from===to?(from||"전체 기간"):(from||"처음")+" ~ "+(to||"현재");
+  const status=({all:"전체",pending:"진행 중",done:"완료",review:"재고 확인"})[historyFilter];
+  const filters=[period,"처리상태: "+status,historyPlaceFilter!=="all"&&"장소: "+historyPlaceFilter,historyFlowFilter!=="all"&&"종류: "+historyFlowFilter,historyTypeFilter!=="all"&&"업무: "+historyTypeFilter,historySearchQuery.trim()&&"검색: "+historySearchQuery.trim()];
+  return [...filters.filter(Boolean),"조회 "+counts.all+"건","출고 "+rows.filter(r=>r.flow==="출고").length+"건","미반영 "+(counts.pending+counts.review)+"건"].join(" · ");
+}
 function historyFlowMatches(record){
   if(historyFlowFilter === "all") return true;
   if(historyFlowFilter === "긴급") return Boolean(record.quick || record.flow === "긴급");
@@ -2533,7 +2552,8 @@ function historySearchMatches(record,query=historySearchQuery,place=historyPlace
   if(!normalized)return true;
   const evidenceValues=Object.values(record.evidence||{}).flatMap(value=>Array.isArray(value)?value:[value]);
   const searchable=[record.title,record.type,record.flow,...recordWarehouseNames(record),...recordWarehouseNames(record,{target:true}),record.memo,record.location?.type,record.location?.detail,...evidenceValues,...(record.items||[]).map(item=>item.name),...(record.equipmentItems||[]).map(item=>item.name)];
-  return searchable.filter(value=>value!==undefined&&value!==null).join(" ").toLocaleLowerCase("ko-KR").includes(normalized);
+  const text=searchable.filter(value=>value!==undefined&&value!==null).join(" ").normalize("NFC").toLocaleLowerCase("ko-KR");
+  return normalized.normalize("NFC").split(/\s+/).every(word=>text.includes(word));
 }
 
 function historyStatusMatches(record,filter=historyFilter){
@@ -2575,7 +2595,7 @@ function renderBaseHistory(){
     <div class="history-date-buttons" role="group" aria-labelledby="historyPeriodCaption">
       ${["all","today","yesterday","month","custom"].map(key=>`<button class="${historyDateFilter===key?"active":""}" data-history-date="${key}" type="button">${key==="all"?"전체":key==="today"?"오늘":key==="yesterday"?"어제":key==="month"?"이번 달":"직접 선택"}</button>`).join("")}
     </div>
-    <input class="search" id="histSearch" value="${esc(historySearchQuery)}" placeholder="이력 검색" autocomplete="off" enterkeyhint="search">
+    <input class="search" id="histSearch" aria-label="이력 검색" value="${esc(historySearchQuery)}" placeholder="이력 검색 · 예: 장승포 흡착재" autocomplete="off" enterkeyhint="search">
     <details class="history-filter-fold" id="historyFilters" ${historyFiltersOpen||historyDateFilter==="custom"?"open":""}>
     <summary>상세 필터${[historyFlowFilter,historyPlaceFilter,historyTypeFilter].filter(value=>value!=="all").length?` · ${[historyFlowFilter,historyPlaceFilter,historyTypeFilter].filter(value=>value!=="all").length}개 적용`:""}</summary>
     ${historyDateFilter==="custom"?`<div class="history-filter-grid compact-filter"><label>시작일<input id="historyCustomFrom" type="date" value="${esc(historyCustomFrom)}"></label><label>종료일<input id="historyCustomTo" type="date" value="${esc(historyCustomTo)}"></label></div>`:""}
@@ -2597,7 +2617,7 @@ function renderBaseHistory(){
   const shiftMonth=delta=>{const day=86400000,start=historyDateFilter==="custom"?historyCustomFrom:"",end=historyDateFilter==="custom"?historyCustomTo:"",fullMonth=start&&end&&start.endsWith("-01")&&start.slice(0,7)===end.slice(0,7)&&new Date(Date.parse(end)+day).getUTCDate()===1;
     if(["today","yesterday","7","30"].includes(historyDateFilter)||(start&&end&&!fullMonth)){const last=end|| (historyDateFilter==="yesterday"?yesterdayISO():todayISO()),span=start?Math.round((Date.parse(end)-Date.parse(start))/day)+1:Number(historyDateFilter)||1;if(!Number.isFinite(span)||span<1)return;const next=Date.parse(last)+delta*span*day;historyCustomTo=new Date(next).toISOString().slice(0,10);historyCustomFrom=new Date(next-(span-1)*day).toISOString().slice(0,10);historyDateFilter="custom";renderHistory();return;}const anchor=historyDateFilter==="custom"&&historyCustomFrom?historyCustomFrom:todayISO();const [y,m]=anchor.split("-").map(Number);const d=new Date(Date.UTC(y,m-1+delta,1));historyCustomFrom=d.toISOString().slice(0,10);d.setUTCMonth(d.getUTCMonth()+1,0);historyCustomTo=d.toISOString().slice(0,10);historyDateFilter="custom";renderHistory();};
   document.getElementById("histMonthPrev").onclick=()=>shiftMonth(-1);document.getElementById("histMonthNext").onclick=()=>shiftMonth(1);
-  document.getElementById("histHandoff").onclick=async()=>{const rows=matching().filter(r=>historyStatusMatches(r)),c=countStates(rows),period=({all:"전체 기간",today:todayISO(),yesterday:yesterdayISO(),month:todayISO().slice(0,7),custom:historyCustomFrom+"~"+historyCustomTo})[historyDateFilter]||historyDateFilter;const line=[period,historyPlaceFilter,historyFlowFilter,historyTypeFilter,historySearchQuery].filter(x=>x&&x!=="all").join(" · ")+" · "+c.all+"건 · 출고 "+rows.filter(r=>r.flow==="출고").length+"건 · 미반영 "+(c.pending+c.review)+"건";try{await navigator.clipboard.writeText(line);showFeedback("success","조회 요약 복사");}catch{openEntryModal(entryHeader("인계 요약","선택해 복사하세요")+"<textarea readonly>"+esc(line)+"</textarea>");}};
+  document.getElementById("histHandoff").onclick=async()=>{if(historyDateFilter==="custom"&&historyCustomFrom&&historyCustomTo&&historyCustomFrom>historyCustomTo){showFeedback("info","조회기간을 먼저 확인해주세요");return;}const rows=matching().filter(r=>historyStatusMatches(r)),line=historyHandoffText(rows,countStates(rows));try{await navigator.clipboard.writeText(line);showFeedback("success","조회 요약 복사");}catch{openEntryModal(entryHeader("인계 요약","선택해 복사하세요")+"<textarea readonly>"+esc(line)+"</textarea>");}};
   updateHistoryResultCount(filtered.length);
   document.getElementById("histSearch")?.addEventListener("input", () => {
     historySearchQuery = document.getElementById("histSearch").value;
@@ -3257,7 +3277,8 @@ async function backup(share=false){
   const blob = new Blob([JSON.stringify(payload,null,2)], {type:"application/json"});
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `victor_backup_${todayISO()}_${generatedAt.slice(11,23).replace(/[:.]/g,"")}Z.json`;
+  const kst=new Date(generatedAt).toLocaleString("sv-SE",{timeZone:"Asia/Seoul",hour12:false}).replace(" ","_").replace(/:/g,"");
+  a.download = `victor_backup_${kst}${generatedAt.slice(20,23)}_KST.json`;
   if(share===true){try{await navigator.share({files:[new File([blob],a.download,{type:blob.type})]});}catch(e){if(e.name!=="AbortError")showFeedback("error","파일을 보내지 못했습니다 · 백업 다운로드를 이용해주세요");URL.revokeObjectURL(a.href);return;}}else a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),30000);
   if(!await askConfirm("백업 파일 확인","파일이 보관됐나요? 확인한 경우에만 백업일을 기록합니다.","보관 확인"))return;
@@ -3285,7 +3306,9 @@ function restoreFile(file,verifyOnly=false){return runWorkflow("restore",async()
       if(!validRestoreData(raw))throw new Error("Victor 전체 백업 파일인지 확인해주세요");
       validateInventoryKeys(raw);
       if(Number(raw.schemaVersion||0)>SCHEMA_VERSION)throw new Error("더 최신 앱에서 만든 자료입니다 · 먼저 앱을 업데이트해주세요");
-      if(verifyOnly){const places=new Set(raw.warehouses),names=new Set(raw.catalog.map(i=>i.name));if(Object.entries(raw.stock).some(([w,stock])=>!places.has(w)||!stock||Object.keys(stock).some(n=>!names.has(n)))||(raw.equipment||[]).some(g=>!places.has(g.place)))throw Error("창고·품목 연결을 확인해주세요");showFeedback("success","백업 파일 정상 · 현재 자료 변경 없음");return true;}
+      const places=new Set(raw.warehouses),names=new Set(raw.catalog.map(i=>i?.name));
+      if(Array.isArray(raw.stock)||Object.entries(raw.stock).some(([w,stock])=>!places.has(w)||!stock||typeof stock!=="object"||Array.isArray(stock)||Object.keys(stock).some(n=>!names.has(n)))||(raw.equipment!==undefined&&(!Array.isArray(raw.equipment)||raw.equipment.some(g=>!places.has(g?.place)))))throw Error("창고·품목 연결을 확인해주세요");
+      if(verifyOnly){showFeedback("success","백업 파일 정상 · 현재 자료 변경 없음");return true;}
       if(!unchanged())throw new Error("파일을 읽는 중 자료가 바뀌었습니다 · 최신 자료 확인 후 다시 선택해주세요");
       if(!await askConfirm("전체 자료 복원",`현재 기준: ${state.savedAt?fmtDateTime(state.savedAt):"미기록"} · 창고 ${state.warehouses.length}개 · 이력 ${state.records.length}건 · 메모 ${(state.memos||[]).length}건\n백업 기준: ${raw.backupDate||"미기록"} · 창고 ${(raw.warehouses||[]).length}개 · 이력 ${(raw.records||[]).length}건 · 메모 ${(raw.memos||[]).length}건으로 이 기기의 자료를 바꿀까요? 공유 서버에는 전송하지 않습니다. 변경 전 자료는 자동 보관됩니다.`,"복원",true))return false;
       if(!unchanged())throw new Error("확인 중 자료가 바뀌었습니다 · 복원을 보류했습니다");
@@ -3625,6 +3648,11 @@ function renderSurveyList(){
   const place=items[s.index]?.warehouse||items[0].warehouse,places=[...new Set(items.map(i=>i.warehouse))];
   const rows=items.map((it,n)=>({it,n,key:it.warehouse+"|"+it.name})).filter(r=>r.it.warehouse===place);
   const checked=r=>s.checked[r.key]===true,base=r=>Number(s.baseline[r.key]||0);
+  const nextTarget=()=>{const local=rows.find(r=>r.n>s.index&&!checked(r))||rows.find(r=>!checked(r));if(local)return local.n;
+    const start=places.indexOf(place),others=[...places.slice(start+1),...places.slice(0,start)],pending=new Map();
+    items.forEach((i,n)=>{if(s.checked[i.warehouse+"|"+i.name]!==true&&!pending.has(i.warehouse))pending.set(i.warehouse,n);});
+    const next=others.find(w=>pending.has(w));return next===undefined?-1:pending.get(next);
+  };
   const first=rows.every(r=>base(r)===0),groups=new Map();
   for(const r of rows){const group=base(r)===0?"장부상 0":r.it.cat;if(!groups.has(group))groups.set(group,[]);groups.get(group).push(r);}
   const progress=()=>place+" · "+rows.filter(checked).length+" / "+rows.length+"종 확인";
@@ -3637,7 +3665,7 @@ function renderSurveyList(){
   '<div class="btn-row"><button class="btn secondary" id="surveyNextUnchecked">다음 미확인</button><button class="btn gray" id="surveySingle">한 품목씩</button><button class="btn primary" id="fastReview">확인 현황 · 검토</button></div>'+surveySessionActionsHtml();
   function refresh(){
     document.getElementById("surveyListProgress").textContent=progress();
-    const progressByPlace=new Map();for(const i of items){const k=i.warehouse+"|"+i.name,v=progressByPlace.get(i.warehouse)||[0,0];v[0]+=Number(s.checked[k]===true);v[1]++;progressByPlace.set(i.warehouse,v);}Array.from(document.getElementById("surveyListPlace").options).forEach((o,j)=>{o.textContent=places[j]+" · "+progressByPlace.get(places[j]).join("/");});document.getElementById("surveyNextUnchecked").disabled=rows.every(checked);
+    const progressByPlace=new Map();for(const i of items){const k=i.warehouse+"|"+i.name,v=progressByPlace.get(i.warehouse)||[0,0];v[0]+=Number(s.checked[k]===true);v[1]++;progressByPlace.set(i.warehouse,v);}Array.from(document.getElementById("surveyListPlace").options).forEach((o,j)=>{o.textContent=places[j]+" · "+progressByPlace.get(places[j]).join("/");});const next=nextTarget(),nextBtn=document.getElementById("surveyNextUnchecked");nextBtn.textContent=next<0?"모두 확인 · 검토하기":items[next].warehouse===place?"다음 미확인":"다음 미완료 창고: "+items[next].warehouse;
     for(const r of rows){const edit=view.querySelector('[data-edit-count="'+r.n+'"]'),match=view.querySelector('[data-match-count="'+r.n+'"]');
       edit.textContent=qtyText(base(r),r.it.unit)+(checked(r)&&s.values[r.key]!==base(r)?" → "+qtyText(s.values[r.key],r.it.unit):"");
       match.textContent=checked(r)?"✓ 확인됨":"일치";match.title=checked(r)?"확인 취소 · 미확인으로":"장부 수량과 일치";}
@@ -3646,16 +3674,16 @@ function renderSurveyList(){
   let undoGroup=null;function commit(list,value){undoGroup=null;document.getElementById("surveyUndoGroup")?.remove();const before=JSON.stringify(state);for(const r of list){s.checked[r.key]=true;s.values[r.key]=value??base(r);s.lastConfirmedKey=r.key;s.index=r.n;}
     if(!saveStateTransaction(before,"실사 입력을 저장하지 못했습니다")){renderSurveyList();return false;}refresh();return true;}
   function edit(r,discover=false){
-    openEntryModal(entryHeader(discover?"발견한 품목":"실사 수량",place)+'<div class="form">'+(discover?`<label>품목 찾기<input type="search" id="surveyFind" placeholder="이름·규격"></label><label>품목<select id="surveyFoundName">${rows.map(x=>`<option value="${x.n}">${esc(x.it.name)}</option>`).join("")}</select></label>`:`<strong>${esc(r.it.name)}</strong>`)+ '<label id="surveyFoundLabel">실측 수량<input type="number" id="surveyFoundQty" min="0" step="any"></label><button id="surveyFoundSave" class="btn primary">수량 확인</button></div>');
+    openEntryModal(entryHeader(discover?"발견한 품목":"실사 수량",place)+'<div class="form">'+(discover?`<label>품목 찾기<input type="search" id="surveyFind" placeholder="이름·규격"></label><label>품목<select id="surveyFoundName">${rows.map(x=>`<option value="${x.n}">${esc(x.it.name)}</option>`).join("")}</select></label>`:`<strong>${esc(r.it.name)}</strong>`)+ '<label id="surveyFoundLabel">실측 수량<span class="quantity-control"><input type="number" id="surveyFoundQty" min="0" step="any" aria-describedby="surveyFoundSpec"><span class="quantity-unit" id="surveyFoundUnit"></span></span></label><div class="row-sub" id="surveyFoundSpec"></div><button id="surveyFoundSave" class="btn primary">수량 확인</button></div>');
     if(discover){const mark=document.createElement("button");mark.className="btn gray";mark.textContent="목록에 없는 품목 · 식별 보류";document.getElementById("surveyFoundSave").after(mark);mark.onclick=()=>{openEntryModal(entryHeader("식별 보류",place)+'<div class="form"><label>현장 표기명<input id="unknownName"></label><label>실측 수량<input id="unknownQty" type="number" min="0" step="any"></label><label>단위<input id="unknownUnit"></label><button class="btn primary" id="unknownSave">실사 메모에 보관 · 재고 미반영</button></div>');document.getElementById("unknownSave").onclick=()=>{const n=document.getElementById("unknownName").value.trim(),u=document.getElementById("unknownUnit").value.trim(),q=finiteQuantity(document.getElementById("unknownQty").value,u);if(!n||!u||q===null){showFeedback("warning","표기명·수량·단위를 확인해주세요");return;}const before=JSON.stringify(state);s.memoDraft=[s.memoDraft,"[식별 보류] "+place+" · "+n+" "+q+u].filter(Boolean).join("\n");if(saveStateTransaction(before,"식별 보류 저장 실패")){closeEntryModal();renderSurveyList();}};};}
     const select=document.getElementById("surveyFoundName"),input=document.getElementById("surveyFoundQty");
-    const reset=()=>{input.value=checked(r)?s.values[r.key]:"";input.placeholder="단위 "+r.it.unit;input.inputMode=integerUnit(r.it.unit)?"numeric":"decimal";};
-    if(select){document.getElementById("surveyFind").oninput=e=>{const q=e.target.value.trim().toLowerCase(),hits=rows.filter(x=>(x.it.name+" "+(itemOf(x.it.name)?.spec||"")).toLowerCase().includes(q));select.innerHTML=hits.map(x=>'<option value="'+x.n+'">'+esc(x.it.name)+'</option>').join("");document.getElementById("surveyFoundSave").disabled=!hits.length;if(hits.length){r=hits[0];reset();}};select.value=r.n;select.onchange=()=>{r=rows.find(x=>x.n===Number(select.value));reset();};}reset();
+    const reset=()=>{input.value=checked(r)?s.values[r.key]:"";input.disabled=false;input.placeholder="세어 본 수량";document.getElementById("surveyFoundUnit").textContent=r.it.unit;const spec=itemOf(r.it.name)?.spec||r.it.spec||"";document.getElementById("surveyFoundSpec").textContent="단위 "+r.it.unit+(spec?" · 규격 "+spec:"");input.inputMode=integerUnit(r.it.unit)?"numeric":"decimal";};
+    if(select){document.getElementById("surveyFind").oninput=e=>{const q=e.target.value.trim().toLowerCase(),hits=rows.filter(x=>(x.it.name+" "+(itemOf(x.it.name)?.spec||"")).toLowerCase().includes(q));select.innerHTML=hits.map(x=>'<option value="'+x.n+'">'+esc(x.it.name)+'</option>').join("");document.getElementById("surveyFoundSave").disabled=!hits.length;if(hits.length){r=hits[0];reset();}else{input.value="";input.disabled=true;document.getElementById("surveyFoundUnit").textContent="";document.getElementById("surveyFoundSpec").textContent="일치하는 품목 없음";}};select.value=r.n;select.onchange=()=>{r=rows.find(x=>x.n===Number(select.value));reset();};}reset();
     document.getElementById("surveyFoundSave").onclick=()=>{const n=finiteQuantity(input.value,r.it.unit);if(input.validity.badInput||n===null){fieldError(input,"실측 수량을 입력해주세요");return;}if(commit([r],n))closeEntryModal();};
   }
   for(const r of rows){view.querySelector('[data-match-count="'+r.n+'"]').onclick=()=>{if(!checked(r)){commit([r]);return;}undoGroup=null;document.getElementById("surveyUndoGroup")?.remove();const before=JSON.stringify(state);delete s.checked[r.key];delete s.values[r.key];if(saveStateTransaction(before,"확인 취소 실패"))refresh();else renderSurveyList();};view.querySelector('[data-edit-count="'+r.n+'"]').onclick=()=>edit(r);}
   sections.forEach(([g,list],j)=>{view.querySelector('[data-match-group="'+j+'"]').onclick=async()=>{const pending=list.filter(r=>!checked(r));if(pending.length&&await askConfirm("분류 확인",place+" · "+g+" 미확인 "+pending.length+"종을 모두 대조했나요? 이미 입력한 수량은 유지합니다.","확인 저장")&&commit(pending)){undoGroup=pending;const b=document.createElement("button");b.className="btn secondary compact";b.id="surveyUndoGroup";b.textContent="방금 분류 확인 취소";view.querySelector('[data-match-group="'+j+'"]').after(b);b.onclick=()=>{const before=JSON.stringify(state);for(const r of undoGroup||[]){delete s.checked[r.key];delete s.values[r.key];}if(!saveStateTransaction(before,"묶음 취소 실패")){renderSurveyList();return;}b.remove();undoGroup=null;refresh();};}};});
-  document.getElementById("surveyNextUnchecked").onclick=()=>{const r=rows.find(r=>r.n>s.index&&!checked(r))||rows.find(r=>!checked(r));if(!r)return;const b=view.querySelector('[data-edit-count="'+r.n+'"]');b.closest("details").open=true;b.focus({preventScroll:true});b.scrollIntoView({block:"center"});};
+  document.getElementById("surveyNextUnchecked").onclick=()=>{const n=nextTarget();if(n<0){renderFastSurveyReview();return;}if(items[n].warehouse!==place){const before=JSON.stringify(state);s.index=n;if(!saveStateTransaction(before,"창고 선택 저장 실패")){renderSurveyList();return;}renderSurveyList();}const r={n};const b=view.querySelector('[data-edit-count="'+r.n+'"]');b.closest("details").open=true;b.focus({preventScroll:true});b.scrollIntoView({block:"center"});};
   document.getElementById("surveyDiscover").onclick=()=>edit(rows.find(r=>!checked(r))||rows[0],true);
   document.getElementById("surveyListPlace").onchange=e=>{const before=JSON.stringify(state);s.index=items.findIndex(i=>i.warehouse===places[Number(e.target.value)]);saveStateTransaction(before,"창고 선택 저장 실패");renderSurveyList();};
   bindSurveyMemo();document.getElementById("surveySingle").onclick=renderFastSurvey;document.getElementById("fastReview").onclick=renderFastSurveyReview;bindSurveySessionActions();refresh();
@@ -3732,7 +3760,7 @@ function vehicleMonthlyDistance(place,month=todayISO().slice(0,7)){return effect
 
 function vesselMonthlyMileage(place){const month=todayISO().slice(0,7);return effectiveOpLogs(place).filter(log=>String(log.date||"").slice(0,7)===month).reduce((sum,log)=>sum+Number(log.mileageDiff||0),0);}
 function vesselFuelTotals(place){const now=todayISO(),month=now.slice(0,7),year=now.slice(0,4),logs=effectiveOpLogs(place);return {current:Number(state.assetOps?.[place]?.fuelBase||0),month:logs.filter(log=>String(log.date||"").slice(0,7)===month).reduce((sum,log)=>sum+Number(log.fuel||0),0),year:logs.filter(log=>String(log.date||"").slice(0,4)===year).reduce((sum,log)=>sum+Number(log.fuel||0),0)};}
-function vesselFuelRows(place){const rows=[...(state.assetOps?.[place]?.fuelLogs||[])].reverse().sort((a,b)=>String(b.date||"").localeCompare(String(a.date||""))).slice(0,5);return rows.length?rows.map(log=>`<div class="row-sub">${fmtDate(log.date)} · ${Number(log.amount||0)>0?"+":""}${Number(log.amount||0)}L${log.memo?` · ${esc(log.memo)}`:""}</div>`).join(""):`<div class="row-sub">연료 수급 이력이 없습니다.</div>`;}
+function vesselFuelRows(place){const rows=[...(state.assetOps?.[place]?.fuelLogs||[])].reverse().sort((a,b)=>String(b.date||"").localeCompare(String(a.date||""))).slice(0,5);return rows.length?rows.map(log=>`<div class="row-sub">${fmtDate(log.date)} · ${log.type==="연료 실측 일치"?`실측 ${Number(log.measured)}L · 차이 없음`:`${Number(log.amount||0)>0?"+":""}${Number(log.amount||0)}L`}${log.memo?` · ${esc(log.memo)}`:""}</div>`).join(""):`<div class="row-sub">연료 이력이 없습니다.</div>`;}
 function vesselMonthlySummary(place,month=todayISO().slice(0,7)){const logs=effectiveOpLogs(place).filter(log=>String(log.date||"").slice(0,7)===month);return {logs,count:logs.length,mileage:logs.reduce((sum,log)=>sum+Number(log.mileageDiff||0),0),port:logs.reduce((sum,log)=>sum+Number(log.portDiff||0),0),starboard:logs.reduce((sum,log)=>sum+Number(log.starboardDiff||0),0)};}
 
 function renderOps(place){
@@ -3768,7 +3796,7 @@ function renderOps(place){
         <button class="btn secondary" id="addFuelSupply" type="button">연료 수급</button>
         <button class="btn gray" id="editFuelBase" type="button">연료 재고수정</button>
     </div>
-    <div class="callout" style="margin-top:12px"><strong>최근 연료 수급</strong><br>${vesselFuelRows(place)}</div>
+    <div class="callout" style="margin-top:12px"><strong>최근 연료 이력</strong><br>${vesselFuelRows(place)}</div>
     <button class="btn secondary" id="addAssetMaintenance" type="button" style="width:100%;margin-top:9px">+ 정비이력 추가</button>
     <div class="section-title" style="margin-top:16px">최근 이력</div>${recentOpRows(place)}
     <button class="btn gray" id="openVesselHistory" type="button" style="width:100%;margin-top:9px">전체 이력 보기</button>
@@ -3777,15 +3805,18 @@ function renderOps(place){
 }
 
 function openFuelSupplyForm(place){
-  const op=state.assetOps?.[place];if(!op)return;op.fuelLogs=op.fuelLogs||[];
-  openEntryModal(`${entryHeader("연료 수급",place)}<div class="form"><label>날짜<input id="fuelSupplyDate" type="date" value="${todayISO()}"></label><label>수급량(L)<input id="fuelSupplyAmount" type="number" inputmode="decimal" min="0" step="0.1" placeholder="예: 200"></label><label>메모<textarea id="fuelSupplyMemo" placeholder="수급처나 특이사항"></textarea></label><button class="btn primary" id="saveFuelSupply" type="button">저장</button></div>`);
-  document.getElementById("saveFuelSupply")?.addEventListener("click",()=>{const amount=finiteQuantity(document.getElementById("fuelSupplyAmount").value,"L");if(amount===null||amount<=0){fieldError("#fuelSupplyAmount","수급량을 입력해주세요");return;}if(!document.getElementById("fuelSupplyDate").value){fieldError("#fuelSupplyDate","수급 날짜를 선택해주세요");return;}const before=JSON.stringify(state);op.fuelBase=addQuantities(op.fuelBase,amount);op.fuelLogs.push({id:uid(),date:document.getElementById("fuelSupplyDate").value||todayISO(),amount,memo:document.getElementById("fuelSupplyMemo").value.trim(),createdAt:new Date().toISOString()});if(!saveStateTransaction(before,"연료 수급 저장 실패 · 입력은 유지됩니다"))return;closeEntryModal();showFeedback("success",`연료 ${amount}L 수급 저장`);renderWarehouse();});
+  const op=state.assetOps?.[place];if(!op)return;
+  openEntryModal(`${entryHeader("연료 수급",place)}<div class="form"><label>날짜<input id="fuelSupplyDate" type="date" value="${todayISO()}"></label><label>수급량(L)<input id="fuelSupplyAmount" type="number" inputmode="decimal" min="0" step="0.1" placeholder="예: 200"></label><div class="row-sub" id="fuelSupplyPreview" role="status"></div><label>메모<textarea id="fuelSupplyMemo" placeholder="수급처나 특이사항"></textarea></label><button class="btn primary" id="saveFuelSupply" type="button">저장</button></div>`);
+  const amountInput=document.getElementById("fuelSupplyAmount"),note=document.getElementById("fuelSupplyPreview"),preview=()=>{const base=Number(op.fuelBase||0),qty=finiteQuantity(amountInput.value,"L");note.textContent=qty>0?"저장 후 잔량 · "+base+" → "+addQuantities(base,qty)+" L":"현재 잔량 "+base+" L";};amountInput.oninput=preview;preview();
+  document.getElementById("saveFuelSupply")?.addEventListener("click",()=>{const amount=finiteQuantity(document.getElementById("fuelSupplyAmount").value,"L");if(amount===null||amount<=0){fieldError("#fuelSupplyAmount","수급량을 입력해주세요");return;}if(!document.getElementById("fuelSupplyDate").value){fieldError("#fuelSupplyDate","수급 날짜를 선택해주세요");return;}if(state.assetOps?.[place]!==op){showFeedback("warning","운용자료가 바뀌었습니다 · 다시 열어주세요");return;}const before=JSON.stringify(state),old=Number(op.fuelBase||0);op.fuelBase=addQuantities(old,amount);(op.fuelLogs??=[]).push({id:uid(),date:document.getElementById("fuelSupplyDate").value,amount,before:old,after:op.fuelBase,type:"연료 수급",memo:document.getElementById("fuelSupplyMemo").value.trim(),createdAt:new Date().toISOString()});if(!saveStateTransaction(before,"연료 수급 저장 실패 · 입력은 유지됩니다"))return;closeEntryModal();showFeedback("success",`연료 수급 +${amount} L · ${old} → ${op.fuelBase} L`);renderWarehouse();});
 }
 
 function openFuelStockEditForm(place){
-  const op=state.assetOps?.[place];if(!op)return;op.fuelLogs=op.fuelLogs||[];
-  openEntryModal(`${entryHeader("연료 재고수정",place)}<div class="form"><div class="callout">현재 기록 재고 ${Number(op.fuelBase||0)}L</div><label>현재 연료유 재고(L)<input id="fuelStockValue" type="number" inputmode="decimal" min="0" step="0.1" value="${Number(op.fuelBase||0)}"></label><label>메모<textarea id="fuelStockMemo" placeholder="수정 사유"></textarea></label><button class="btn primary" id="saveFuelStock" type="button">덮어쓰기 저장</button></div>`);
-  document.getElementById("saveFuelStock")?.addEventListener("click",()=>{const before=Number(op.fuelBase||0),after=finiteQuantity(document.getElementById("fuelStockValue").value);if(after===null){fieldError("#fuelStockValue","연료 재고량을 입력해주세요 · 0 이상");return;}const beforeState=JSON.stringify(state);op.fuelBase=after;op.fuelLogs.push({id:uid(),date:todayISO(),amount:addQuantities(after,-before),memo:document.getElementById("fuelStockMemo").value.trim()||"재고수정",before,after,createdAt:new Date().toISOString()});if(!saveStateTransaction(beforeState,"연료 재고 저장 실패 · 입력은 유지됩니다"))return;closeEntryModal();showFeedback("success",`연료 재고 ${after}L 저장`);renderWarehouse();});
+  const op=state.assetOps?.[place];if(!op)return;
+  openEntryModal(`${entryHeader("연료 재고수정",place)}<div class="form"><div class="callout">현재 기록 재고 ${Number(op.fuelBase||0)}L</div><label>현재 연료유 재고(L)<input id="fuelStockValue" type="number" inputmode="decimal" min="0" step="0.1" value="${Number(op.fuelBase||0)}"></label><label>메모<textarea id="fuelStockMemo" placeholder="실측 메모 또는 보정 사유"></textarea></label><button class="btn primary" id="saveFuelStock" type="button">실측 확인 저장 · 차이 없음</button></div>`);
+  const measured=document.getElementById("fuelStockValue"),button=document.getElementById("saveFuelStock");
+  measured.oninput=()=>{const v=finiteQuantity(measured.value);button.textContent=v===Number(op.fuelBase||0)?"실측 확인 저장 · 차이 없음":"재고 보정 저장";};
+  document.getElementById("saveFuelStock")?.addEventListener("click",()=>{const before=Number(op.fuelBase||0),after=finiteQuantity(document.getElementById("fuelStockValue").value);if(after===null){fieldError("#fuelStockValue","연료 재고량을 입력해주세요 · 0 이상");return;}if(state.assetOps?.[place]!==op){showFeedback("warning","운용자료가 바뀌었습니다 · 다시 열어주세요");return;}const beforeState=JSON.stringify(state),matched=after===before,memo=document.getElementById("fuelStockMemo").value.trim();if(!matched)op.fuelBase=after;(op.fuelLogs??=[]).push({id:uid(),date:todayISO(),memo,createdAt:new Date().toISOString(),...(matched?{type:"연료 실측 일치",measured:after}:{type:"연료 재고 보정",amount:addQuantities(after,-before),before,after})});if(!saveStateTransaction(beforeState,"연료 재고 저장 실패 · 입력은 유지됩니다"))return;closeEntryModal();showFeedback("success",matched?"연료 실측 확인 · 차이 없음":`연료 재고 ${before} → ${after} L`);renderWarehouse();});
 }
 
 function editOpBase(place){
@@ -3799,23 +3830,44 @@ function editOpBase(place){
   });
 }
 
+function operationTimeLabel(log){
+  if(!log.startTime||!log.endTime)return "";
+  // Older records calculated elapsed time modulo 24 hours without storing the offset.
+  const overnight=log.arrivalDayOffset===1||(log.arrivalDayOffset==null&&log.endTime<log.startTime);
+  return log.startTime+" → "+(overnight?"다음 날 ":"")+log.endTime;
+}
+function drivingDateContext(logs,date){
+  const ordered=logs.filter(l=>l.date).sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.startTime||"").localeCompare(String(b.startTime||"")));
+  return {previous:ordered.filter(l=>l.date<=date).at(-1),next:ordered.find(l=>l.date>date)};
+}
 function addOpLog(place){
   const vehicle=isVehiclePlace(place),op=state.assetOps?.[place];if(!op)return;
   openEntryModal(`${entryHeader(vehicle?"주행 기록":"운항 기록",place)}<div class="form"><label>날짜<input id="opLogDate" type="date" value="${todayISO()}"></label>${vehicle?`<label>출발 누적거리(km)<input id="opLogStartDistance" type="number" inputmode="decimal" min="0" value="${opTotal(place,"distance")}"></label><label>도착 누적거리(km)<input id="opLogDistance" type="number" inputmode="decimal" min="0" placeholder="현재 ${opTotal(place,"distance")}km"></label><div class="callout" id="opDistancePreview">도착거리를 입력하면 운행거리가 계산됩니다.</div>`:`<div class="grid2"><label>출항지<input id="opLogDeparture" placeholder="출항지"></label><label>도착지<input id="opLogArrival" placeholder="도착지"></label></div><label>누적 마일수(NM · 선택)<input id="opLogMileage" type="number" inputmode="decimal" min="0" placeholder="현재 ${opTotal(place,"mileage")}NM"></label><label>좌현 엔진 누적시간(h)<input id="opLogPortHours" type="number" inputmode="decimal" min="0" placeholder="현재 ${opTotal(place,"portHours")}h"></label><label>우현 엔진 누적시간(h)<input id="opLogStarboardHours" type="number" inputmode="decimal" min="0" placeholder="현재 ${opTotal(place,"starboardHours")}h"></label><label>연료 소모량(L · 선택)<input id="opLogFuel" type="number" inputmode="decimal" min="0" step="0.1" placeholder="현재 재고 ${Number(op.fuelBase||0)}L"></label>`}
-    <details class="field-card"><summary>시간·목적·담당자 (선택)</summary><div class="location-grid"><label>출발 시간<input id="opLogStartTime" type="time"></label><label>도착 시간<input id="opLogEndTime" type="time"></label></div><label>목적<input id="opLogPurpose" placeholder="순찰, 방제작업 등"></label><label>${vehicle?"운전자":"운항자"}<input id="opLogOperator" autocomplete="off"></label></details><label>메모<textarea id="opLogMemo"></textarea></label><button class="btn primary sticky-action" id="saveOpLog" type="button">저장</button></div>`);
+    <details class="field-card"><summary>시간·목적·담당자 (선택)</summary><div class="location-grid"><label>출발 시간<input id="opLogStartTime" type="time"></label><label>도착 시간<input id="opLogEndTime" type="time"></label></div><label>목적<input id="opLogPurpose" placeholder="순찰, 방제작업 등"></label><label>${vehicle?"운전자":"운항자"}<input id="opLogOperator" autocomplete="off"></label></details><label>메모<textarea id="opLogMemo"></textarea></label><button class="btn primary" id="saveOpLog" type="button">저장</button></div>`);
   const preview=()=>{const from=document.getElementById("opLogStartDistance"),to=document.getElementById("opLogDistance"),target=document.getElementById("opDistancePreview");if(!target||!from||!to)return;
     const km=n=>Number(n).toLocaleString("ko-KR",{maximumFractionDigits:3})+" km",start=Number(from.value),end=Number(to.value);
     target.textContent=!to.value||!from.value?"현재 총 운행거리 "+km(opTotal(place,"distance"))+" · 출발·도착 계기값을 입력하세요":end<start?"도착 누적거리는 출발거리보다 작을 수 없습니다":"이번 운행 "+km(end-start)+" · 총 운행거리 "+km(end);};
-  if(vehicle){const update=()=>{preview();const f=document.getElementById("opLogStartDistance"),gap=Number(f.value)-opTotal(place,"distance");if(f.value&&gap!==0)document.getElementById("opDistancePreview").textContent+=" · 전회 도착과 "+gap+" km 차이";};update();["opLogStartDistance","opLogDistance"].forEach(id=>document.getElementById(id).addEventListener("input",update));}
+  if(vehicle){
+    const date=document.getElementById("opLogDate"),start=document.getElementById("opLogStartDistance"),note=document.createElement("div"),fix=document.createElement("button");
+    note.className="row-sub";note.id="vehicleDateContext";fix.className="btn secondary compact";fix.type="button";fix.textContent="기존 운행기록 정정";fix.onclick=()=>openOperationCorrectionPicker(place);date.closest("label").after(note,fix);
+    const describe=(row,key)=>row?row.date+" · "+(recordedNumber(row[key])===null?"계기 미기록":row[key]+" km"):"없음";
+    function syncDate(){const bounds=drivingDateContext(effectiveOpLogs(place),date.value);
+      const retro=!!date.value&&!!bounds.next;fix.hidden=!retro;note.textContent=date.value&&(retro||date.value<todayISO())?"이전 도착 "+describe(bounds.previous,"after")+" / 다음 출발 "+describe(bounds.next,"before")+(retro?" · 중간에 새 기록을 넣으면 누계가 바뀌므로 기존 기록을 먼저 확인하세요.":""):"";
+      // Replace only the suggested reading; never overwrite a manually typed meter.
+      const suggested=retro?(recordedNumber(bounds.previous?.after)??""):opTotal(place,"distance");if(start.dataset.manual!=="1")start.value=suggested;
+      update();}
+    start.addEventListener("input",()=>{start.dataset.manual="1";});date.addEventListener("change",syncDate);
+    const update=()=>{preview();const f=document.getElementById("opLogStartDistance"),gap=Number(f.value)-opTotal(place,"distance");if(f.value&&gap!==0)document.getElementById("opDistancePreview").textContent+=" · 최신 계기와 "+gap+" km 차이";};syncDate();["opLogStartDistance","opLogDistance"].forEach(id=>document.getElementById(id).addEventListener("input",update));}
   else{const fuel=document.getElementById("opLogFuel"),note=document.createElement("div");note.className="row-sub";fuel.closest("label").after(note);const upd=()=>{const p=document.getElementById("opLogPortHours").value,t=document.getElementById("opLogStarboardHours").value;note.textContent=[fuel.value?"예상 연료 잔량 "+addQuantities(op.fuelBase,-Number(fuel.value))+" L":"",p||t?"좌현 "+(p?addQuantities(p,-opTotal(place,"portHours"))+"h":"미입력")+" · 우현 "+(t?addQuantities(t,-opTotal(place,"starboardHours"))+"h":"미입력"):""].filter(Boolean).join(" · ");};[fuel,document.getElementById("opLogPortHours"),document.getElementById("opLogStarboardHours")].forEach(f=>f.addEventListener("input",upd));}
   // Distance and fuel previews are bound above.
   document.getElementById("saveOpLog").addEventListener("click",()=>runWorkflow(`operation:${place}`,async()=>{
     const op=state.assetOps[place];
     const value=id=>document.getElementById(id)?.value||"",startTime=value("opLogStartTime"),endTime=value("opLogEndTime");
     if(!value("opLogDate")){fieldError("#opLogDate","운용 날짜를 입력해주세요");return;}
+    if(vehicle&&drivingDateContext(effectiveOpLogs(place),value("opLogDate")).next){fieldError("#opLogDate","뒤에 저장된 운행이 있습니다 · 날짜를 확인하거나 기존 기록을 정정해주세요");return;}
     const common={id:uid(),date:value("opLogDate"),memo:value("opLogMemo").trim(),createdAt:new Date().toISOString(),startTime,endTime,purpose:value("opLogPurpose").trim(),[vehicle?"driver":"operator"]:value("opLogOperator").trim()};
     if(startTime&&endTime&&endTime<startTime&&!await askConfirm("다음 날 도착인가요?",startTime+" → 다음 날 "+endTime,"다음 날 도착"))return;
-    if(startTime&&endTime){const minutes=time=>Number(time.slice(0,2))*60+Number(time.slice(3));common.elapsedHours=((minutes(endTime)-minutes(startTime)+1440)%1440)/60;}
+    if(startTime&&endTime){common.arrivalDayOffset=endTime<startTime?1:0;const minutes=time=>Number(time.slice(0,2))*60+Number(time.slice(3));common.elapsedHours=((minutes(endTime)-minutes(startTime)+1440)%1440)/60;}
     let log,patch;
     if(vehicle){
       const current=opTotal(place,"distance"),before=finiteQuantity(value("opLogStartDistance")),after=finiteQuantity(value("opLogDistance"));
@@ -3845,7 +3897,7 @@ function recentOpRows(place){
   const logs = effectiveOpLogs(place).sort((a,b)=>historyDateKey(b).localeCompare(historyDateKey(a))).slice(0,isVehiclePlace(place)?5:10);
   if(!logs.length) return `<div class="emptybox">아직 일일 이력이 없습니다.</div>`;
   const allLogs=state.assetOps?.[place]?.logs||[],lastInput=allLogs.at(-1),latestId=lastInput?.id;if(lastInput&&!logs.some(l=>l.id===latestId))logs.splice(logs.length-1,1,lastInput);
-  return logs.map(l=>{const dual=l.portAfter!==undefined&&l.starboardAfter!==undefined,editable=l.after!==undefined||dual;const mileage=l.mileageAfter!==undefined?`마일 ${l.mileageBefore==null?"미상":Number(l.mileageBefore)} → ${Number(l.mileageAfter)}NM · `:"";const text=dual?`${mileage}좌현 ${l.portBefore==null?"미상":Number(l.portBefore)} → ${Number(l.portAfter)}h · 우현 ${l.starboardBefore==null?"미상":Number(l.starboardBefore)} → ${Number(l.starboardAfter)}h`:l.after!==undefined?`${l.before==null?"시작값 미상":Number(l.before)} → ${Number(l.after)} · +${Number(l.diff||0)}${isVehiclePlace(place)?"km":"h"}`:(isVehiclePlace(place)?`기존 이력 +${Number(l.distance||0)}km`:`기존 단일시간 이력 +${Number(l.hours||0)}h`);const route=isVesselPlace(place)&&(l.departure||l.arrival)?` · ${esc(l.departure||"미입력")} → ${esc(l.arrival||"미입력")}`:"";const fuel=isVesselPlace(place)&&Number(l.fuel||0)>0?` · 연료 ${Number(l.fuel)}L`:"";return `<div class="list-row"><div><div class="row-title">${esc(l.date||"")}</div><div class="row-sub">${text}${fuel}${route}${l.memo?` · ${esc(l.memo)}`:""}</div>${l.id===latestId&&editable?`<div class="btn-row" style="margin-top:7px"><button class="btn gray compact" data-op-edit="${l.id}" type="button">마지막 입력 수정</button><button class="btn danger compact" data-op-delete="${l.id}" type="button">삭제</button></div>`:""}</div></div>`;}).join("");
+  return logs.map(l=>{const dual=l.portAfter!==undefined&&l.starboardAfter!==undefined,editable=l.after!==undefined||dual;const mileage=l.mileageDiff===null?"마일 미기록 · ":l.mileageAfter!==undefined?`마일 ${l.mileageBefore==null?"미상":Number(l.mileageBefore)} → ${Number(l.mileageAfter)}NM · `:"";const text=dual?`${mileage}좌현 ${l.portBefore==null?"미상":Number(l.portBefore)} → ${Number(l.portAfter)}h · 우현 ${l.starboardBefore==null?"미상":Number(l.starboardBefore)} → ${Number(l.starboardAfter)}h`:l.after!==undefined?`${l.before==null?"시작값 미상":Number(l.before)} → ${Number(l.after)} · +${Number(l.diff||0)}${isVehiclePlace(place)?"km":"h"}`:(isVehiclePlace(place)?`기존 이력 +${Number(l.distance||0)}km`:`기존 단일시간 이력 +${Number(l.hours||0)}h`);const route=isVesselPlace(place)&&(l.departure||l.arrival)?` · ${esc(l.departure||"미입력")} → ${esc(l.arrival||"미입력")}`:"";const fuel=isVesselPlace(place)&&Number(l.fuel||0)>0?` · 연료 ${Number(l.fuel)}L`:"";return `<div class="list-row"><div><div class="row-title">${esc(l.date||"")}</div><div class="row-sub">${operationTimeLabel(l)?esc(operationTimeLabel(l))+" · ":""}${text}${fuel}${route}${l.memo?` · ${esc(l.memo)}`:""}</div>${l.id===latestId&&editable?`<div class="btn-row" style="margin-top:7px"><button class="btn gray compact" data-op-edit="${l.id}" type="button">마지막 입력 수정</button><button class="btn danger compact" data-op-delete="${l.id}" type="button">삭제</button></div>`:""}</div></div>`;}).join("");
 }
 
 function bindOpLogActions(place){
@@ -3906,21 +3958,21 @@ function assetHistorySearchText({kind,log}){
   return [kind,...text].filter(value=>value!==undefined&&value!==null).join(" ").toLocaleLowerCase("ko-KR");
 }
 function assetHistoryRowHtml({kind,log}){
-  const labels={date:"일자",startTime:"출발 시간",endTime:"도착 시간",elapsedHours:"운행시간(h)",purpose:"목적",driver:"운전자",createdAt:"입력 시각",updatedAt:"수정 시각",time:"시간",type:"처리유형",flow:"입출고",title:"제목",content:"내용",departure:"출발 위치",arrival:"도착 위치",from:"출발 보관",to:"도착 보관",warehouse:"보관장소",targetWarehouse:"도착 보관",location:"작업 위치",memo:"메모",parts:"부속품",cost:"비용(원)",before:"이전 누적값",after:"현재 누적값",diff:"증감",distance:"주행거리(km)",hours:"엔진시간(h)",mileageBefore:"이전 마일(NM)",mileageAfter:"현재 마일(NM)",mileageDiff:"운항거리(NM)",portBefore:"이전 좌현(h)",portAfter:"현재 좌현(h)",portDiff:"좌현 사용(h)",starboardBefore:"이전 우현(h)",starboardAfter:"현재 우현(h)",starboardDiff:"우현 사용(h)",fuel:"연료 소모(L)",amount:"연료 증감(L)",operator:"운항자",passengers:"동승자",area:"활동해역",status:"상태"};
+  const labels={date:"일자",startTime:"출발 시간",endTime:"도착 시간",elapsedHours:"운행시간(h)",purpose:"목적",driver:"운전자",createdAt:"입력 시각",updatedAt:"수정 시각",time:"시간",type:"처리유형",flow:"입출고",title:"제목",content:"내용",departure:"출발 위치",arrival:"도착 위치",from:"출발 보관",to:"도착 보관",warehouse:"보관장소",targetWarehouse:"도착 보관",location:"작업 위치",memo:"메모",parts:"부속품",cost:"비용(원)",before:"이전 누적값",after:"현재 누적값",diff:"증감",distance:"주행거리(km)",hours:"엔진시간(h)",mileageBefore:"이전 마일(NM)",mileageAfter:"현재 마일(NM)",mileageDiff:"운항거리(NM)",portBefore:"이전 좌현(h)",portAfter:"현재 좌현(h)",portDiff:"좌현 사용(h)",starboardBefore:"이전 우현(h)",starboardAfter:"현재 우현(h)",starboardDiff:"우현 사용(h)",fuel:"연료 소모(L)",amount:"연료 증감(L)",measured:"실측량(L)",operator:"운항자",passengers:"동승자",area:"활동해역",status:"상태"};
   const valueText=(value)=>Array.isArray(value)?value.map(valueText).join("\n"):value&&typeof value==="object"?Object.entries(value).filter(([key])=>!["id","photo","photos"].includes(key)).map(([key,val])=>`${labels[key]||({name:"이름",qty:"수량",unit:"단위",place:"보관장소",cat:"분류",spec:"규격",kind:"구분",detail:"상세",model:"모델"}[key])||key}: ${valueText(val)}`).join(" · "):String(value??"");
-  const title=log.title || log.content || kind+" 기록";
+  const title=log.title || log.content || (kind==="연료"&&log.type) || kind+" 기록";
   const route=[log.departure||log.from||log.warehouse,log.arrival||log.to||log.targetWarehouse].filter(Boolean).join(" → ");
-  const fields=Object.entries(log).filter(([key,value])=>!["id","items","equipmentItems","title","memo","date","photo","photos"].includes(key)&&value!==null&&value!==undefined&&value!=="");
+  const fields=Object.entries(log).filter(([key,value])=>!["id","items","equipmentItems","title","memo","date","photo","photos","arrivalDayOffset"].includes(key)&&!(kind==="운항"&&log.mileageDiff===null&&["mileageBefore","mileageAfter"].includes(key))&&value!==null&&value!==undefined&&value!=="");
   const resources=[...(log.items||[]),...(log.equipmentItems||[])];
-const metrics=[];
+const metrics=[];if(["주행","운항"].includes(kind)&&operationTimeLabel(log))metrics.push(operationTimeLabel(log));
   const metric=(label,value,unit)=>{if(value!==undefined&&value!==null&&value!=="")metrics.push(label+" "+value+unit);};
   if(kind==="주행")metric("주행",log.diff??log.distance,"km");
   if(kind==="운항"){
-    metric("운항",log.mileageDiff,"NM");metric("좌현",log.portDiff,"h");metric("우현",log.starboardDiff,"h");
+    if(log.mileageDiff===null)metrics.push("마일 미기록");else metric("운항",log.mileageDiff,"NM");metric("좌현",log.portDiff,"h");metric("우현",log.starboardDiff,"h");
     if(log.portDiff===undefined)metric("엔진",log.hours??log.diff,"h");
     metric("연료 소모",log.fuel,"L");
   }
-  if(kind==="연료")metric("연료 증감",log.amount,"L");
+  if(kind==="연료"){if(log.type==="연료 실측 일치")metric("실측 일치",log.measured,"L");else metric("연료 증감",log.amount,"L");}
   return `<article class="history-box asset-history-row"><span class="badge blue">${esc(kind)}</span><div class="row-title">${esc(title)}</div><div class="row-sub">${esc(log.date||"날짜 미지정")}${route?" · "+esc(route):""}</div>${metrics.length?`<div class="row-sub">${esc(metrics.join(" · "))}</div>`:""}${log.memo?`<div class="history-memo">${esc(log.memo)}</div>`:""}${resources.map(item=>`<div class="row-sub">${esc(item.name||"이름 미지정")} · ${esc(item.qty??"")} ${esc(item.unit||"대")}${item.place?" · "+esc(item.place):""}</div>`).join("")}<details><summary>기록 상세</summary><dl class="history-fields">${fields.map(([key,value])=>`<div><dt>${esc(labels[key]||key)}</dt><dd>${esc(valueText(value))}</dd></div>`).join("")}${resources.length?`<div><dt>자원 상세</dt><dd>${esc(valueText(resources))}</dd></div>`:""}</dl></details></article>`;
 }
 function openAssetHistory(place,equipmentId=""){
@@ -4014,6 +4066,7 @@ function editLatestOpLog(place,logId){
       counters={mileageBase:nextMileage,portHoursBase:nextPort,starboardHoursBase:nextStarboard,fuelBase:addQuantities(availableFuel,-nextFuel),engineSplitMode:"dual"};
     }
     if(patch.startTime&&patch.endTime&&patch.endTime<patch.startTime&&!await askConfirm("다음 날 도착인가요?",patch.startTime+" → 다음 날 "+patch.endTime,"다음 날 도착"))return;
+    patch.arrivalDayOffset=patch.startTime&&patch.endTime?(patch.endTime<patch.startTime?1:0):null;
     if(patch.startTime&&patch.endTime){const minutes=time=>Number(time.slice(0,2))*60+Number(time.slice(3));patch.elapsedHours=((minutes(patch.endTime)-minutes(patch.startTime)+1440)%1440)/60;}else patch.elapsedHours=null;
     const before=JSON.stringify(state);const history=log.editHistory||[];history.push({editedAt:patch.updatedAt,before:Object.fromEntries(Object.entries(log).filter(([key])=>key!=="editHistory"))});Object.assign(log,patch,{editHistory:history});Object.assign(op,counters);
     if(!saveStateTransaction(before,"이력 수정 실패 · 입력은 유지됩니다"))return;
@@ -4986,6 +5039,7 @@ function bindCloudSettingsBack(){
 function cloudDashboardHtml(latest=null,{loading=false,error="",checkedAt=""}={}){
   const meta=readCloudShareMeta();
   const config=cloudReadConfig();
+  const lastSuccessfulShareCheck=scopedShareCheck(config);
   const localSnapshot=buildResourceSnapshot();
   const localSummary=snapshotSummary(localSnapshot);
   const cloudSummary=latest?snapshotSummary(latest):null;
@@ -5110,7 +5164,8 @@ async function refreshCloudDashboard(notify=false,preserve=false){
     const head=canReuse?await cloudShareHead(cfg):null;
     const snapshot=canReuse&&!head?null:canReuse&&head.id===known.cloudRowId&&head.updated_at===known.cloudRowVersion?known:await fetchLatestCloudShareSnapshot();
     if(requestId!==cloudDashboardRequestId)return;
-    lastSuccessfulShareCheck=new Date().toISOString();cloudShareNotice=snapshot?{kind:isCloudSnapshotNewer(snapshot)?"new":"same",summary:snapshotSummary(snapshot),snapshot}:null;
+    if(JSON.stringify(cloudReadConfig())!==JSON.stringify(cfg))return;
+    scopedShareCheck(cfg,new Date().toISOString());cloudShareNotice=snapshot?{kind:isCloudSnapshotNewer(snapshot)?"new":"same",summary:snapshotSummary(snapshot),snapshot}:null;
     if(!isCurrent())return;
     renderCloudDashboard(snapshot,{checkedAt:new Date().toISOString()},true);
     if(notify){const note=document.querySelector(".cloud-share-form .share-time-note");if(note)note.textContent="마지막 확인 "+localTimeNow()+(snapshot&&cloudStatusLabel(snapshot)==="이미 최신"?" · 내 자료와 같음":"");}
@@ -5226,7 +5281,10 @@ async function checkCloudShareNotice({force=false,notify=false,silent=false}={})
   cloudShareCheckInFlight=true;
   lastCloudShareCheckAt=now;
   try{
+    const checkedConfig=cloudReadConfig();
     const snapshot=await fetchLatestCloudShareSnapshot();
+    if(JSON.stringify(checkedConfig)!==JSON.stringify(cloudReadConfig()))return;
+    scopedShareCheck(checkedConfig,new Date().toISOString());
     if(!snapshot){cloudShareNotice=null;if(notify)showFeedback("info","공유자료 없음");return;}
     const summary=snapshotSummary(snapshot);
     const kind=isCloudSnapshotNewer(snapshot) ? "new" : "same";
@@ -5310,9 +5368,10 @@ async function performUploadCloudShareSnapshot(active=()=>true){
     const uploadedAt=written[0].updated_at||payload.updated_at;
     snapshot.cloudSharedAt=uploadedAt;snapshot.cloudUpdatedAt=uploadedAt;
     Object.assign(snapshot,{cloudScope:JSON.stringify([config.url,config.siteId]),cloudRowId:written[0].id,cloudRowVersion:uploadedAt});
-    saveCloudShareMeta({shareBase:shareBaseline(snapshot,snapshot.resourceState),lastUploadedAt:uploadedAt,lastUploadedSiteId:config.siteId,lastUploadedDeviceName:victorDeviceLabel()});
+    const savedLocally=saveCloudShareMeta({shareBase:shareBaseline(snapshot,snapshot.resourceState),lastUploadedAt:uploadedAt,lastUploadedSiteId:config.siteId,lastUploadedDeviceName:victorDeviceLabel()});
     cloudShareNotice={kind:"same",summary:snapshotSummary(snapshot),snapshot};
-    showFeedback("success","클라우드에 올렸습니다 · 다른 기기에서 바로 적용 가능");
+    if(savedLocally===false)showFeedback("warning","전송 완료 · 이 기기 상태 기록 실패 · 다시 보내지 말고 공유본을 확인해주세요");
+    else showFeedback("success","클라우드에 올렸습니다 · 다른 기기에서 바로 적용 가능");
     if(page==="home") renderHome();
     return true;
   }catch(error){console.warn("[Victor] 클라우드 공유 업로드 실패",error);showFeedback("error",cloudErrorMessage(error));}

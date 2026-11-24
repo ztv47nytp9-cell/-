@@ -605,7 +605,9 @@ function openSafetyPoints(){
   document.querySelectorAll("[data-safety-restore]").forEach(button=>button.addEventListener("click",async()=>{
     const point=points.find(row=>row.id===button.dataset.safetyRestore);
     if(!validRestoreData(point?.state)||Number(point.state.schemaVersion||1)>SCHEMA_VERSION){showFeedback("error","현재 앱에서 안전하게 복구할 수 없는 저장형식입니다");return;}
+    let memory,disk;try{memory=JSON.stringify(state);disk=localStorage.getItem(KEY);}catch{showFeedback("error","현재 자료를 확인하지 못해 복구를 보류했습니다");return;}
     if(!await askConfirm("안전지점 복구",`현재 이력 ${state.records.length}건 → 복구 후 ${(point.state.records||[]).length}건\n보관장소 ${state.warehouses.length}곳 → ${(point.state.warehouses||[]).length}곳\n\n${point.label} 상태로 전체 자료를 되돌릴까요? 현재 자료도 안전지점으로 남깁니다.`,"복구",true))return;
+    try{if(memory!==JSON.stringify(state)||disk!==localStorage.getItem(KEY)){showFeedback("warning","확인 중 자료가 바뀌었습니다 · 안전지점을 다시 선택해주세요");return;}}catch{showFeedback("error","현재 자료를 확인하지 못해 복구를 보류했습니다");return;}
     if(!createSafetyPoint("안전지점 복구 전",state)){showFeedback("error","현재 자료를 보관할 공간이 없습니다");return;}
     const before=JSON.stringify(state);const issue=storageLoadIssue;storageLoadIssue="";state=normalize(point.state);
     if(!saveStateTransaction(before,"복구 자료를 저장하지 못했습니다")){storageLoadIssue=issue;return;}
